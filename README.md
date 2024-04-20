@@ -1,2 +1,2 @@
 # rulego-components-ai
-RuleGo ai related components
+The AI components of rulego
