@@ -1,4 +1,4 @@
-module github.com/rulego/rulego-components
+module github.com/rulego/rulego-components-ai
 
 go 1.18
 
