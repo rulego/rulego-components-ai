@@ -50,10 +50,8 @@ github.com/pmezard/go-difflib v1.0.0/go.mod h1:iKH77koFhYxTK1pcRnkKkqfTogsbg7gZN
 github.com/robfig/cron/v3 v3.0.1 h1:WdRxkvbJztn8LMz/QEvLN5sBU+xKpSqwwUO1Pjr4qDs=
 github.com/robfig/cron/v3 v3.0.1/go.mod h1:eQICP3HwyT7UooqI/z+Ov+PtYAWygg1TEWWzGIFLtro=
 github.com/rogpeppe/go-internal v1.6.1/go.mod h1:xXDCJY+GAPziupqXw64V24skbSoqbTEfhy4qGm1nDQc=
-github.com/rulego/rulego v0.30.1-0.20250428081330-c512a38b0dac h1:z4c1t3xC+z7AWlDvcQqq4HGj+jBISAzpvf/2e5+pwWU=
-github.com/rulego/rulego v0.30.1-0.20250428081330-c512a38b0dac/go.mod h1:5s8YeHGqy81chIXzYZNnQYt7nnxZTPLDVHGSRGHMIHo=
-github.com/rulego/rulego v0.30.1-0.20250429035125-23a9a933b36a h1:VUkUqUfVYgO7DnPt/V+ik9NsWScnr75PIP7uKB7jyUk=
-github.com/rulego/rulego v0.30.1-0.20250429035125-23a9a933b36a/go.mod h1:5s8YeHGqy81chIXzYZNnQYt7nnxZTPLDVHGSRGHMIHo=
+github.com/rulego/rulego v0.31.0 h1:FFbhrL6anl9BfR0wtor6XHU98yoofOhCMW+wtBHA7Hg=
+github.com/rulego/rulego v0.31.0/go.mod h1:5s8YeHGqy81chIXzYZNnQYt7nnxZTPLDVHGSRGHMIHo=
 github.com/sashabaranov/go-openai v1.37.0 h1:hQQowgYm4OXJ1Z/wTrE+XZaO20BYsL0R3uRPSpfNZkY=
 github.com/sashabaranov/go-openai v1.37.0/go.mod h1:lj5b/K+zjTSFxVLijLSTDZuP7adOgerWeFyZLUhAKRg=
 github.com/stretchr/testify v1.9.0 h1:HtqpIVDClZ4nwg75+f6Lvsy/wHu+3BoSGCbBAcpTsTg=
