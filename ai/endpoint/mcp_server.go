@@ -433,7 +433,7 @@ func (s *McpServer) ruleChainToolHandler(chainId, startNodeId string, pool types
 				opts = append(opts, types.WithStartNode(startNodeId))
 			}
 			opts = append(opts, types.WithOnEnd(func(ctx types.RuleContext, msg types.RuleMsg, err error, relationType string) {
-				result = msg.Data
+				result = msg.GetData()
 				resultErr = err
 				wg.Done()
 			}))

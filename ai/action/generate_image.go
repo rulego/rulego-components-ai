@@ -147,7 +147,7 @@ func (x *GenerateImageNode) OnMsg(ctx types.RuleContext, msg types.RuleMsg) {
 		return
 	}
 
-	msg.Data = str.ToString(responses)
+	msg.SetData(str.ToString(responses))
 	ctx.TellSuccess(msg)
 }
 

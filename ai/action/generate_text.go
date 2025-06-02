@@ -159,7 +159,7 @@ func (x *TextGenerateNode) OnMsg(ctx types.RuleContext, msg types.RuleMsg) {
 		} else {
 			msg.DataType = types.TEXT
 		}
-		msg.Data = content
+		msg.SetData(content)
 		ctx.TellSuccess(msg)
 	}
 }
