@@ -7,7 +7,6 @@ toolchain go1.23.7
 require (
 	github.com/mark3labs/mcp-go v0.18.0
 	github.com/rulego/rulego v0.31.2-0.20250602155557-dd600e38f329
-	github.com/rulego/rulego v0.31.0
 	github.com/sashabaranov/go-openai v1.37.0
 )
 
