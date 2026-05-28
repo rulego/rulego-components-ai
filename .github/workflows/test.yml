@@ -1,0 +1,102 @@
+name: Test
+
+on:
+  push:
+    branches: [ main, dev ]
+  pull_request:
+    branches: [ main, dev ]
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  # 单元测试：全 Go 版本矩阵，不调用 LLM（自动跳过集成测试）
+  unit-test:
+    runs-on: ubuntu-latest
+
+    strategy:
+      matrix:
+        go-version: [1.22, 1.23, 1.24]
+
+    steps:
+    - uses: actions/checkout@v4
+
+    - name: Set up Go
+      uses: actions/setup-go@v4
+      with:
+        go-version: ${{ matrix.go-version }}
+
+    - name: Cache Go modules
+      uses: actions/cache@v3
+      with:
+        path: |
+          ~/.cache/go-build
+          ~/go/pkg/mod
+        key: ${{ runner.os }}-go-${{ matrix.go-version }}-${{ hashFiles('**/go.sum') }}
+        restore-keys: |
+          ${{ runner.os }}-go-${{ matrix.go-version }}-
+
+    - name: Download dependencies
+      run: go mod download
+
+    - name: Verify dependencies
+      run: go mod verify
+
+    - name: Run unit tests
+      env:
+        SKIP_BROWSER_TESTS: true
+      run: |
+        go test -v -race -timeout=10m -coverprofile=coverage.out -covermode=atomic ./...
+
+    - name: Upload coverage reports to Codecov
+      uses: codecov/codecov-action@v3
+      with:
+        file: ./coverage.out
+        flags: unittests
+        name: codecov-umbrella
+        fail_ci_if_error: false
+
+  # LLM 集成测试：单 Go 版本，避免矩阵重复调用大模型
+  llm-integration:
+    runs-on: ubuntu-latest
+
+    steps:
+    - uses: actions/checkout@v4
+
+    - name: Set up Go
+      uses: actions/setup-go@v4
+      with:
+        go-version: '1.24'
+
+    - name: Cache Go modules
+      uses: actions/cache@v3
+      with:
+        path: |
+          ~/.cache/go-build
+          ~/go/pkg/mod
+        key: ${{ runner.os }}-go-1.24-${{ hashFiles('**/go.sum') }}
+        restore-keys: |
+          ${{ runner.os }}-go-1.24-
+
+    - name: Download dependencies
+      run: go mod download
+
+    - name: Run LLM integration tests
+      env:
+        LLM_BASE_URL: ${{ secrets.LLM_BASE_URL }}
+        LLM_API_KEY: ${{ secrets.LLM_API_KEY }}
+        LLM_MODEL: ${{ secrets.LLM_MODEL }}
+        LLM_VISION_MODEL: ${{ secrets.LLM_VISION_MODEL }}
+        EMBEDDING_MODEL: ${{ secrets.EMBEDDING_MODEL }}
+        SKIP_BROWSER_TESTS: true
+      run: |
+        go test -v -race -timeout=20m -coverprofile=coverage-llm.out -covermode=atomic -run "Integration|Multimodal|ReactAgent|Parallel|Generate|Intent|Vision" ./...
+
+    - name: Upload LLM coverage to Codecov
+      uses: codecov/codecov-action@v3
+      with:
+        file: ./coverage-llm.out
+        flags: llm-integration
+        name: codecov-llm
+        fail_ci_if_error: false

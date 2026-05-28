@@ -42,3 +42,7 @@ vendor/
 
 # coverage file
 coverage.html
+
+# 环境变量文件（包含敏感密钥）
+.env
+.env.*
