@@ -100,7 +100,12 @@ func TestIntegration_SimpleChat(t *testing.T) {
 	}
 
 	response, err := chatModel.Generate(ctx, messages)
-	require.NoError(t, err, "Failed to generate response")
+	if err != nil {
+		if strings.Contains(err.Error(), "429") || strings.Contains(err.Error(), "rate limit") {
+			t.Skipf("API rate limited, skipping: %v", err)
+		}
+		require.NoError(t, err, "Failed to generate response")
+	}
 	require.NotNil(t, response, "Response should not be nil")
 	require.NotEmpty(t, response.Content, "Response content should not be empty")
 
@@ -130,7 +135,12 @@ func TestIntegration_StreamChat(t *testing.T) {
 	}
 
 	stream, err := chatModel.Stream(ctx, messages)
-	require.NoError(t, err, "Failed to create stream")
+	if err != nil {
+		if strings.Contains(err.Error(), "429") || strings.Contains(err.Error(), "rate limit") {
+			t.Skipf("API rate limited, skipping: %v", err)
+		}
+		require.NoError(t, err, "Failed to create stream")
+	}
 	require.NotNil(t, stream, "Stream should not be nil")
 
 	var fullContent string
@@ -543,10 +553,11 @@ func TestIntegration_RuleChainVisionWithURL(t *testing.T) {
 	// 发送消息并等待结果
 	done := make(chan string, 1)
 	var lastMsg types.RuleMsg
+	var callbackErr error
 
 	engine.OnMsg(msg, types.WithOnEnd(func(ctx types.RuleContext, outMsg types.RuleMsg, err error, relationType string) {
 		if err != nil {
-			t.Logf("Error in OnEnd: %v", err)
+			callbackErr = err
 			done <- ""
 		} else {
 			t.Logf("Success: %s", truncateString(outMsg.GetData(), 200))
@@ -557,6 +568,10 @@ func TestIntegration_RuleChainVisionWithURL(t *testing.T) {
 
 	select {
 	case result := <-done:
+		if callbackErr != nil {
+			skipIfAPIError(t, callbackErr)
+			require.NoError(t, callbackErr, "Failed to process vision request")
+		}
 		require.NotEmpty(t, result, "Response should not be empty")
 		t.Logf("✅ Vision response: %s", truncateString(result, 300))
 

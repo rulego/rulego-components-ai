@@ -3,6 +3,7 @@ package token
 
 import (
 	"encoding/json"
+	"sync"
 	"sync/atomic"
 	"time"
 )
@@ -84,6 +85,7 @@ type ToolMetrics struct {
 
 // MetricsCollector collects tool execution metrics.
 type MetricsCollector struct {
+	mu      sync.RWMutex
 	metrics map[string]*ToolMetrics
 }
 
@@ -96,11 +98,13 @@ func NewMetricsCollector() *MetricsCollector {
 
 // Record records a tool execution (thread-safe).
 func (mc *MetricsCollector) Record(toolName string, durationMs int64, inputTokens, outputTokens int, hasError bool) {
+	mc.mu.Lock()
 	m, exists := mc.metrics[toolName]
 	if !exists {
 		m = &ToolMetrics{Name: toolName}
 		mc.metrics[toolName] = m
 	}
+	mc.mu.Unlock()
 
 	atomic.AddInt64(&m.CallCount, 1)
 	atomic.AddInt64(&m.TotalTimeMs, durationMs)
@@ -120,7 +124,9 @@ func (mc *MetricsCollector) Record(toolName string, durationMs int64, inputToken
 
 // GetMetrics returns all collected metrics.
 func (mc *MetricsCollector) GetMetrics() map[string]ToolMetrics {
-	result := make(map[string]ToolMetrics)
+	mc.mu.RLock()
+	defer mc.mu.RUnlock()
+	result := make(map[string]ToolMetrics, len(mc.metrics))
 	for k, v := range mc.metrics {
 		result[k] = ToolMetrics{
 			Name:         v.Name,
@@ -138,7 +144,10 @@ func (mc *MetricsCollector) GetMetrics() map[string]ToolMetrics {
 
 // GetToolMetrics returns metrics for a specific tool.
 func (mc *MetricsCollector) GetToolMetrics(toolName string) *ToolMetrics {
-	if m, ok := mc.metrics[toolName]; ok {
+	mc.mu.RLock()
+	m, ok := mc.metrics[toolName]
+	mc.mu.RUnlock()
+	if ok {
 		return &ToolMetrics{
 			Name:         m.Name,
 			CallCount:    atomic.LoadInt64(&m.CallCount),
@@ -155,7 +164,9 @@ func (mc *MetricsCollector) GetToolMetrics(toolName string) *ToolMetrics {
 
 // Reset clears all metrics.
 func (mc *MetricsCollector) Reset() {
+	mc.mu.Lock()
 	mc.metrics = make(map[string]*ToolMetrics)
+	mc.mu.Unlock()
 }
 
 // ToJSON returns metrics as JSON string.

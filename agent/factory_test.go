@@ -9,6 +9,8 @@ import (
 	"github.com/cloudwego/eino/schema"
 	"github.com/rulego/rulego-components-ai/config"
 	"github.com/rulego/rulego-components-ai/session"
+	"github.com/rulego/rulego/api/types"
+	"github.com/rulego/rulego/engine"
 	"github.com/rulego/rulego/test/assert"
 )
 
@@ -503,4 +505,156 @@ func BenchmarkCreateTools_Single(b *testing.B) {
 	for i := 0; i < b.N; i++ {
 		_, _, _ = CreateTools([]config.Tool{toolConfig}, ToolOptions{})
 	}
+}
+
+// ============================================================================
+// MCP 工具测试
+// ============================================================================
+
+type testMCPProvider struct {
+	defs        []types.MCPToolDefinition
+	calls       []testToolCall
+	callHandler func(name string, args map[string]interface{}) (string, error)
+}
+
+type testToolCall struct {
+	name string
+	args map[string]interface{}
+}
+
+func (p *testMCPProvider) ListToolDefinitions() ([]types.MCPToolDefinition, error) {
+	return p.defs, nil
+}
+
+func (p *testMCPProvider) CallTool(ctx context.Context, name string, args map[string]interface{}) (string, error) {
+	p.calls = append(p.calls, testToolCall{name, args})
+	if p.callHandler != nil {
+		return p.callHandler(name, args)
+	}
+	return "ok", nil
+}
+
+func newTestMCPProvider() *testMCPProvider {
+	return &testMCPProvider{
+		defs: []types.MCPToolDefinition{
+			{Name: "save_rule_chain", Description: "Save a rule chain", InputSchema: []byte(`{"type":"object","properties":{"id":{"type":"string"},"body":{"type":"object"}},"required":["id","body"]}`)},
+			{Name: "execute_rule_chain", Description: "Execute a rule chain", InputSchema: []byte(`{"type":"object","properties":{"id":{"type":"string"},"message":{"type":"object"}},"required":["id","message"]}`)},
+			{Name: "list_rule_chains", Description: "List rule chains", InputSchema: []byte(`{"type":"object","properties":{"keywords":{"type":"string"}}}`)},
+		},
+	}
+}
+
+func newTestRuleConfigWithProvider(provider types.MCPToolProvider) types.Config {
+	rc := engine.NewConfig()
+	rc.RegisterUdf(types.MCPToolProviderKey, provider)
+	return rc
+}
+
+func TestCreateTools_MCPType_Self_All(t *testing.T) {
+	provider := newTestMCPProvider()
+	rc := newTestRuleConfigWithProvider(provider)
+	tools, infos, err := CreateTools([]config.Tool{
+		{Type: config.ToolTypeMCP, Config: map[string]interface{}{"server": "self"}},
+	}, ToolOptions{RuleConfig: rc})
+	assert.Nil(t, err)
+	assert.Equal(t, 3, len(tools))
+	assert.Equal(t, 3, len(infos))
+}
+
+func TestCreateTools_MCPType_Self_Filtered(t *testing.T) {
+	provider := newTestMCPProvider()
+	rc := newTestRuleConfigWithProvider(provider)
+	tools, infos, err := CreateTools([]config.Tool{
+		{Type: config.ToolTypeMCP, Config: map[string]interface{}{
+			"server": "self",
+			"tools":  []interface{}{"save_rule_chain", "execute_rule_chain"},
+		}},
+	}, ToolOptions{RuleConfig: rc})
+	assert.Nil(t, err)
+	assert.Equal(t, 2, len(tools))
+	assert.Equal(t, 2, len(infos))
+	names := map[string]bool{}
+	for _, info := range infos {
+		names[info.Name] = true
+	}
+	assert.True(t, names["save_rule_chain"])
+	assert.True(t, names["execute_rule_chain"])
+	assert.False(t, names["list_rule_chains"])
+}
+
+func TestCreateTools_MCPType_Self_Wildcard(t *testing.T) {
+	provider := newTestMCPProvider()
+	rc := newTestRuleConfigWithProvider(provider)
+	tools, _, err := CreateTools([]config.Tool{
+		{Type: config.ToolTypeMCP, Config: map[string]interface{}{
+			"server": "self",
+			"tools":  []interface{}{"*"},
+		}},
+	}, ToolOptions{RuleConfig: rc})
+	assert.Nil(t, err)
+	assert.Equal(t, 3, len(tools))
+}
+
+func TestCreateTools_MCPType_Self_NoProvider(t *testing.T) {
+	rc := engine.NewConfig()
+	_, _, err := CreateTools([]config.Tool{
+		{Type: config.ToolTypeMCP, Config: map[string]interface{}{"server": "self"}},
+	}, ToolOptions{RuleConfig: rc})
+	assert.NotNil(t, err)
+	assert.True(t, len(err.Error()) > 0)
+}
+
+func TestCreateTools_MCPType_MissingServer(t *testing.T) {
+	_, _, err := CreateTools([]config.Tool{
+		{Type: config.ToolTypeMCP, Config: map[string]interface{}{}},
+	}, ToolOptions{})
+	assert.NotNil(t, err)
+}
+
+func TestCreateTools_MCPType_Remote_NotImplemented(t *testing.T) {
+	_, _, err := CreateTools([]config.Tool{
+		{Type: config.ToolTypeMCP, Config: map[string]interface{}{
+			"server": "http://remote:8080/mcp",
+		}},
+	}, ToolOptions{})
+	assert.NotNil(t, err)
+}
+
+func TestCreateTools_MCPType_Mixed(t *testing.T) {
+	provider := newTestMCPProvider()
+	rc := newTestRuleConfigWithProvider(provider)
+	tools, infos, err := CreateTools([]config.Tool{
+		{Type: config.ToolTypeMCP, Config: map[string]interface{}{
+			"server": "self",
+			"tools":  []interface{}{"save_rule_chain", "execute_rule_chain"},
+		}},
+		{Type: config.ToolTypeRuleChain, Name: "my_chain", TargetId: "chain_1"},
+	}, ToolOptions{RuleConfig: rc})
+	assert.Nil(t, err)
+	assert.Equal(t, 3, len(tools))
+	assert.Equal(t, 3, len(infos))
+}
+
+func TestCreateTools_MCPType_Self_ToolExecution(t *testing.T) {
+	provider := &testMCPProvider{
+		defs: []types.MCPToolDefinition{
+			{Name: "save_rule_chain", Description: "Save", InputSchema: []byte(`{"type":"object","properties":{"id":{"type":"string"}}}`)},
+		},
+		callHandler: func(name string, args map[string]interface{}) (string, error) {
+			return "save ok", nil
+		},
+	}
+	rc := newTestRuleConfigWithProvider(provider)
+	tools, _, err := CreateTools([]config.Tool{
+		{Type: config.ToolTypeMCP, Config: map[string]interface{}{"server": "self"}},
+	}, ToolOptions{RuleConfig: rc})
+	assert.Nil(t, err)
+	assert.Equal(t, 1, len(tools))
+	invokable, ok := tools[0].(tool.InvokableTool)
+	assert.True(t, ok)
+	result, err := invokable.InvokableRun(context.Background(), `{"id":"test_chain"}`)
+	assert.Nil(t, err)
+	assert.Equal(t, "save ok", result)
+	assert.Equal(t, 1, len(provider.calls))
+	assert.Equal(t, "save_rule_chain", provider.calls[0].name)
 }

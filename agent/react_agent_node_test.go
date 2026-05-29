@@ -2,6 +2,7 @@ package agent
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"strings"
 	"sync"
@@ -81,11 +82,11 @@ func TestReactAgentWithBash(t *testing.T) {
 
 		done := make(chan string, 1)
 		var lastMsg types.RuleMsg
+		var callbackErr error
 
 		engine.OnMsg(msg, types.WithOnEnd(func(ctx types.RuleContext, outMsg types.RuleMsg, err error, relationType string) {
 			if err != nil {
-				skipIfAPIError(t, err)
-				t.Logf("Error in OnEnd: %v", err)
+				callbackErr = err
 				done <- ""
 			} else {
 				t.Logf("Success in OnEnd: %s", outMsg.GetData())
@@ -96,14 +97,18 @@ func TestReactAgentWithBash(t *testing.T) {
 
 		select {
 		case result := <-done:
+			if callbackErr != nil {
+				skipIfAPIError(t, callbackErr)
+				t.Fatalf("OnEnd error: %v", callbackErr)
+			}
 			if result == "" {
 				t.Error("Response is empty")
 			} else {
 				t.Logf("Agent Response: %s", result)
 				assert.True(t, len(result) > 0)
 			}
-		case <-time.After(120 * time.Second):
-			t.Error("Timeout waiting for response")
+		case <-time.After(60 * time.Second):
+			t.Fatal("Timeout waiting for response")
 		}
 
 		// 打印最后收到的消息信息
@@ -569,11 +574,6 @@ func TestReactAgentWithCommand_StreamMode(t *testing.T) {
 				} else {
 					// 流式 chunk
 					isToolCall := outMsg.Metadata.GetValue("tool_call") == "true"
-					t.Logf("Stream chunk #%d (isChunk=%s, isToolCall=%v): %s",
-						chunkCount,
-						outMsg.Metadata.GetValue("chunk"),
-						isToolCall,
-						truncateString(outMsg.GetData(), 100))
 
 					// 记录工具调用
 					if isToolCall {
@@ -893,6 +893,104 @@ func TestAgentV2Integration(t *testing.T) {
 				}
 			}
 		case <-time.After(60 * time.Second):
+			t.Error("Timeout")
+		}
+	})
+}
+
+// ============================================================================
+// 并行工具调用测试
+// ============================================================================
+
+type toolCallEvent struct {
+	Name      string    `json:"name"`
+	Event     string    `json:"event"`
+	Timestamp time.Time `json:"timestamp"`
+	Index     int       `json:"index"`
+}
+
+// TestParallelToolCalls 测试并行工具调用
+func TestParallelToolCalls(t *testing.T) {
+	baseURL, apiKey, model := getTestConfig()
+	skipIfNoAPIKey(t, apiKey)
+
+	t.Run("ParallelExecution", func(t *testing.T) {
+		agentDsl := fmt.Sprintf(`{
+			"ruleChain": {"id": "parallel_tool_test", "name": "Parallel Tool Test", "root": true},
+			"metadata": {
+				"nodes": [{
+					"id": "react_agent", "type": "ai/agent", "name": "Parallel Agent",
+					"configuration": {
+						"url": "%s", "key": "%s", "model": "%s",
+						"systemPrompt": "你是一个高效的助手。重要规则：每个命令必须单独调用一次 bash 工具，不要在单个命令中使用 & 或 ; 连接多个命令。当用户要求执行多个命令时，必须调用多次 bash 工具。",
+						"maxStep": 10,
+						"tools": [{"name": "bash", "description": "执行 shell 命令", "type": "builtin",
+							"config": {"timeout": 30, "whitelist": ["echo", "sleep", "date"]}}]
+					}
+				}], "connections": []
+			}
+		}`, baseURL, apiKey, model)
+
+		config := rulego.NewConfig()
+		engine, err := rulego.New("parallel_tool_test", []byte(agentDsl), types.WithConfig(config))
+		assert.Nil(t, err)
+		defer engine.Stop(context.Background())
+
+		var toolCallEvents []toolCallEvent
+
+		meta := types.NewMetadata()
+		meta.PutValue("stream", "true")
+		msg := types.NewMsg(0, "TEST_MSG", types.TEXT, meta,
+			"请同时执行以下3个命令并告诉我结果：1. sleep 2  2. sleep 2  3. sleep 2")
+
+		done := make(chan string, 1)
+
+		engine.OnMsg(msg, types.WithOnEnd(func(ctx types.RuleContext, outMsg types.RuleMsg, err error, relationType string) {
+			if err != nil {
+				t.Logf("Error: %v", err)
+				done <- ""
+				return
+			}
+
+			if outMsg.Metadata.GetValue("tool_call") == "true" {
+				data := outMsg.GetData()
+				var event struct {
+					Name      string `json:"name"`
+					Event     string `json:"event"`
+					Index     int    `json:"index"`
+					Timestamp int64  `json:"timestamp"`
+				}
+				if parseErr := json.Unmarshal([]byte(data), &event); parseErr == nil {
+					if event.Event == "tool_start" {
+						toolCallEvents = append(toolCallEvents, toolCallEvent{
+							Name:      event.Name,
+							Event:     event.Event,
+							Timestamp: time.UnixMilli(event.Timestamp),
+							Index:     event.Index,
+						})
+					}
+				}
+			}
+
+			if outMsg.Metadata.GetValue("stream_completed") == "true" &&
+				outMsg.Metadata.GetValue("full_content") == "true" {
+				done <- outMsg.GetData()
+			}
+		}))
+
+		select {
+		case result := <-done:
+			assert.True(t, len(result) > 0, "Response should not be empty")
+			t.Logf("Agent Response: %s", truncateString(result, 200))
+			t.Logf("Tool call events: %d", len(toolCallEvents))
+
+			if len(toolCallEvents) >= 2 {
+				for i := 1; i < len(toolCallEvents); i++ {
+					timeDiff := toolCallEvents[i].Timestamp.Sub(toolCallEvents[0].Timestamp)
+					t.Logf("Time diff between tool %d and tool 0: %v", i, timeDiff)
+				}
+			}
+		case <-time.After(120 * time.Second):
 			t.Error("Timeout")
 		}
 	})

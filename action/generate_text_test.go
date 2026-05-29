@@ -6,6 +6,7 @@ import (
 	"github.com/rulego/rulego/test"
 	"github.com/rulego/rulego/test/assert"
 	"os"
+	"strings"
 	"testing"
 	"time"
 )
@@ -16,6 +17,13 @@ func getEnvOrDefault(key, defaultValue string) string {
 		return defaultValue
 	}
 	return value
+}
+
+func getVisionModelOrDefault(defaultModel string) string {
+	if m := os.Getenv("LLM_VISION_MODEL"); m != "" {
+		return m
+	}
+	return getEnvOrDefault("LLM_MODEL", defaultModel)
 }
 
 func TestGenerateTextNodeOnMsg(t *testing.T) {
@@ -41,6 +49,13 @@ func TestGenerateTextNodeOnMsg(t *testing.T) {
 	}
 	starTime := time.Now()
 	ctx := test.NewRuleContext(config, func(msg types.RuleMsg, relationType string, err error) {
+		if err != nil {
+			errStr := err.Error()
+			if strings.Contains(errStr, "429") || strings.Contains(errStr, "rate limit") {
+				t.Skipf("API rate limited: %v", err)
+			}
+			t.Logf("OnMsg error: %v", err)
+		}
 		assert.Equal(t, types.Success, relationType)
 		fmt.Println("用时:" + time.Since(starTime).String())
 		fmt.Println(msg.Data)
@@ -77,6 +92,13 @@ func TestGenerateTextNodeOnMsg2(t *testing.T) {
 		t.Errorf("err=%s", err)
 	}
 	ctx := test.NewRuleContext(config, func(msg types.RuleMsg, relationType string, err error) {
+		if err != nil {
+			errStr := err.Error()
+			if strings.Contains(errStr, "429") || strings.Contains(errStr, "rate limit") {
+				t.Skipf("API rate limited: %v", err)
+			}
+			t.Logf("OnMsg error: %v", err)
+		}
 		assert.Equal(t, types.Success, relationType)
 		fmt.Print(msg.Data)
 	})
@@ -111,6 +133,13 @@ func TestGenerateTextNodeOnMsg3(t *testing.T) {
 		t.Errorf("err=%s", err)
 	}
 	ctx := test.NewRuleContext(config, func(msg types.RuleMsg, relationType string, err error) {
+		if err != nil {
+			errStr := err.Error()
+			if strings.Contains(errStr, "429") || strings.Contains(errStr, "rate limit") {
+				t.Skipf("API rate limited: %v", err)
+			}
+			t.Logf("OnMsg error: %v", err)
+		}
 		assert.Equal(t, types.Success, relationType)
 		fmt.Print(msg.Data)
 	})
@@ -163,6 +192,13 @@ func TestGenerateTextNodeOnMsg4(t *testing.T) {
 		t.Errorf("err=%s", err)
 	}
 	ctx := test.NewRuleContext(config, func(msg types.RuleMsg, relationType string, err error) {
+		if err != nil {
+			errStr := err.Error()
+			if strings.Contains(errStr, "429") || strings.Contains(errStr, "rate limit") {
+				t.Skipf("API rate limited: %v", err)
+			}
+			t.Logf("OnMsg error: %v", err)
+		}
 		assert.Equal(t, types.Success, relationType)
 		fmt.Print(msg.Data)
 	})
@@ -179,7 +215,7 @@ func TestGenerateTextNodeOnMsgMultiContent(t *testing.T) {
 	var configuration = make(types.Configuration)
 	configuration["key"] = getEnvOrDefault("LLM_API_KEY", "")
 	configuration["url"] = getEnvOrDefault("LLM_BASE_URL", "https://ai.gitee.com/v1")
-	configuration["model"] = getEnvOrDefault("LLM_MODEL", "Qwen2-VL-72B")
+	configuration["model"] = getVisionModelOrDefault("Qwen2-VL-72B")
 	configuration["systemPrompt"] = ""
 	configuration["messages"] = []ChatMessage{
 		{
@@ -200,6 +236,13 @@ func TestGenerateTextNodeOnMsgMultiContent(t *testing.T) {
 		t.Errorf("err=%s", err)
 	}
 	ctx := test.NewRuleContext(config, func(msg types.RuleMsg, relationType string, err error) {
+		if err != nil {
+			errStr := err.Error()
+			if strings.Contains(errStr, "429") || strings.Contains(errStr, "rate limit") {
+				t.Skipf("API rate limited: %v", err)
+			}
+			t.Logf("OnMsg error: %v", err)
+		}
 		assert.Equal(t, types.Success, relationType)
 		fmt.Print(msg.Data)
 	})

@@ -306,7 +306,7 @@ func TestIntentNode_OnMsg_Integration(t *testing.T) {
 			msg := ctx.NewMsg("AI_MESSAGE", metaData, tc.input)
 			startTime := time.Now()
 
-			node.OnMsg(ctx, msg)
+			go node.OnMsg(ctx, msg)
 
 			select {
 			case <-done:
@@ -317,6 +317,12 @@ func TestIntentNode_OnMsg_Integration(t *testing.T) {
 				t.Logf("  metadata.intent: %s", resultMsg.GetMetadata().GetValue(IntentMetadataKey))
 				t.Logf("  原始数据是否保留: data=%s", resultMsg.GetData())
 
+				if resultErr != nil {
+					errStr := resultErr.Error()
+					if strings.Contains(errStr, "429") || strings.Contains(errStr, "rate limit") {
+						t.Skipf("API rate limited: %v", resultErr)
+					}
+				}
 				assert.Nil(t, resultErr)
 
 				matched := false

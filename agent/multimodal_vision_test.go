@@ -17,9 +17,13 @@
 package agent
 
 import (
+	"bytes"
 	"context"
 	"encoding/base64"
 	"fmt"
+	"image"
+	"image/color"
+	"image/png"
 	"os"
 	"strings"
 	"testing"
@@ -341,29 +345,18 @@ func TestMultimodal_ImageRecognitionWithBase64(t *testing.T) {
 	t.Logf("   Response: %s", truncateString(response.Content, 200))
 }
 
-// createTestPNGBase64 创建一个简单的测试 PNG 图片的 Base64 编码
-// 这是一个 1x1 红色像素的最小有效 PNG
+// createTestPNGBase64 åå»ºä¸ä¸ªæµè¯ PNG å¾çç Base64 ç¼ç 
+// ä½¿ç¨ Go æ ååºçæ 10x10 çº¢è² PNGï¼å¼å®¹å LLM API çå¾çè§£æè¦æ±
 func createTestPNGBase64() string {
-	// 最小的有效 PNG 文件（1x1 红色像素）
-	pngData := []byte{
-		0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A, // PNG signature
-		0x00, 0x00, 0x00, 0x0D, // IHDR length
-		0x49, 0x48, 0x44, 0x52, // IHDR
-		0x00, 0x00, 0x00, 0x01, // width = 1
-		0x00, 0x00, 0x00, 0x01, // height = 1
-		0x08, 0x02, // bit depth = 8, color type = 2 (RGB)
-		0x00, 0x00, 0x00, // compression, filter, interlace
-		0x90, 0x77, 0x53, 0xDE, // CRC
-		0x00, 0x00, 0x00, 0x0C, // IDAT length
-		0x49, 0x44, 0x41, 0x54, // IDAT
-		0x08, 0xD7, 0x63, 0xF8, 0xCF, 0xC0, 0x00, 0x00, // compressed data (red pixel)
-		0x00, 0x03, 0x00, 0x01,
-		0x12, 0xDD, 0x8D, 0x0C, // CRC
-		0x00, 0x00, 0x00, 0x00, // IEND length
-		0x49, 0x45, 0x4E, 0x44, // IEND
-		0xAE, 0x42, 0x60, 0x82, // CRC
+	img := image.NewRGBA(image.Rect(0, 0, 10, 10))
+	for y := 0; y < 10; y++ {
+		for x := 0; x < 10; x++ {
+			img.Set(x, y, color.RGBA{R: 255, G: 0, B: 0, A: 255})
+		}
 	}
-	return base64.StdEncoding.EncodeToString(pngData)
+	var buf bytes.Buffer
+	png.Encode(&buf, img)
+	return base64.StdEncoding.EncodeToString(buf.Bytes())
 }
 
 // ============================================================================
