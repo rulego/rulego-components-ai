@@ -1,6 +1,8 @@
 # rulego-components-ai
 
-An AI agent development framework built on the [RuleGo](https://github.com/rulego/rulego) rule engine. It can be used to develop standalone AI agents or serve as the foundation for building AI coding assistants like Claude Code / OpenClaw. It adopts the **rule chain as agent** design philosophy, embedding LLM reasoning capabilities into event-driven rule chain workflows. Through JSON declarative configuration, 10 AOP aspects, unified abstraction of four tool categories, and multi-dimensional session management, it enables building production-grade agent applications.
+> A Declarative AI Agent Development Framework
+
+A **declarative** AI agent development framework built on the [RuleGo](https://github.com/rulego/rulego) rule engine. It can be used to develop standalone AI agents or serve as the foundation for building AI coding assistants like Claude Code / OpenClaw. It adopts the **rule chain as agent** design philosophy, embedding LLM reasoning capabilities into event-driven rule chain workflows. Through JSON declarative configuration, 10 AOP aspects, unified abstraction of four tool categories, and multi-dimensional session management, it enables building production-grade agent applications.
 
 **Full Documentation:** [Docs](https://rulego.cc/en/pages/ai-agent-overview/)
 

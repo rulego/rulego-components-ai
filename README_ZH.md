@@ -1,6 +1,8 @@
 # rulego-components-ai
 
-基于 [RuleGo](https://github.com/rulego/rulego) 规则引擎的 AI 智能体开发框架。可用于开发独立的 AI 智能体，也可作为基础构建类 Claude Code / OpenClaw 等 AI 编程助手应用。采用**规则链即智能体**的设计理念，将 LLM 推理能力嵌入事件驱动的规则链工作流，通过 JSON 声明式配置、10 种 AOP 切面、四类工具统一抽象和多维会话管理，构建生产级智能体应用。
+> 声明式 AI 智能体开发框架
+
+基于 [RuleGo](https://github.com/rulego/rulego) 规则引擎的**声明式** AI 智能体开发框架。可用于开发独立的 AI 智能体，也可作为基础构建类 Claude Code / OpenClaw 等 AI 编程助手应用。采用**规则链即智能体**的设计理念，将 LLM 推理能力嵌入事件驱动的规则链工作流，通过 JSON 声明式配置、10 种 AOP 切面、四类工具统一抽象和多维会话管理，构建生产级智能体应用。
 
 **完整文档：** [文档](https://rulego.cc/pages/ai-agent-overview/) 
 
