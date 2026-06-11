@@ -12,6 +12,18 @@ import (
 	rulegoReflect "github.com/rulego/rulego/utils/reflect"
 )
 
+// DynamicSkillLister 支持动态获取技能列表的工具接口。
+// 实现此接口的工具会在每次请求时通过 MessageModifier 将最新技能列表注入 system prompt，
+// 而不是在初始化时将技能列表固化到 tool description 中。
+type DynamicSkillLister interface {
+	tool.BaseTool
+	// ListSkills 获取当前可用技能列表，渲染为可注入 system prompt 的文本。
+	// 每次调用应检查底层数据源是否有变化（如文件指纹）。
+	ListSkills(ctx context.Context) (string, error)
+	// GetSkillInstruction 返回技能系统的使用说明（如"如何使用 Skill"的指引文本）。
+	GetSkillInstruction() string
+}
+
 // GetToolFromConfig 从 rulego Config 中获取 AI 工具
 func GetToolFromConfig(c types.Config, name string) (tool.BaseTool, bool) {
 	if t := c.GetUdf(name, types.AiTool); t != nil {

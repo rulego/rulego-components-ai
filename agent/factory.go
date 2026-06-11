@@ -470,6 +470,10 @@ type AgentOptions struct {
 	MaxStep      int
 	ToolsConfig  compose.ToolsNodeConfig
 	Logger       types.Logger
+	// MessageModifier 在每次模型调用前修改消息列表。
+	// 用于动态注入内容（如技能列表）到 system prompt。
+	// 在 MessageRewriter 之后执行。
+	MessageModifier func(ctx context.Context, input []*schema.Message) []*schema.Message
 }
 
 // CreateReactAgent 创建 React Agent
@@ -488,6 +492,8 @@ func CreateReactAgent(ctx context.Context, chatModel model.ToolCallingChatModel,
 		// 在每次模型调用前清洗 tool_calls 的 Arguments 字段，
 		// 避免空字符串因 omitempty 被省略导致部分 API（如 DashScope）返回 400 错误
 		MessageRewriter: sanitizeToolCallArguments,
+		// 动态注入技能列表等运行时内容到 system prompt
+		MessageModifier: opts.MessageModifier,
 	}
 
 	return react.NewAgent(ctx, cfg)

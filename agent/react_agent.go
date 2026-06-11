@@ -19,6 +19,7 @@ package agent
 import (
 	"context"
 	"fmt"
+	"strings"
 
 	"github.com/cloudwego/eino/adk"
 	"github.com/cloudwego/eino/components/model"
@@ -28,6 +29,7 @@ import (
 	"github.com/rulego/rulego"
 	"github.com/rulego/rulego-components-ai/aspect"
 	"github.com/rulego/rulego-components-ai/config"
+	aitool "github.com/rulego/rulego-components-ai/tool"
 	"github.com/rulego/rulego-components-ai/utils/token"
 	"github.com/rulego/rulego/api/types"
 	"github.com/rulego/rulego/components/base"
@@ -156,16 +158,26 @@ func (x *ReactAgentNode) Init(ruleConfig types.Config, configuration types.Confi
 		return fmt.Errorf("failed to create tools: %v", err)
 	}
 
-	// 7. 创建 React Agent
+	// 7. 检测动态技能工具，构建 MessageModifier
+	var messageModifier func(ctx context.Context, input []*schema.Message) []*schema.Message
+	for _, t := range tools {
+		if dst, ok := t.(aitool.DynamicSkillLister); ok {
+			messageModifier = BuildSkillModifier(dst)
+			break
+		}
+	}
+
+	// 8. 创建 React Agent
 	maxStep := x.Config.MaxStep
 	if maxStep <= 0 {
 		maxStep = DefaultMaxStep
 	}
 
 	agent, err := CreateReactAgent(context.Background(), chatModel, AgentOptions{
-		MaxStep:     maxStep,
-		ToolsConfig: buildToolsConfig(tools),
-		Logger:      ruleConfig.Logger,
+		MaxStep:         maxStep,
+		ToolsConfig:     buildToolsConfig(tools),
+		Logger:          ruleConfig.Logger,
+		MessageModifier: messageModifier,
 	})
 	if err != nil {
 		return fmt.Errorf("failed to create react agent: %v", err)
@@ -440,4 +452,58 @@ func (x *ReactAgentNode) executeStream(ctx types.RuleContext, msg types.RuleMsg,
 // Destroy 销毁节点
 func (x *ReactAgentNode) Destroy() {
 	// Agent 不需要显式清理
+}
+
+// skillPromptMarker 将原始 system prompt 与技能提示词分隔开。
+// MessageModifier 接收的是累积消息（state.Messages 浅拷贝），
+// 每轮需要从 system message 中提取原始内容再注入最新技能列表，避免重复累积。
+const skillPromptMarker = "\n<!-- SKILL_LIST -->\n"
+
+// BuildSkillModifier 构建技能列表的 MessageModifier。
+// 每次模型调用前，从 DynamicSkillLister 获取最新技能列表并注入 system prompt。
+// 参考 eino NewPersonaModifier（react.go:208-216）：创建新切片 + 新对象，不修改原始消息。
+func BuildSkillModifier(skillTool aitool.DynamicSkillLister) func(ctx context.Context, input []*schema.Message) []*schema.Message {
+	return func(ctx context.Context, input []*schema.Message) []*schema.Message {
+		// 1. 获取最新技能列表（触发 MultiBackend 指纹检查 → 热更新）
+		skillList, err := skillTool.ListSkills(ctx)
+		if err != nil || skillList == "" {
+			return input
+		}
+
+		// 2. 组装技能提示词（用 marker 与原始内容分隔）
+		skillPrompt := skillPromptMarker + skillTool.GetSkillInstruction() + "\n" + skillList
+
+		// 3. 创建新切片，不修改原始消息（避免浅拷贝状态污染）
+		result := make([]*schema.Message, 0, len(input)+1)
+		systemFound := false
+
+		for _, msg := range input {
+			if msg.Role == schema.System && !systemFound {
+				systemFound = true
+				// 提取原始内容（去掉上轮注入的技能提示词），再注入最新列表
+				originalContent := ExtractOriginalSystemContent(msg.Content)
+				newMsg := schema.SystemMessage(originalContent + skillPrompt)
+				result = append(result, newMsg)
+			} else {
+				result = append(result, msg)
+			}
+		}
+
+		// 4. 没有 system message，创建新的
+		if !systemFound {
+			result = append([]*schema.Message{schema.SystemMessage(skillPrompt)}, result...)
+		}
+
+		return result
+	}
+}
+
+// ExtractOriginalSystemContent 提取原始 system prompt（marker 之前的部分）。
+// 如果没有 marker，说明是首次注入，返回原始内容。
+func ExtractOriginalSystemContent(content string) string {
+	idx := strings.Index(content, skillPromptMarker)
+	if idx != -1 {
+		return content[:idx]
+	}
+	return content
 }

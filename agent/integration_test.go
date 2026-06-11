@@ -20,6 +20,7 @@ import (
 	"context"
 	"fmt"
 	"os"
+	"path/filepath"
 	"strings"
 	"sync"
 	"testing"
@@ -28,6 +29,8 @@ import (
 	"github.com/cloudwego/eino/schema"
 	"github.com/rulego/rulego"
 	"github.com/rulego/rulego-components-ai/config"
+	aitool "github.com/rulego/rulego-components-ai/tool"
+	_ "github.com/rulego/rulego-components-ai/tool/skill"
 	"github.com/rulego/rulego/api/types"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -889,4 +892,392 @@ func TestIntegration_RuleChainVisionMultiTurn(t *testing.T) {
 	case <-time.After(120 * time.Second):
 		t.Fatal("Timeout in turn 2")
 	}
+}
+
+// ============================================
+// Skill 热更新测试
+// ============================================
+
+// mockDynamicSkillLister 用于测试的动态技能工具 mock
+type mockDynamicSkillLister struct {
+	skills      string
+	instruction string
+}
+
+func (m *mockDynamicSkillLister) Info(ctx context.Context) (*schema.ToolInfo, error) {
+	return &schema.ToolInfo{Name: "skill", Desc: "mock skill tool"}, nil
+}
+
+func (m *mockDynamicSkillLister) ListSkills(ctx context.Context) (string, error) {
+	return m.skills, nil
+}
+
+func (m *mockDynamicSkillLister) GetSkillInstruction() string {
+	return m.instruction
+}
+
+// TestExtractOriginalSystemContent 测试从 system message 中提取原始内容
+func TestExtractOriginalSystemContent(t *testing.T) {
+	// 没有 marker 的内容，应原样返回
+	content := "You are a helpful assistant."
+	result := ExtractOriginalSystemContent(content)
+	assert.Equal(t, content, result)
+
+	// 有 marker 的内容，应返回 marker 之前的部分
+	contentWithSkill := "You are a helpful assistant.\n<!-- SKILL_LIST -->\nSkill system instructions\n<available_skills>...</available_skills>"
+	result = ExtractOriginalSystemContent(contentWithSkill)
+	assert.Equal(t, "You are a helpful assistant.", result)
+
+	// 空内容
+	result = ExtractOriginalSystemContent("")
+	assert.Equal(t, "", result)
+}
+
+// TestBuildSkillModifier 测试 MessageModifier 的行为
+func TestBuildSkillModifier(t *testing.T) {
+	mock := &mockDynamicSkillLister{
+		skills:      "<available_skills>\n<skill>\n<name>test_skill</name>\n<description>Test</description>\n</skill>\n</available_skills>",
+		instruction: "You have skills available.",
+	}
+
+	modifier := BuildSkillModifier(mock)
+	require.NotNil(t, modifier)
+
+	ctx := context.Background()
+
+	t.Run("首次注入：无 system message", func(t *testing.T) {
+		input := []*schema.Message{
+			{Role: schema.User, Content: "Hello"},
+		}
+		result := modifier(ctx, input)
+
+		assert.Len(t, result, 2)
+		assert.Equal(t, schema.System, result[0].Role)
+		assert.Contains(t, result[0].Content, "You have skills available.")
+		assert.Contains(t, result[0].Content, "test_skill")
+		assert.Equal(t, schema.User, result[1].Role)
+	})
+
+	t.Run("首次注入：已有 system message", func(t *testing.T) {
+		input := []*schema.Message{
+			{Role: schema.System, Content: "You are a helpful assistant."},
+			{Role: schema.User, Content: "Hello"},
+		}
+		result := modifier(ctx, input)
+
+		assert.Len(t, result, 2)
+		assert.Equal(t, schema.System, result[0].Role)
+		assert.Contains(t, result[0].Content, "You are a helpful assistant.")
+		assert.Contains(t, result[0].Content, "test_skill")
+		assert.Contains(t, result[0].Content, skillPromptMarker)
+	})
+
+	t.Run("不修改原始消息对象（浅拷贝安全）", func(t *testing.T) {
+		originalContent := "You are a helpful assistant."
+		originalMsg := &schema.Message{Role: schema.System, Content: originalContent}
+		input := []*schema.Message{
+			originalMsg,
+			{Role: schema.User, Content: "Hello"},
+		}
+
+		result := modifier(ctx, input)
+
+		// 原始消息不应被修改
+		assert.Equal(t, originalContent, originalMsg.Content)
+		// 结果中的 system message 应该是新对象
+		assert.NotEqual(t, originalMsg, result[0])
+		assert.Contains(t, result[0].Content, "test_skill")
+	})
+
+	t.Run("多轮累积不重复", func(t *testing.T) {
+		input := []*schema.Message{
+			{Role: schema.System, Content: "You are a helpful assistant."},
+			{Role: schema.User, Content: "Hello"},
+		}
+
+		// 第 1 轮
+		result1 := modifier(ctx, input)
+		// 第 2 轮：用第 1 轮的 system message 作为输入
+		input2 := []*schema.Message{
+			result1[0], // 包含 marker 的 system message
+			{Role: schema.Assistant, Content: "Hi there!"},
+			{Role: schema.User, Content: "What skills do you have?"},
+		}
+		result2 := modifier(ctx, input2)
+
+		// system message 中技能提示词不应重复
+		sysContent := result2[0].Content
+		count := strings.Count(sysContent, "<available_skills>")
+		assert.Equal(t, 1, count, "技能提示词不应重复，出现次数: %d", count)
+		// 原始内容应保留
+		assert.Contains(t, sysContent, "You are a helpful assistant.")
+	})
+
+	t.Run("ListSkills 失败时返回原始消息", func(t *testing.T) {
+		failMock := &mockDynamicSkillLister{
+			skills:      "",
+			instruction: "instruction",
+		}
+		failModifier := BuildSkillModifier(failMock)
+
+		input := []*schema.Message{
+			{Role: schema.User, Content: "Hello"},
+		}
+		result := failModifier(ctx, input)
+
+		// 不应注入任何内容
+		assert.Len(t, result, 1)
+		assert.Equal(t, schema.User, result[0].Role)
+	})
+}
+
+// TestIntegration_SkillWithReactAgent 测试 skill 工具与 ReactAgent 的集成（需要 LLM）
+func TestIntegration_SkillWithReactAgent(t *testing.T) {
+	cfg := getIntegrationConfig()
+	if cfg.Key == "" {
+		t.Skip("LLM_API_KEY not set, skipping integration test")
+	}
+
+	// 创建技能目录
+	tmpDir := t.TempDir()
+	skillDir := filepath.Join(tmpDir, "greeting")
+	require.NoError(t, os.MkdirAll(skillDir, 0755))
+	require.NoError(t, os.WriteFile(filepath.Join(skillDir, "SKILL.md"), []byte(`---
+name: greeting
+description: A skill for greeting users in different languages
+---
+When greeting users, always say "Hello from the greeting skill!" and then greet in 3 languages.
+`), 0644))
+
+	// 创建带有 skill 工具的智能体
+	toolsConfig := []config.Tool{
+		{
+			Type: config.ToolTypeBuiltin,
+			Name: "skill",
+			Config: map[string]interface{}{
+				"localDirs": []string{tmpDir},
+			},
+		},
+	}
+
+	chatModel, err := CreateChatModel(cfg, ModelOptions{
+		Logger:     NewTestLogger(t),
+		WrapRetry:  true,
+		MaxRetries: cfg.MaxRetries,
+	})
+	require.NoError(t, err)
+
+	tools, _, err := CreateTools(toolsConfig, ToolOptions{
+		WrapVisual: false,
+		Logger:     NewTestLogger(t),
+	})
+	require.NoError(t, err)
+	require.NotEmpty(t, tools)
+
+	// 验证工具是 DynamicSkillLister
+	_, isDynamic := tools[0].(aitool.DynamicSkillLister)
+	require.True(t, isDynamic, "skill tool should implement DynamicSkillLister")
+
+	// 创建 MessageModifier
+	var messageModifier func(ctx context.Context, input []*schema.Message) []*schema.Message
+	for _, t := range tools {
+		if dst, ok := t.(aitool.DynamicSkillLister); ok {
+			messageModifier = BuildSkillModifier(dst)
+			break
+		}
+	}
+	require.NotNil(t, messageModifier)
+
+	// 创建 React Agent
+	agent, err := CreateReactAgent(context.Background(), chatModel, AgentOptions{
+		MaxStep:         10,
+		ToolsConfig:     buildToolsConfig(tools),
+		Logger:          NewTestLogger(t),
+		MessageModifier: messageModifier,
+	})
+	require.NoError(t, err)
+
+	// 发送请求，验证 agent 能识别并使用技能
+	ctx := context.Background()
+	resp, err := agent.Generate(ctx, []*schema.Message{
+		{Role: schema.User, Content: "Please greet me using the greeting skill"},
+	})
+	require.NoError(t, err)
+	require.NotNil(t, resp)
+
+	t.Logf("✅ Agent response: %s", truncateString(resp.Content, 200))
+}
+
+// TestIntegration_SkillHotReload 测试技能热更新（需要 LLM）
+func TestIntegration_SkillHotReload(t *testing.T) {
+	cfg := getIntegrationConfig()
+	if cfg.Key == "" {
+		t.Skip("LLM_API_KEY not set, skipping integration test")
+	}
+
+	tmpDir := t.TempDir()
+
+	// 初始技能
+	skillDir := filepath.Join(tmpDir, "math")
+	require.NoError(t, os.MkdirAll(skillDir, 0755))
+	require.NoError(t, os.WriteFile(filepath.Join(skillDir, "SKILL.md"), []byte(`---
+name: math
+description: Math helper skill
+---
+Always respond with "Math skill activated!"
+`), 0644))
+
+	toolsConfig := []config.Tool{
+		{
+			Type: config.ToolTypeBuiltin,
+			Name: "skill",
+			Config: map[string]interface{}{
+				"localDirs": []string{tmpDir},
+			},
+		},
+	}
+
+	chatModel, err := CreateChatModel(cfg, ModelOptions{
+		Logger:     NewTestLogger(t),
+		WrapRetry:  true,
+		MaxRetries: cfg.MaxRetries,
+	})
+	require.NoError(t, err)
+
+	tools, _, err := CreateTools(toolsConfig, ToolOptions{
+		WrapVisual: false,
+		Logger:     NewTestLogger(t),
+	})
+	require.NoError(t, err)
+
+	var messageModifier func(ctx context.Context, input []*schema.Message) []*schema.Message
+	for _, t := range tools {
+		if dst, ok := t.(aitool.DynamicSkillLister); ok {
+			messageModifier = BuildSkillModifier(dst)
+			break
+		}
+	}
+
+	agent, err := CreateReactAgent(context.Background(), chatModel, AgentOptions{
+		MaxStep:         10,
+		ToolsConfig:     buildToolsConfig(tools),
+		Logger:          NewTestLogger(t),
+		MessageModifier: messageModifier,
+	})
+	require.NoError(t, err)
+
+	ctx := context.Background()
+
+	// 1. 第一轮请求：只有 math 技能
+	resp, err := agent.Generate(ctx, []*schema.Message{
+		{Role: schema.User, Content: "What skills do you have? List them."},
+	})
+	require.NoError(t, err)
+	t.Logf("✅ Turn 1 (before hot-reload): %s", truncateString(resp.Content, 200))
+
+	// 2. 运行时新增一个技能
+	time.Sleep(100 * time.Millisecond)
+	newSkillDir := filepath.Join(tmpDir, "weather")
+	require.NoError(t, os.MkdirAll(newSkillDir, 0755))
+	require.NoError(t, os.WriteFile(filepath.Join(newSkillDir, "SKILL.md"), []byte(`---
+name: weather
+description: Weather forecast skill
+---
+Always respond with "Weather skill activated!"
+`), 0644))
+
+	// 3. 第二轮请求：应能看到新增的 weather 技能
+	// 注意：由于 react.Agent 是编译好的 graph，tool schema 不会变，
+	// 但 MessageModifier 会注入最新的技能列表到 system prompt
+	resp2, err := agent.Generate(ctx, []*schema.Message{
+		{Role: schema.User, Content: "What skills do you have now? List them."},
+	})
+	require.NoError(t, err)
+	t.Logf("✅ Turn 2 (after hot-reload): %s", truncateString(resp2.Content, 200))
+}
+
+// TestIntegration_SkillDescriptionChange 测试修改技能描述后智能体能感知到（需要 LLM）
+func TestIntegration_SkillDescriptionChange(t *testing.T) {
+	cfg := getIntegrationConfig()
+	if cfg.Key == "" {
+		t.Skip("LLM_API_KEY not set, skipping integration test")
+	}
+
+	tmpDir := t.TempDir()
+
+	// 初始技能：描述为 "Math helper skill"
+	skillDir := filepath.Join(tmpDir, "calculator")
+	require.NoError(t, os.MkdirAll(skillDir, 0755))
+	require.NoError(t, os.WriteFile(filepath.Join(skillDir, "SKILL.md"), []byte(`---
+name: calculator
+description: Math helper skill
+---
+This is a math skill.
+`), 0644))
+
+	toolsConfig := []config.Tool{
+		{
+			Type: config.ToolTypeBuiltin,
+			Name: "skill",
+			Config: map[string]interface{}{
+				"localDirs": []string{tmpDir},
+			},
+		},
+	}
+
+	chatModel, err := CreateChatModel(cfg, ModelOptions{
+		Logger:     NewTestLogger(t),
+		WrapRetry:  true,
+		MaxRetries: cfg.MaxRetries,
+	})
+	require.NoError(t, err)
+
+	tools, _, err := CreateTools(toolsConfig, ToolOptions{
+		WrapVisual: false,
+		Logger:     NewTestLogger(t),
+	})
+	require.NoError(t, err)
+
+	var messageModifier func(ctx context.Context, input []*schema.Message) []*schema.Message
+	for _, t := range tools {
+		if dst, ok := t.(aitool.DynamicSkillLister); ok {
+			messageModifier = BuildSkillModifier(dst)
+			break
+		}
+	}
+
+	agent, err := CreateReactAgent(context.Background(), chatModel, AgentOptions{
+		MaxStep:         10,
+		ToolsConfig:     buildToolsConfig(tools),
+		Logger:          NewTestLogger(t),
+		MessageModifier: messageModifier,
+	})
+	require.NoError(t, err)
+
+	ctx := context.Background()
+
+	// 1. 第一轮：描述为 "Math helper skill"
+	resp, err := agent.Generate(ctx, []*schema.Message{
+		{Role: schema.User, Content: "What is the calculator skill about? Just tell me its description."},
+	})
+	require.NoError(t, err)
+	t.Logf("✅ Turn 1 (original description): %s", truncateString(resp.Content, 200))
+	assert.Contains(t, resp.Content, "Math helper skill")
+
+	// 2. 修改技能描述
+	time.Sleep(100 * time.Millisecond)
+	require.NoError(t, os.WriteFile(filepath.Join(skillDir, "SKILL.md"), []byte(`---
+name: calculator
+description: Advanced scientific calculator with graph plotting capabilities
+---
+This is an advanced calculator skill.
+`), 0644))
+
+	// 3. 第二轮：应看到新描述
+	resp2, err := agent.Generate(ctx, []*schema.Message{
+		{Role: schema.User, Content: "What is the calculator skill about now? Just tell me its description."},
+	})
+	require.NoError(t, err)
+	t.Logf("✅ Turn 2 (updated description): %s", truncateString(resp2.Content, 200))
+	assert.Contains(t, resp2.Content, "Advanced scientific calculator")
 }

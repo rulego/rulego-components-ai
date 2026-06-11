@@ -2,12 +2,16 @@ package skill
 
 import (
 	"context"
+	"fmt"
 	"os"
 	"path/filepath"
 	"testing"
+	"time"
 
+	einoskill "github.com/cloudwego/eino/adk/middlewares/skill"
 	"github.com/cloudwego/eino/components/tool"
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 )
 
 // TestSkillTool 测试技能工具的基本功能
@@ -31,13 +35,23 @@ Hello world from skill!
 	tTool, err := NewTool(Config{LocalDirs: []string{tmpDir}})
 	assert.NoError(t, err)
 
-	// Test Info
 	ctx := context.Background()
+
+	// Test Info — 应返回稳定描述，不含具体技能列表
 	info, err := tTool.Info(ctx)
 	assert.NoError(t, err)
 	assert.Equal(t, "skill", info.Name)
-	assert.Contains(t, info.Desc, "hello")
-	assert.Contains(t, info.Desc, "Say hello")
+	assert.NotContains(t, info.Desc, "hello")        // 技能名不应出现在 tool description 中
+	assert.NotContains(t, info.Desc, "Say hello")    // 技能描述不应出现在 tool description 中
+	assert.Contains(t, info.Desc, "skills_instructions") // 应包含使用说明
+
+	// Test ListSkills — 应返回动态技能列表
+	dst, ok := tTool.(*dynamicSkillTool)
+	assert.True(t, ok)
+	skillsText, err := dst.ListSkills(ctx)
+	assert.NoError(t, err)
+	assert.Contains(t, skillsText, "hello")
+	assert.Contains(t, skillsText, "Say hello")
 
 	// Test InvokableRun
 	invokable, ok := tTool.(tool.InvokableTool)
@@ -90,12 +104,14 @@ User skill content
 	assert.NoError(t, err)
 
 	ctx := context.Background()
-	info, err := tTool.Info(ctx)
-	assert.NoError(t, err)
 
-	// 验证两个技能都被列出
-	assert.Contains(t, info.Desc, "global_skill")
-	assert.Contains(t, info.Desc, "user_skill")
+	// 通过 ListSkills 验证两个技能都被列出
+	dst, ok := tTool.(*dynamicSkillTool)
+	assert.True(t, ok)
+	skillsText, err := dst.ListSkills(ctx)
+	assert.NoError(t, err)
+	assert.Contains(t, skillsText, "global_skill")
+	assert.Contains(t, skillsText, "user_skill")
 
 	// 测试调用全局技能
 	invokable, _ := tTool.(tool.InvokableTool)
@@ -222,13 +238,15 @@ User only content
 	assert.NoError(t, err)
 
 	ctx := context.Background()
-	info, err := tTool.Info(ctx)
-	assert.NoError(t, err)
 
-	// 验证所有技能都被列出
-	assert.Contains(t, info.Desc, "skill1")
-	assert.Contains(t, info.Desc, "skill2")
-	assert.Contains(t, info.Desc, "user_only")
+	// 通过 ListSkills 验证所有技能都被列出
+	dst, ok := tTool.(*dynamicSkillTool)
+	assert.True(t, ok)
+	skillsText, err := dst.ListSkills(ctx)
+	assert.NoError(t, err)
+	assert.Contains(t, skillsText, "skill1")
+	assert.Contains(t, skillsText, "skill2")
+	assert.Contains(t, skillsText, "user_only")
 
 	// 测试调用
 	invokable, _ := tTool.(tool.InvokableTool)
@@ -283,12 +301,14 @@ Content from user dir 2
 	assert.NoError(t, err)
 
 	ctx := context.Background()
-	info, err := tTool.Info(ctx)
-	assert.NoError(t, err)
 
-	// 验证所有技能都被列出
-	assert.Contains(t, info.Desc, "user_skill1")
-	assert.Contains(t, info.Desc, "user_skill2")
+	// 通过 ListSkills 验证所有技能都被列出
+	dst, ok := tTool.(*dynamicSkillTool)
+	assert.True(t, ok)
+	skillsText, err := dst.ListSkills(ctx)
+	assert.NoError(t, err)
+	assert.Contains(t, skillsText, "user_skill1")
+	assert.Contains(t, skillsText, "user_skill2")
 
 	// 测试调用
 	invokable, _ := tTool.(tool.InvokableTool)
@@ -324,15 +344,185 @@ Existing content
 	assert.NoError(t, err)
 
 	ctx := context.Background()
-	info, err := tTool.Info(ctx)
-	assert.NoError(t, err)
 
-	// 验证存在的目录中的技能被正确加载
-	assert.Contains(t, info.Desc, "existing_skill")
+	// 通过 ListSkills 验证存在的目录中的技能被正确加载
+	dst, ok := tTool.(*dynamicSkillTool)
+	assert.True(t, ok)
+	skillsText, err := dst.ListSkills(ctx)
+	assert.NoError(t, err)
+	assert.Contains(t, skillsText, "existing_skill")
 
 	// 测试调用
 	invokable, _ := tTool.(tool.InvokableTool)
 	output, err := invokable.InvokableRun(ctx, `{"skill": "existing_skill"}`)
 	assert.NoError(t, err)
 	assert.Contains(t, output, "Existing content")
+}
+
+// TestDynamicSkillToolInfoStable 验证 Info() 返回稳定描述，不含具体技能列表
+func TestDynamicSkillToolInfoStable(t *testing.T) {
+	tmpDir := t.TempDir()
+	skillDir := filepath.Join(tmpDir, "my_skill")
+	require.NoError(t, os.MkdirAll(skillDir, 0755))
+	require.NoError(t, os.WriteFile(filepath.Join(skillDir, "SKILL.md"), []byte(`---
+name: my_skill
+description: My skill description
+---
+Content here
+`), 0644))
+
+	tTool, err := NewTool(Config{LocalDirs: []string{tmpDir}})
+	require.NoError(t, err)
+
+	ctx := context.Background()
+	info, err := tTool.Info(ctx)
+	require.NoError(t, err)
+
+	// Info 应返回稳定描述
+	assert.Equal(t, "skill", info.Name)
+	assert.Contains(t, info.Desc, "skills_instructions")
+	// 不应包含具体技能列表
+	assert.NotContains(t, info.Desc, "my_skill")
+	assert.NotContains(t, info.Desc, "My skill description")
+	assert.NotContains(t, info.Desc, "<available_skills>")
+}
+
+// TestDynamicSkillToolListSkills 验证 ListSkills() 返回动态技能列表
+func TestDynamicSkillToolListSkills(t *testing.T) {
+	tmpDir := t.TempDir()
+
+	// 创建两个技能
+	for _, name := range []string{"skill_a", "skill_b"} {
+		skillDir := filepath.Join(tmpDir, name)
+		require.NoError(t, os.MkdirAll(skillDir, 0755))
+		require.NoError(t, os.WriteFile(filepath.Join(skillDir, "SKILL.md"), []byte(fmt.Sprintf(`---
+name: %s
+description: Description of %s
+---
+Content of %s
+`, name, name, name)), 0644))
+	}
+
+	tTool, err := NewTool(Config{LocalDirs: []string{tmpDir}})
+	require.NoError(t, err)
+
+	dst, ok := tTool.(*dynamicSkillTool)
+	require.True(t, ok)
+
+	ctx := context.Background()
+	skillsText, err := dst.ListSkills(ctx)
+	require.NoError(t, err)
+
+	// 应包含 <available_skills> 格式
+	assert.Contains(t, skillsText, "<available_skills>")
+	assert.Contains(t, skillsText, "skill_a")
+	assert.Contains(t, skillsText, "skill_b")
+	assert.Contains(t, skillsText, "Description of skill_a")
+	assert.Contains(t, skillsText, "Description of skill_b")
+}
+
+// TestDynamicSkillToolHotReload 验证热更新：运行时新增/修改/删除技能文件后 ListSkills 能感知变化
+func TestDynamicSkillToolHotReload(t *testing.T) {
+	tmpDir := t.TempDir()
+
+	// 初始技能
+	skillDir := filepath.Join(tmpDir, "original_skill")
+	require.NoError(t, os.MkdirAll(skillDir, 0755))
+	require.NoError(t, os.WriteFile(filepath.Join(skillDir, "SKILL.md"), []byte(`---
+name: original_skill
+description: Original skill
+---
+Original content
+`), 0644))
+
+	tTool, err := NewTool(Config{LocalDirs: []string{tmpDir}})
+	require.NoError(t, err)
+
+	dst := tTool.(*dynamicSkillTool)
+	ctx := context.Background()
+
+	// 1. 初始状态：只有 original_skill
+	skillsText, err := dst.ListSkills(ctx)
+	require.NoError(t, err)
+	assert.Contains(t, skillsText, "original_skill")
+	assert.NotContains(t, skillsText, "new_skill")
+
+	// 2. 新增技能文件
+	time.Sleep(10 * time.Millisecond) // 确保修改时间不同
+	newSkillDir := filepath.Join(tmpDir, "new_skill")
+	require.NoError(t, os.MkdirAll(newSkillDir, 0755))
+	require.NoError(t, os.WriteFile(filepath.Join(newSkillDir, "SKILL.md"), []byte(`---
+name: new_skill
+description: New skill added at runtime
+---
+New content
+`), 0644))
+
+	skillsText, err = dst.ListSkills(ctx)
+	require.NoError(t, err)
+	assert.Contains(t, skillsText, "original_skill")
+	assert.Contains(t, skillsText, "new_skill")
+
+	// 3. 修改已有技能内容
+	time.Sleep(10 * time.Millisecond)
+	require.NoError(t, os.WriteFile(filepath.Join(skillDir, "SKILL.md"), []byte(`---
+name: original_skill
+description: Updated description
+---
+Updated content
+`), 0644))
+
+	skillsText, err = dst.ListSkills(ctx)
+	require.NoError(t, err)
+	assert.Contains(t, skillsText, "Updated description")
+	assert.NotContains(t, skillsText, "Original skill")
+
+	// 4. 删除技能
+	require.NoError(t, os.RemoveAll(newSkillDir))
+	skillsText, err = dst.ListSkills(ctx)
+	require.NoError(t, err)
+	assert.Contains(t, skillsText, "original_skill")
+	assert.NotContains(t, skillsText, "new_skill")
+}
+
+// TestDynamicSkillToolGetSkillInstruction 验证 GetSkillInstruction 返回技能系统使用说明
+func TestDynamicSkillToolGetSkillInstruction(t *testing.T) {
+	tmpDir := t.TempDir()
+	tTool, err := NewTool(Config{LocalDirs: []string{tmpDir}})
+	require.NoError(t, err)
+
+	dst, ok := tTool.(*dynamicSkillTool)
+	require.True(t, ok)
+
+	instruction := dst.GetSkillInstruction()
+	assert.NotEmpty(t, instruction)
+	assert.Contains(t, instruction, "Skill")
+}
+
+// TestRenderSkillList 验证 renderSkillList 边界情况
+func TestRenderSkillList(t *testing.T) {
+	// 空列表
+	result, err := renderSkillList(nil)
+	assert.NoError(t, err)
+	assert.Empty(t, result)
+
+	// 单个技能
+	result, err = renderSkillList([]einoskill.FrontMatter{
+		{Name: "test", Description: "Test skill"},
+	})
+	assert.NoError(t, err)
+	assert.Contains(t, result, "<available_skills>")
+	assert.Contains(t, result, "test")
+	assert.Contains(t, result, "Test skill")
+
+	// 多个技能
+	result, err = renderSkillList([]einoskill.FrontMatter{
+		{Name: "a", Description: "Skill A"},
+		{Name: "b", Description: "Skill B"},
+	})
+	assert.NoError(t, err)
+	assert.Contains(t, result, "a")
+	assert.Contains(t, result, "Skill A")
+	assert.Contains(t, result, "b")
+	assert.Contains(t, result, "Skill B")
 }
