@@ -154,21 +154,17 @@ func (x *ReactAgentNode) Init(ruleConfig types.Config, configuration types.Confi
 	x.tokenTracker = token.NewTokenTracker()
 	x.metricsCollector = token.NewMetricsCollector()
 
-	// 6. 创建工具
-	tools, toolInfoList, err := x.createTools(ruleConfig, chatModel)
+	// 6. 创建工具（skillLister 在包装前提取，避免 VisualToolWrapper 遮蔽接口）
+	tools, toolInfoList, skillLister, err := x.createTools(ruleConfig, chatModel)
 	if err != nil {
 		return fmt.Errorf("failed to create tools: %v", err)
 	}
 
-	// 7. 检测动态技能工具，构建 MessageModifier
+	// 7. 构建技能列表的 MessageModifier
 	var messageModifier func(ctx context.Context, input []*schema.Message) []*schema.Message
-	for _, t := range tools {
-		if dst, ok := t.(aitool.DynamicSkillLister); ok {
-			messageModifier = BuildSkillModifier(dst)
-			break
-		}
+	if skillLister != nil {
+		messageModifier = BuildSkillModifier(skillLister)
 	}
-
 	// 8. 创建 React Agent
 	maxStep := x.Config.MaxStep
 	if maxStep <= 0 {
@@ -235,7 +231,7 @@ func (x *ReactAgentNode) initNodeInfo(configuration types.Configuration) {
 }
 
 // createTools 创建工具
-func (x *ReactAgentNode) createTools(ruleConfig types.Config, chatModel interface{}) ([]tool.BaseTool, []*schema.ToolInfo, error) {
+func (x *ReactAgentNode) createTools(ruleConfig types.Config, chatModel interface{}) ([]tool.BaseTool, []*schema.ToolInfo, aitool.DynamicSkillLister, error) {
 	return CreateTools(x.Config.Tools, ToolOptions{
 		RuleConfig:     ruleConfig,
 		RuleEnginePool: x.ruleEnginePool,

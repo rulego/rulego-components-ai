@@ -64,7 +64,7 @@ const toolDescBaseChinese = `在主对话中执行 Skill（技能）
 - 当 Skill 相关时，你必须立即调用此工具作为第一个动作
 - 切勿仅在文本回复中提及 Skill 而不实际调用此工具
 - 这是阻塞性要求：在生成任何关于任务的其他响应之前，先调用相关的 Skill 工具
-- 仅使用 <available_skills> 中列出的 Skill
+- 仅使用系统提示词中 <available_skills> 列出的 Skill
 - 不要调用已经运行中的 Skill
 - Skill 内容中可能包含相对路径，需使用工具返回的 base directory 将其转换为绝对路径
 </skills_instructions>

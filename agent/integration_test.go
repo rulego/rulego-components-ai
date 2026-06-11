@@ -188,7 +188,7 @@ func TestIntegration_CreateReactAgent(t *testing.T) {
 		},
 	}
 
-	agentTools, _, err := CreateTools(tools, ToolOptions{
+	agentTools, _, _, err := CreateTools(tools, ToolOptions{
 		Logger: NewTestLogger(t),
 	})
 	require.NoError(t, err, "Failed to create tools")
@@ -1067,7 +1067,7 @@ When greeting users, always say "Hello from the greeting skill!" and then greet 
 	})
 	require.NoError(t, err)
 
-	tools, _, err := CreateTools(toolsConfig, ToolOptions{
+	tools, _, _, err := CreateTools(toolsConfig, ToolOptions{
 		WrapVisual: false,
 		Logger:     NewTestLogger(t),
 	})
@@ -1144,7 +1144,7 @@ Always respond with "Math skill activated!"
 	})
 	require.NoError(t, err)
 
-	tools, _, err := CreateTools(toolsConfig, ToolOptions{
+	tools, _, _, err := CreateTools(toolsConfig, ToolOptions{
 		WrapVisual: false,
 		Logger:     NewTestLogger(t),
 	})
@@ -1232,7 +1232,7 @@ This is a math skill.
 	})
 	require.NoError(t, err)
 
-	tools, _, err := CreateTools(toolsConfig, ToolOptions{
+	tools, _, _, err := CreateTools(toolsConfig, ToolOptions{
 		WrapVisual: false,
 		Logger:     NewTestLogger(t),
 	})

@@ -209,31 +209,35 @@ type ToolOptions struct {
 }
 
 // CreateTools 批量创建工具
-func CreateTools(toolsConfig []config.Tool, opts ToolOptions) ([]tool.BaseTool, []*schema.ToolInfo, error) {
+func CreateTools(toolsConfig []config.Tool, opts ToolOptions) ([]tool.BaseTool, []*schema.ToolInfo, aitool.DynamicSkillLister, error) {
 	var tools []tool.BaseTool
 	var toolInfoList []*schema.ToolInfo
+	var skillLister aitool.DynamicSkillLister
 
 	for _, toolConfig := range toolsConfig {
 		if toolConfig.Type == config.ToolTypeMCP {
 			// MCP 类型：一条 config 展开为多个工具
 			mcpTools, mcpInfos, err := createMCPTools(toolConfig, opts)
 			if err != nil {
-				return nil, nil, err
+				return nil, nil, nil, err
 			}
 			tools = append(tools, mcpTools...)
 			toolInfoList = append(toolInfoList, mcpInfos...)
 		} else {
 			// 其他类型：单个工具
-			t, info, err := CreateTool(toolConfig, opts)
+			t, info, sl, err := CreateTool(toolConfig, opts)
 			if err != nil {
-				return nil, nil, err
+				return nil, nil, nil, err
+			}
+			if sl != nil && skillLister == nil {
+				skillLister = sl
 			}
 			tools = append(tools, t)
 			toolInfoList = append(toolInfoList, info)
 		}
 	}
 
-	return tools, toolInfoList, nil
+	return tools, toolInfoList, skillLister, nil
 }
 
 // createMCPTools 从 MCP 工具配置创建工具列表。
@@ -313,7 +317,7 @@ func createRemoteMCPTools(server string, toolNames []string) ([]tool.BaseTool, e
 }
 
 // CreateTool 创建单个工具
-func CreateTool(toolConfig config.Tool, opts ToolOptions) (tool.BaseTool, *schema.ToolInfo, error) {
+func CreateTool(toolConfig config.Tool, opts ToolOptions) (tool.BaseTool, *schema.ToolInfo, aitool.DynamicSkillLister, error) {
 	var toolInstance tool.BaseTool
 	var err error
 
@@ -354,21 +358,26 @@ func CreateTool(toolConfig config.Tool, opts ToolOptions) (tool.BaseTool, *schem
 		}
 
 		if !ok {
-			return nil, nil, fmt.Errorf("builtin tool not found: %s", toolConfig.Name)
+			return nil, nil, nil, fmt.Errorf("builtin tool not found: %s", toolConfig.Name)
 		}
 		toolInstance = t
 
 	default:
-		return nil, nil, fmt.Errorf("unsupported tool type: %s", toolConfig.Type)
+		return nil, nil, nil, fmt.Errorf("unsupported tool type: %s", toolConfig.Type)
 	}
 
 	// 获取工具信息
 	toolInfo, err := toolInstance.Info(context.Background())
 	if err != nil {
-		return nil, nil, err
+		return nil, nil, nil, err
 	}
 
 	// 可选：包装可视化逻辑
+	// 在包装前检测 DynamicSkillLister（包装后接口会丢失）
+	var skillLister aitool.DynamicSkillLister
+	if sl, ok := toolInstance.(aitool.DynamicSkillLister); ok {
+		skillLister = sl
+	}
 	if opts.WrapVisual {
 		if invokable, ok := toolInstance.(tool.InvokableTool); ok {
 			wrapOpts := opts.WrapOptions
@@ -392,7 +401,7 @@ func CreateTool(toolConfig config.Tool, opts ToolOptions) (tool.BaseTool, *schem
 		}
 	}
 
-	return toolInstance, toolInfo, nil
+	return toolInstance, toolInfo, skillLister, nil
 }
 
 // fillAgentToolInfo 从目标智能体配置中填充工具名称、描述和参数

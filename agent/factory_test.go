@@ -2,6 +2,8 @@ package agent
 
 import (
 	"context"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 
@@ -150,7 +152,7 @@ func TestCreateTools(t *testing.T) {
 		},
 	}
 
-	tools, toolInfos, err := CreateTools(toolsConfig, ToolOptions{})
+	tools, toolInfos, _, err := CreateTools(toolsConfig, ToolOptions{})
 
 	assert.Nil(t, err)
 	assert.Equal(t, 2, len(tools))
@@ -159,7 +161,7 @@ func TestCreateTools(t *testing.T) {
 
 // TestCreateTools_Empty 测试空工具列表
 func TestCreateTools_Empty(t *testing.T) {
-	tools, toolInfos, err := CreateTools([]config.Tool{}, ToolOptions{})
+	tools, toolInfos, _, err := CreateTools([]config.Tool{}, ToolOptions{})
 
 	assert.Nil(t, err)
 	assert.Equal(t, 0, len(tools))
@@ -168,7 +170,7 @@ func TestCreateTools_Empty(t *testing.T) {
 
 // TestCreateTools_Nil 测试 nil 工具列表
 func TestCreateTools_Nil(t *testing.T) {
-	tools, toolInfos, err := CreateTools(nil, ToolOptions{})
+	tools, toolInfos, _, err := CreateTools(nil, ToolOptions{})
 
 	assert.Nil(t, err)
 	assert.Equal(t, 0, len(tools))
@@ -192,7 +194,7 @@ func TestCreateTools_MultipleTypes(t *testing.T) {
 		},
 	}
 
-	tools, toolInfos, err := CreateTools(toolsConfig, ToolOptions{})
+	tools, toolInfos, _, err := CreateTools(toolsConfig, ToolOptions{})
 
 	assert.Nil(t, err)
 	assert.Equal(t, 2, len(tools))
@@ -463,6 +465,84 @@ func TestVisualToolWrapper_RejectsInvalidSkillArguments(t *testing.T) {
 	assert.True(t, strings.Contains(result, "blocked_invalid_arguments"))
 }
 
+// TestVisualToolWrapper_ForwardsDynamicSkillLister 测试 VisualToolWrapper 能转发 DynamicSkillLister 接口。
+// 这是 skill 改造的关键回归测试：当 WrapVisual=true 时，dynamicSkillTool 被 VisualToolWrapper 包装后，
+// DynamicSkillLister 接口不能丢失，否则 MessageModifier 为 nil，技能列表不会注入 system prompt。
+func TestVisualToolWrapper_ForwardsDynamicSkillLister(t *testing.T) {
+	tmpDir := t.TempDir()
+	skillDir := filepath.Join(tmpDir, "test-skill")
+	if err := os.MkdirAll(skillDir, 0755); err != nil {
+		t.Fatalf("Failed to create skill dir: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(skillDir, "SKILL.md"), []byte(`---
+name: test-skill
+description: A test skill
+---
+Test skill content
+`), 0644); err != nil {
+		t.Fatalf("Failed to write SKILL.md: %v", err)
+	}
+
+	toolsConfig := []config.Tool{
+		{
+			Type: config.ToolTypeBuiltin,
+			Name: "skill",
+			Config: map[string]interface{}{
+				"localDirs": []string{tmpDir},
+			},
+		},
+	}
+
+	// 使用 WrapVisual=true，模拟生产代码路径
+	// skillLister 在包装前由 CreateTools 提取返回
+	tools, _, skillLister, err := CreateTools(toolsConfig, ToolOptions{
+		WrapVisual: true,
+		Logger:     NewTestLogger(t),
+	})
+	if err != nil {
+		t.Fatalf("CreateTools failed: %v", err)
+	}
+	if len(tools) == 0 {
+		t.Fatal("CreateTools returned no tools")
+	}
+
+	// 关键断言：skillLister 在包装前被正确提取
+	if skillLister == nil {
+		t.Fatal("CreateTools should return non-nil skillLister for skill tool")
+	}
+
+	// 验证 ListSkills 能正常工作
+	skills, err := skillLister.ListSkills(context.Background())
+	if err != nil {
+		t.Fatalf("ListSkills failed: %v", err)
+	}
+	if !strings.Contains(skills, "test-skill") {
+		t.Fatalf("ListSkills result should contain 'test-skill', got: %s", skills)
+	}
+
+	// 验证 GetSkillInstruction 能正常工作
+	instruction := skillLister.GetSkillInstruction()
+	if instruction == "" {
+		t.Fatal("GetSkillInstruction should not return empty string")
+	}
+
+	// 验证 BuildSkillModifier 能成功构建
+	modifier := BuildSkillModifier(skillLister)
+	if modifier == nil {
+		t.Fatal("BuildSkillModifier returned nil")
+	}
+
+	// 验证 MessageModifier 注入 system prompt
+	input := []*schema.Message{
+		{Role: schema.System, Content: "You are a helpful assistant."},
+		{Role: schema.User, Content: "Hello"},
+	}
+	result := modifier(context.Background(), input)
+	if !strings.Contains(result[0].Content, "test-skill") {
+		t.Fatalf("system prompt should contain 'test-skill', got: %s", result[0].Content)
+	}
+}
+
 // BenchmarkCreateTools 基准测试 CreateTools
 func BenchmarkCreateTools(b *testing.B) {
 	toolsConfig := []config.Tool{
@@ -488,7 +568,7 @@ func BenchmarkCreateTools(b *testing.B) {
 
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
-		_, _, _ = CreateTools(toolsConfig, ToolOptions{})
+		_, _, _, _ = CreateTools(toolsConfig, ToolOptions{})
 	}
 }
 
@@ -503,7 +583,7 @@ func BenchmarkCreateTools_Single(b *testing.B) {
 
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
-		_, _, _ = CreateTools([]config.Tool{toolConfig}, ToolOptions{})
+		_, _, _, _ = CreateTools([]config.Tool{toolConfig}, ToolOptions{})
 	}
 }
 
@@ -553,7 +633,7 @@ func newTestRuleConfigWithProvider(provider types.MCPToolProvider) types.Config 
 func TestCreateTools_MCPType_Self_All(t *testing.T) {
 	provider := newTestMCPProvider()
 	rc := newTestRuleConfigWithProvider(provider)
-	tools, infos, err := CreateTools([]config.Tool{
+	tools, infos, _, err := CreateTools([]config.Tool{
 		{Type: config.ToolTypeMCP, Config: map[string]interface{}{"server": "self"}},
 	}, ToolOptions{RuleConfig: rc})
 	assert.Nil(t, err)
@@ -564,7 +644,7 @@ func TestCreateTools_MCPType_Self_All(t *testing.T) {
 func TestCreateTools_MCPType_Self_Filtered(t *testing.T) {
 	provider := newTestMCPProvider()
 	rc := newTestRuleConfigWithProvider(provider)
-	tools, infos, err := CreateTools([]config.Tool{
+	tools, infos, _, err := CreateTools([]config.Tool{
 		{Type: config.ToolTypeMCP, Config: map[string]interface{}{
 			"server": "self",
 			"tools":  []interface{}{"save_rule_chain", "execute_rule_chain"},
@@ -585,7 +665,7 @@ func TestCreateTools_MCPType_Self_Filtered(t *testing.T) {
 func TestCreateTools_MCPType_Self_Wildcard(t *testing.T) {
 	provider := newTestMCPProvider()
 	rc := newTestRuleConfigWithProvider(provider)
-	tools, _, err := CreateTools([]config.Tool{
+	tools, _, _, err := CreateTools([]config.Tool{
 		{Type: config.ToolTypeMCP, Config: map[string]interface{}{
 			"server": "self",
 			"tools":  []interface{}{"*"},
@@ -597,7 +677,7 @@ func TestCreateTools_MCPType_Self_Wildcard(t *testing.T) {
 
 func TestCreateTools_MCPType_Self_NoProvider(t *testing.T) {
 	rc := engine.NewConfig()
-	_, _, err := CreateTools([]config.Tool{
+	_, _, _, err := CreateTools([]config.Tool{
 		{Type: config.ToolTypeMCP, Config: map[string]interface{}{"server": "self"}},
 	}, ToolOptions{RuleConfig: rc})
 	assert.NotNil(t, err)
@@ -605,14 +685,14 @@ func TestCreateTools_MCPType_Self_NoProvider(t *testing.T) {
 }
 
 func TestCreateTools_MCPType_MissingServer(t *testing.T) {
-	_, _, err := CreateTools([]config.Tool{
+	_, _, _, err := CreateTools([]config.Tool{
 		{Type: config.ToolTypeMCP, Config: map[string]interface{}{}},
 	}, ToolOptions{})
 	assert.NotNil(t, err)
 }
 
 func TestCreateTools_MCPType_Remote_NotImplemented(t *testing.T) {
-	_, _, err := CreateTools([]config.Tool{
+	_, _, _, err := CreateTools([]config.Tool{
 		{Type: config.ToolTypeMCP, Config: map[string]interface{}{
 			"server": "http://remote:8080/mcp",
 		}},
@@ -623,7 +703,7 @@ func TestCreateTools_MCPType_Remote_NotImplemented(t *testing.T) {
 func TestCreateTools_MCPType_Mixed(t *testing.T) {
 	provider := newTestMCPProvider()
 	rc := newTestRuleConfigWithProvider(provider)
-	tools, infos, err := CreateTools([]config.Tool{
+	tools, infos, _, err := CreateTools([]config.Tool{
 		{Type: config.ToolTypeMCP, Config: map[string]interface{}{
 			"server": "self",
 			"tools":  []interface{}{"save_rule_chain", "execute_rule_chain"},
@@ -645,7 +725,7 @@ func TestCreateTools_MCPType_Self_ToolExecution(t *testing.T) {
 		},
 	}
 	rc := newTestRuleConfigWithProvider(provider)
-	tools, _, err := CreateTools([]config.Tool{
+	tools, _, _, err := CreateTools([]config.Tool{
 		{Type: config.ToolTypeMCP, Config: map[string]interface{}{"server": "self"}},
 	}, ToolOptions{RuleConfig: rc})
 	assert.Nil(t, err)
