@@ -266,22 +266,24 @@ func (m *MemoryChannelContextManager) Delete(ctx context.Context, sessionKey str
 // =============================================================================
 
 var (
-	globalChannelContextManager     ChannelContextManager
-	globalChannelContextManagerOnce sync.Once
+	globalChannelContextManager   ChannelContextManager
+	globalChannelContextManagerMu sync.Mutex
 )
 
 // GetGlobalChannelContextManager 获取全局通道上下文管理器
 func GetGlobalChannelContextManager() ChannelContextManager {
-	globalChannelContextManagerOnce.Do(func() {
-		if globalChannelContextManager == nil {
-			globalChannelContextManager = NewMemoryChannelContextManager()
-		}
-	})
+	globalChannelContextManagerMu.Lock()
+	defer globalChannelContextManagerMu.Unlock()
+	if globalChannelContextManager == nil {
+		globalChannelContextManager = NewMemoryChannelContextManager()
+	}
 	return globalChannelContextManager
 }
 
 // SetGlobalChannelContextManager 设置全局通道上下文管理器
 func SetGlobalChannelContextManager(manager ChannelContextManager) {
+	globalChannelContextManagerMu.Lock()
+	defer globalChannelContextManagerMu.Unlock()
 	globalChannelContextManager = manager
 }
 
@@ -301,8 +303,9 @@ func GetChannelContextManager(ctx context.Context) (ChannelContextManager, bool)
 		return manager, true
 	}
 	// 回退到全局管理器
-	if globalChannelContextManager != nil {
-		return globalChannelContextManager, true
+	global := GetGlobalChannelContextManager()
+	if global != nil {
+		return global, true
 	}
 	return nil, false
 }

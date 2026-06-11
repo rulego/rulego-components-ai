@@ -45,12 +45,16 @@ func ContextWithSessionModel(ctx context.Context, model string) context.Context 
 	return context.WithValue(ctx, contextKeySessionModel{}, model)
 }
 
+// maxCachedModels 动态模型缓存的最大数量
+const maxCachedModels = 32
+
 // DynamicModelWrapper 动态模型包装器
 // 支持根据 context 中的 session_model 动态切换模型
 type DynamicModelWrapper struct {
 	baseModel    model.ToolCallingChatModel
 	llmConfig    config.LLMConfig
 	modelCache   sync.Map // modelID -> model.ToolCallingChatModel
+	cacheCount   int32    // 缓存中的模型数量
 	logger       types.Logger
 	modelOptions ModelOptions
 }
@@ -94,8 +98,11 @@ func (w *DynamicModelWrapper) getModelForContext(ctx context.Context) model.Tool
 		return w.baseModel
 	}
 
-	// 缓存模型
-	w.modelCache.Store(sessionModel, newModel)
+	// 缓存模型（达到上限时不再缓存，但仍然返回新模型）
+	if w.cacheCount < maxCachedModels {
+		w.modelCache.Store(sessionModel, newModel)
+		w.cacheCount++
+	}
 
 	if w.logger != nil {
 		w.logger.Debugf("[DynamicModelWrapper] Created and cached model: %s", sessionModel)
@@ -116,14 +123,21 @@ func (w *DynamicModelWrapper) Stream(ctx context.Context, input []*schema.Messag
 	return m.Stream(ctx, input, opts...)
 }
 
-// WithTools 设置工具并返回新模型
+// WithTools 设置工具并返回新模型，新实例共享同一个 modelCache
 func (w *DynamicModelWrapper) WithTools(tools []*schema.ToolInfo) (model.ToolCallingChatModel, error) {
 	newModel, err := w.baseModel.WithTools(tools)
 	if err != nil {
 		return nil, err
 	}
-	// 返回包装后的模型
-	return NewDynamicModelWrapper(newModel, w.llmConfig, w.modelOptions), nil
+	// 返回包装后的模型，共享 modelCache
+	return &DynamicModelWrapper{
+		baseModel:    newModel,
+		llmConfig:    w.llmConfig,
+		modelCache:   w.modelCache,
+		cacheCount:   w.cacheCount,
+		logger:       w.logger,
+		modelOptions: w.modelOptions,
+	}, nil
 }
 
 // Ensure DynamicModelWrapper implements model.ToolCallingChatModel
@@ -137,7 +151,6 @@ var _ model.ToolCallingChatModel = (*DynamicModelWrapper)(nil)
 // 与 DynamicModelWrapper 不同，它支持在创建 React Agent 时就包装模型
 type AgentAwareModelWrapper struct {
 	*DynamicModelWrapper
-	tools []*schema.ToolInfo
 }
 
 // NewAgentAwareModelWrapper 创建支持 Agent 的模型包装器
@@ -149,7 +162,6 @@ func NewAgentAwareModelWrapper(baseModel model.ToolCallingChatModel, llmConfig c
 
 // WithTools 设置工具
 func (w *AgentAwareModelWrapper) WithTools(tools []*schema.ToolInfo) (model.ToolCallingChatModel, error) {
-	w.tools = tools
 	// 委托给 DynamicModelWrapper
 	newModel, err := w.DynamicModelWrapper.WithTools(tools)
 	if err != nil {
@@ -160,7 +172,6 @@ func (w *AgentAwareModelWrapper) WithTools(tools []*schema.ToolInfo) (model.Tool
 	if dm, ok := newModel.(*DynamicModelWrapper); ok {
 		return &AgentAwareModelWrapper{
 			DynamicModelWrapper: dm,
-			tools:               tools,
 		}, nil
 	}
 

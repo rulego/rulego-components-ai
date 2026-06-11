@@ -68,8 +68,8 @@ func (t *RuleGoTool) executeRuleChain(ctx context.Context, ruleCtx types.RuleCon
 	toolMsg.DataType = types.JSON
 
 	// 获取超时配置，默认120秒
-	// Timeout 单位是秒
-	timeout := time.Duration(t.Config.Timeout) * time.Second
+	// Timeout 单位是毫秒
+	timeout := time.Duration(t.Config.Timeout) * time.Millisecond
 	if timeout <= 0 {
 		timeout = 120 * time.Second
 	}

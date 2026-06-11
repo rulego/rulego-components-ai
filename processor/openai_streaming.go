@@ -22,6 +22,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
+	"strconv"
 	"strings"
 	"time"
 
@@ -369,13 +370,9 @@ func getTokenUsage(msg *types.RuleMsg) (int, int, int) {
 
 // parseIntFromString safely parses an integer from a string, returns 0 on error.
 func parseIntFromString(s string) int {
-	var result int
-	for _, c := range s {
-		if c >= '0' && c <= '9' {
-			result = result*10 + int(c-'0')
-		} else {
-			return 0
-		}
+	n, err := strconv.Atoi(strings.TrimSpace(s))
+	if err != nil {
+		return 0
 	}
-	return result
+	return n
 }

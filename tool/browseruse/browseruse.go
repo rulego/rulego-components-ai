@@ -717,6 +717,10 @@ func (b *Tool) Execute(params *Param) (*ToolResult, error) {
 		if params.Seconds != nil {
 			seconds = *params.Seconds
 		}
+		// 限制最大等待时间为 60 秒
+		if seconds > 60 {
+			seconds = 60
+		}
 
 		err := chromedp.Run(b.ctx,
 			chromedp.Sleep(time.Duration(seconds)*time.Second),

@@ -16,7 +16,10 @@
 
 package session
 
-import "time"
+import (
+	"sync"
+	"time"
+)
 
 // Session 会话
 type Session struct {
@@ -32,6 +35,8 @@ type Session struct {
 	CreatedAt        time.Time
 	UpdatedAt        time.Time
 	LastActivityAt   time.Time
+
+	mu sync.Mutex `json:"-"`
 }
 
 // SessionMessage 会话消息
@@ -51,6 +56,8 @@ type SessionMessage struct {
 
 // AddMessage 添加消息到会话
 func (s *Session) AddMessage(msg *SessionMessage) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
 	s.Messages = append(s.Messages, msg)
 	s.Metadata.MessageCount++
 	s.Metadata.TotalTokenCount += msg.TokenCount
@@ -70,12 +77,16 @@ func (s *Session) GetTotalTokenCount() int {
 
 // SetState 设置会话状态
 func (s *Session) SetState(state SessionState) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
 	s.State = state
 	s.UpdatedAt = time.Now()
 }
 
 // UpdateActivity 更新活动时间
 func (s *Session) UpdateActivity() {
+	s.mu.Lock()
+	defer s.mu.Unlock()
 	s.LastActivityAt = time.Now()
 	s.UpdatedAt = time.Now()
 }

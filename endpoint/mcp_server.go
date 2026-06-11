@@ -120,6 +120,8 @@ type McpServer struct {
 
 	mcpServer *server.MCPServer
 	sseServer *server.SSEServer
+	mcpOnce   sync.Once
+	sseOnce   sync.Once
 	// ruleChain is the associated rule chain definition (if any)
 	ruleChain *types.RuleChain
 	// basePath is the effective base path for routes
@@ -375,17 +377,17 @@ func (s *McpServer) handlerFromPool(url string) endpoint.Router {
 
 // MCPServer returns the underlying MCPServer instance, creating it if needed
 func (s *McpServer) MCPServer() *server.MCPServer {
-	if s.mcpServer == nil {
+	s.mcpOnce.Do(func() {
 		s.mcpServer = s.NewMCPServer()
-	}
+	})
 	return s.mcpServer
 }
 
 // SSEServer returns the underlying SSEServer instance, creating it if needed
 func (s *McpServer) SSEServer() *server.SSEServer {
-	if s.sseServer == nil {
+	s.sseOnce.Do(func() {
 		s.sseServer = s.NewSSEServer(server.WithBasePath(s.baseFullPath), server.WithHTTPServer(s.Rest.GetServer()))
-	}
+	})
 	return s.sseServer
 }
 
@@ -522,7 +524,19 @@ func (s *McpServer) ruleChainToolHandler(chainId, startNodeId string, pool types
 		// Using OnMsg + WaitGroup allows us to capture the result in the callback closure.
 		ruleEngine.OnMsg(types.NewMsgWithJsonData(msg), opts...)
 
-		wg.Wait()
+		// 使用带超时的等待，防止永久阻塞
+		done := make(chan struct{})
+		go func() {
+			wg.Wait()
+			close(done)
+		}()
+
+		select {
+		case <-done:
+			// 正常完成
+		case <-ctx.Done():
+			return nil, ctx.Err()
+		}
 
 		if resultErr != nil {
 			s.Printf("Tool execution failed for chain %s: %v", chainId, resultErr)

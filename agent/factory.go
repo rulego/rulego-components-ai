@@ -503,19 +503,24 @@ func CreateReactAgent(ctx context.Context, chatModel model.ToolCallingChatModel,
 // 部分模型 API（如 DashScope/Qwen）要求 function.arguments 必须存在且为有效 JSON，
 // 而 eino schema.FunctionCall.Arguments 和 go-openai FunctionCall.Arguments 均使用了
 // json:"arguments,omitempty" 标签，空字符串会在序列化时被省略导致 400 错误。
+// 注意：此函数创建消息的浅拷贝，不修改传入的原始消息。
 func sanitizeToolCallArguments(_ context.Context, msgs []*schema.Message) []*schema.Message {
-	for _, msg := range msgs {
-		if msg.Role != schema.Assistant || len(msg.ToolCalls) == 0 {
-			continue
-		}
-		for i := range msg.ToolCalls {
-			args := strings.TrimSpace(msg.ToolCalls[i].Function.Arguments)
-			if args == "" || args == "null" {
-				msg.ToolCalls[i].Function.Arguments = "{}"
+	result := make([]*schema.Message, len(msgs))
+	for i, msg := range msgs {
+		newMsg := *msg // 浅拷贝
+		if newMsg.Role == schema.Assistant && len(newMsg.ToolCalls) > 0 {
+			newMsg.ToolCalls = make([]schema.ToolCall, len(msg.ToolCalls))
+			copy(newMsg.ToolCalls, msg.ToolCalls)
+			for j := range newMsg.ToolCalls {
+				args := strings.TrimSpace(newMsg.ToolCalls[j].Function.Arguments)
+				if args == "" || args == "null" {
+					newMsg.ToolCalls[j].Function.Arguments = "{}"
+				}
 			}
 		}
+		result[i] = &newMsg
 	}
-	return msgs
+	return result
 }
 
 // createStreamToolCallChecker 创建流式工具调用检查器

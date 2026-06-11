@@ -258,6 +258,9 @@ func (c *Client) Start() error {
 	if c.RuleConfig.Udf == nil {
 		c.RuleConfig.Udf = make(map[string]interface{})
 	}
+	// 使用 MCPToolProviderKey 作为默认 key 注册（保持向后兼容）
+	// 注意：如果同一 RuleConfig 下有多个 MCP Client 实例，后注册的会覆盖先注册的。
+	// 需要唯一标识时，可使用 MCPToolProviderKey + ":" + server 地址。
 	c.RuleConfig.Udf[types.MCPToolProviderKey] = c
 
 	return nil
@@ -327,8 +330,8 @@ func (c *Client) connect(ctx context.Context) (*client.Client, error) {
 func (c *Client) callTool(ctx context.Context, toolName string, args map[string]interface{}) (string, error) {
 	c.mu.RLock()
 	cli := c.cli
-	c.mu.RUnlock()
 	if cli == nil {
+		c.mu.RUnlock()
 		return "", fmt.Errorf("MCP client not connected")
 	}
 
@@ -338,6 +341,7 @@ func (c *Client) callTool(ctx context.Context, toolName string, args map[string]
 			Arguments: args,
 		},
 	})
+	c.mu.RUnlock()
 	if err != nil {
 		return "", fmt.Errorf("调用远程 MCP 工具失败: %w", err)
 	}

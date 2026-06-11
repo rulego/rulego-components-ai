@@ -89,7 +89,9 @@ func (x *ReactAgentNode) New() types.Node {
 	}
 }
 
-// applyDefaultLLMParams 应用默认 LLM 参数
+// applyDefaultLLMParams 应用默认 LLM 参数。
+// 注意：Temperature 等参数的零值（0）会被覆盖为默认值。
+// 如需确定性输出（即 Temperature 真正为 0），请使用极小值如 0.001。
 func (x *ReactAgentNode) applyDefaultLLMParams() {
 	if x.Config.Params.Temperature == 0 {
 		x.Config.Params.Temperature = config.DefaultTemperature

@@ -18,6 +18,7 @@ package aspect
 
 import (
 	"context"
+	"log"
 	"sort"
 	"sync"
 
@@ -235,6 +236,7 @@ func (m *AspectManager) ExecuteAfter(ctx context.Context, point *AgentPoint, out
 			if err != nil {
 				// After aspect errors are non-terminating, log and continue
 				// After 切面错误是非终止的，记录并继续
+				log.Printf("[AspectManager] After aspect error: %v", err)
 				continue
 			}
 		}
@@ -254,7 +256,14 @@ func (m *AspectManager) ExecuteCompleted(ctx context.Context, point *AgentPoint,
 
 	for _, aspect := range aspects {
 		if aspect.PointCut(ctx, point) {
-			aspect.OnCompleted(ctx, point, output)
+			func() {
+				defer func() {
+					if r := recover(); r != nil {
+						log.Printf("[AspectManager] panic in OnCompleted: %v", r)
+					}
+				}()
+				aspect.OnCompleted(ctx, point, output)
+			}()
 		}
 	}
 }
@@ -300,6 +309,7 @@ func (m *AspectManager) ExecuteMessageAfter(ctx context.Context, point *AgentPoi
 			if err != nil {
 				// MessageAfter aspect errors are non-terminating, log and continue
 				// MessageAfter 切面错误是非终止的，记录并继续
+				log.Printf("[AspectManager] MessageAfter aspect error: %v", err)
 				continue
 			}
 		}

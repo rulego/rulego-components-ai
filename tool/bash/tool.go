@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"os"
 	"os/exec"
+	"path/filepath"
 	"runtime"
 	"strings"
 	"time"
@@ -246,7 +247,16 @@ func (t *bashTool) executeShell(ctx context.Context, params OperationParams) (st
 	if params.Timeout > 0 {
 		timeoutSeconds = params.Timeout
 	}
-	timeout := time.Duration(timeoutSeconds) * time.Second
+	// 超时上限：不超过全局 MaxTimeout，默认不超过 300 秒
+	maxAllowed := common.GetTimeoutConfig().MaxTimeout
+	if maxAllowed <= 0 {
+		maxAllowed = 300 * time.Second
+	}
+	timeoutDuration := time.Duration(timeoutSeconds) * time.Second
+	if timeoutDuration > maxAllowed {
+		timeoutDuration = maxAllowed
+	}
+	timeout := timeoutDuration
 	ctx, cancel := context.WithTimeout(ctx, timeout)
 	defer cancel()
 
@@ -258,7 +268,7 @@ func (t *bashTool) executeShell(ctx context.Context, params OperationParams) (st
 		if err != nil {
 			return common.NewErrorf(common.ErrCodeFileNotFound, "command '%s' not found: %v", params.Command, err).Error(), nil
 		}
-		cmd = exec.CommandContext(ctx, cmdPath, params.Args...)
+		cmd = exec.Command(cmdPath, params.Args...)
 	} else {
 		// 使用 shell 执行完整命令字符串，支持管道、重定向等
 		shellArgs := make([]string, len(t.platform.ShellArgs))
@@ -294,7 +304,7 @@ func (t *bashTool) executeShell(ctx context.Context, params OperationParams) (st
 			shellArgs = append(shellArgs, fullCommand)
 		}
 
-		cmd = exec.CommandContext(ctx, t.platform.ShellCommand, shellArgs...)
+		cmd = exec.Command(t.platform.ShellCommand, shellArgs...)
 	}
 
 	// Set working directory
@@ -303,8 +313,16 @@ func (t *bashTool) executeShell(ctx context.Context, params OperationParams) (st
 		workDir = t.config.WorkDir
 	}
 	if workDir != "" {
+		// 安全校验：清理路径并拒绝包含 .. 的路径
+		workDir = filepath.Clean(workDir)
+		if strings.Contains(workDir, "..") {
+			return common.NewErrorf(common.ErrCodePathEscape, "work_dir contains path traversal: %s", params.WorkDir).Error(), nil
+		}
 		cmd.Dir = workDir
 	}
+
+	// 设置进程组属性（Linux/macOS 下设置 Setpgid，用于超时时 kill 整个进程组）
+	setSysProcAttr(cmd)
 
 	// Set environment variables
 	cmd.Env = os.Environ()
@@ -326,9 +344,31 @@ func (t *bashTool) executeShell(ctx context.Context, params OperationParams) (st
 	cmd.Stdout = &stdout
 	cmd.Stderr = &stderr
 
-	// Execute
+	// 启动进程
 	startTime := time.Now()
-	err := cmd.Run()
+	if err := cmd.Start(); err != nil {
+		return "", fmt.Errorf("启动命令失败: %w", err)
+	}
+
+	// 使用 goroutine 等待进程完成，同时监听 context 取消以 kill 进程组
+	waitCh := make(chan error, 1)
+	go func() {
+		waitCh <- cmd.Wait()
+	}()
+
+	var err error
+	select {
+	case err = <-waitCh:
+		// 进程正常结束
+	case <-ctx.Done():
+		// 超时或取消，kill 整个进程组
+		if cmd.Process != nil {
+			killProcessGroup(cmd.Process.Pid)
+			// 等待进程真正退出
+			<-waitCh
+		}
+		err = ctx.Err()
+	}
 	executionTime := time.Since(startTime).Milliseconds()
 
 	// Convert encoding and truncate output if needed
@@ -340,7 +380,7 @@ func (t *bashTool) executeShell(ctx context.Context, params OperationParams) (st
 	if err != nil {
 		// 检查上下文错误（超时或取消）
 		if ctx.Err() == context.DeadlineExceeded {
-			errorMsg = fmt.Sprintf("命令执行超时（%d秒）", timeoutSeconds)
+			errorMsg = fmt.Sprintf("命令执行超时（%v）", timeout)
 		} else if ctx.Err() == context.Canceled {
 			errorMsg = "命令执行被中断"
 		} else if _, ok := err.(*exec.ExitError); ok {

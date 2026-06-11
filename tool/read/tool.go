@@ -6,6 +6,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"io"
 	"os"
 	"path/filepath"
 	"strings"
@@ -19,6 +20,9 @@ import (
 )
 
 const ToolName = "read"
+
+// maxFullReadSize 全文读取的最大文件大小（10MB）
+const maxFullReadSize = 10 * 1024 * 1024
 
 // Config holds read tool configuration.
 type Config struct {
@@ -164,6 +168,11 @@ func (t *readTool) readFile(params OperationParams) (string, error) {
 	// If line range is specified, use bufio.Scanner for memory efficiency
 	if lineFrom > 0 || lineTo > 0 {
 		return t.readFileWithScanner(path, params.Path, lineFrom, lineTo)
+	}
+
+	// 大文件防护：全文读取前检查文件大小，超过阈值时改用 scanner 逐行读取
+	if info.Size() > maxFullReadSize {
+		return t.readFileWithScanner(path, params.Path, 1, 0)
 	}
 
 	// For full file read, use os.ReadFile
@@ -344,7 +353,7 @@ func readLimited(path string, maxBytes int) (string, error) {
 
 	buf := make([]byte, maxBytes)
 	n, err := file.Read(buf)
-	if err != nil && err.Error() != "EOF" {
+	if err != nil && err != io.EOF {
 		return "", err
 	}
 	return string(buf[:n]), nil

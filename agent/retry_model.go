@@ -96,6 +96,40 @@ func (w *RetryChatModelWrapper) isRetryableError(err error) bool {
 	return false
 }
 
+// getHTTPStatusCode 尝试从错误中提取 HTTP 状态码
+func getHTTPStatusCode(err error) int {
+	type httpError interface {
+		HTTPStatusCode() int
+	}
+	if he, ok := err.(httpError); ok {
+		return he.HTTPStatusCode()
+	}
+	return 0
+}
+
+// containsHTTPStatus 检查错误字符串中是否包含指定的 HTTP 状态码。
+// 要求状态码前后不是数字字符，避免 UUID 等字符串中的误判。
+func containsHTTPStatus(errStr string, code string) bool {
+	for {
+		idx := strings.Index(errStr, code)
+		if idx < 0 {
+			return false
+		}
+		// 检查前一个字符不是数字
+		if idx > 0 && errStr[idx-1] >= '0' && errStr[idx-1] <= '9' {
+			errStr = errStr[idx+len(code):]
+			continue
+		}
+		// 检查后一个字符不是数字
+		afterIdx := idx + len(code)
+		if afterIdx < len(errStr) && errStr[afterIdx] >= '0' && errStr[afterIdx] <= '9' {
+			errStr = errStr[afterIdx:]
+			continue
+		}
+		return true
+	}
+}
+
 // isNetworkError 判断是否为网络错误
 func isNetworkError(err error) bool {
 	if err == nil {

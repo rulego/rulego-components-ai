@@ -4,12 +4,18 @@ import (
 	"encoding/json"
 	"strings"
 	"time"
+	"unicode/utf8"
 )
 
 // TruncateString truncates a string to the given maximum length.
+// 按有效 UTF-8 边界截断，避免破坏多字节字符。
 func TruncateString(s string, maxLen int) string {
 	if len(s) <= maxLen {
 		return s
+	}
+	// 找到不超过 maxLen 字节的最后一个有效 rune 边界
+	for maxLen > 0 && !utf8.RuneStart(s[maxLen]) {
+		maxLen--
 	}
 	return s[:maxLen] + "..."
 }

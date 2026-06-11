@@ -20,7 +20,6 @@ import (
 	"context"
 	"fmt"
 	"math/rand"
-	"time"
 
 	"github.com/cloudwego/eino/components/tool"
 	"github.com/cloudwego/eino/schema"
@@ -29,10 +28,6 @@ import (
 	"github.com/rulego/rulego-components-ai/utils/token"
 	"github.com/rulego/rulego/api/types"
 )
-
-func init() {
-	rand.Seed(time.Now().UnixNano())
-}
 
 // ============================================
 // 配置结构体
@@ -137,12 +132,14 @@ func maskAPIKey(key string) string {
 }
 
 // truncateResult 截断工具输出结果，防止超出上下文限制
+// maxLen 为最大 rune 数，按 rune 截断以避免破坏 UTF-8 字符
 func truncateResult(result string, maxLen int) string {
 	if maxLen <= 0 {
 		maxLen = MaxToolOutputLength
 	}
-	if len(result) > maxLen {
-		return result[:maxLen] + fmt.Sprintf("...(truncated, original: %d bytes)", len(result))
+	runes := []rune(result)
+	if len(runes) <= maxLen {
+		return result
 	}
-	return result
+	return string(runes[:maxLen]) + fmt.Sprintf("...(truncated, original: %d bytes)", len(result))
 }

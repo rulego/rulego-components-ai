@@ -18,6 +18,7 @@ package agent
 
 import (
 	"context"
+	"fmt"
 	"io"
 	"strconv"
 	"strings"
@@ -104,6 +105,9 @@ func (e *AgentAspectExecutor) ExecuteSync(
 		msg, err := executor(ctx, mergedMessages)
 		if err != nil {
 			return nil, err
+		}
+		if msg == nil {
+			return nil, fmt.Errorf("model returned nil message")
 		}
 		return e.buildOutput(ctx, msg, in, startTime), nil
 	})

@@ -29,10 +29,7 @@ import (
 // VizAspect 可视化切面
 // 发送 AG-UI 标准事件用于智能体执行可视化
 type VizAspect struct {
-	order     int
-	agentId   string
-	agentName string
-	agentType string
+	order int
 }
 
 // NewVizAspect 创建可视化切面
@@ -68,11 +65,6 @@ func (a *VizAspect) OnStart(ctx context.Context, point *aspect.AgentPoint, input
 		return input, nil
 	}
 
-	// 保存智能体信息供后续使用
-	a.agentId = point.AgentId
-	a.agentName = point.AgentName
-	a.agentType = point.AgentType
-
 	threadId := point.ThreadId
 	if threadId == "" {
 		threadId = input.Metadata["threadId"]
@@ -82,9 +74,9 @@ func (a *VizAspect) OnStart(ctx context.Context, point *aspect.AgentPoint, input
 
 	// 发送开始事件
 	emitter.EmitRunStarted(threadId, runId, "", map[string]interface{}{
-		"agentName": a.agentName,
-		"agentType": a.agentType,
-		"agentId":   a.agentId,
+		"agentName": point.AgentName,
+		"agentType": point.AgentType,
+		"agentId":   point.AgentId,
 	})
 
 	// 发送输入消息事件
@@ -113,7 +105,7 @@ func (a *VizAspect) OnStart(ctx context.Context, point *aspect.AgentPoint, input
 		}
 	}
 
-	emitter.EmitStepStarted(a.agentName)
+	emitter.EmitStepStarted(point.AgentName)
 
 	return input, nil
 }
@@ -125,7 +117,7 @@ func (a *VizAspect) OnCompleted(ctx context.Context, point *aspect.AgentPoint, o
 		return
 	}
 
-	emitter.EmitStepFinished(a.agentName)
+	emitter.EmitStepFinished(point.AgentName)
 
 	// Check if we were streaming
 	msgId := point.Metadata["_viz_msg_id"]

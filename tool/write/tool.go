@@ -30,7 +30,7 @@ type Config struct {
 func DefaultConfig() Config {
 	return Config{
 		WorkDir:     ".",
-		MaxFileSize: 0, // No limit by default
+		MaxFileSize: 10 * 1024 * 1024, // 默认 10MB 上限
 	}
 }
 

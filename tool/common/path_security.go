@@ -25,7 +25,7 @@ type PathSecurityConfig struct {
 func DefaultPathSecurityConfig() PathSecurityConfig {
 	return PathSecurityConfig{
 		AllowHiddenFiles:    false,
-		AllowCrossDirectory: true, // 默认允许跨目录
+		AllowCrossDirectory: false, // 默认禁止跨目录
 		ExcludeDirs: []string{
 			".git", ".svn", ".hg",
 			"node_modules", "vendor",
