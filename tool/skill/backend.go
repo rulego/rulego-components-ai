@@ -22,17 +22,29 @@ type dirCache struct {
 // MultiBackend 聚合多个 Backend，支持全局+用户技能目录
 // 优先级：前面的目录优先级更高（用户目录应该放在前面）
 type MultiBackend struct {
-	dirs  []string
-	cache map[string]*dirCache
-	mu    sync.RWMutex
+	dirs           []string
+	disabledNames  map[string]bool
+	cache          map[string]*dirCache
+	mu             sync.RWMutex
 }
 
 // NewMultiBackend 创建一个支持多目录的 Backend
 // dirs 按优先级排列，前面的目录优先级更高
 func NewMultiBackend(dirs []string) *MultiBackend {
 	return &MultiBackend{
-		dirs:  dirs,
-		cache: make(map[string]*dirCache),
+		dirs:          dirs,
+		disabledNames: make(map[string]bool),
+		cache:         make(map[string]*dirCache),
+	}
+}
+
+// SetDisabledSkills 设置禁用的技能名称列表
+func (m *MultiBackend) SetDisabledSkills(names []string) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.disabledNames = make(map[string]bool, len(names))
+	for _, name := range names {
+		m.disabledNames[name] = true
 	}
 }
 
@@ -150,7 +162,10 @@ func (m *MultiBackend) List(ctx context.Context) ([]einoskill.FrontMatter, error
 		for _, skill := range skills {
 			if !seen[skill.Name] {
 				seen[skill.Name] = true
-				result = append(result, skill)
+				// 过滤禁用的技能
+				if !m.disabledNames[skill.Name] {
+					result = append(result, skill)
+				}
 			}
 		}
 	}
@@ -160,6 +175,11 @@ func (m *MultiBackend) List(ctx context.Context) ([]einoskill.FrontMatter, error
 
 // Get 根据名称获取技能详情，按优先级顺序查找
 func (m *MultiBackend) Get(ctx context.Context, name string) (einoskill.Skill, error) {
+	// 检查技能是否被禁用
+	if m.disabledNames[name] {
+		return einoskill.Skill{}, fmt.Errorf("skill %s is disabled", name)
+	}
+
 	backends := m.getBackends()
 	if len(backends) == 0 {
 		return einoskill.Skill{}, fmt.Errorf("no skill backends available")

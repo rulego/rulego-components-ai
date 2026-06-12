@@ -92,6 +92,8 @@ type Config struct {
 	GlobalDirs []string `json:"globalDirs" label:"全局技能目录" desc:"全局技能目录列表，所有用户共享的技能，多个目录用逗号分隔"`
 	// LocalDirs 本地技能目录列表，当前智能体专属的技能，优先级高于全局技能
 	LocalDirs []string `json:"localDirs" label:"本地技能目录" desc:"本地技能目录列表，当前智能体专属的技能，优先级高于全局技能"`
+	// DisabledSkills 禁用的技能名称列表，仅对当前智能体生效
+	DisabledSkills []string `json:"disabledSkills" label:"禁用的技能" desc:"该智能体禁用的技能名称列表，仅对当前智能体生效"`
 	// UseChinese controls prompt language
 	UseChinese bool `json:"useChinese" label:"使用中文" desc:"是否使用中文提示"`
 	// Backend allows providing a custom backend implementation.
@@ -191,7 +193,9 @@ func NewTool(config Config) (tool.BaseTool, error) {
 			}
 		}
 
-		backend = NewMultiBackend(dirs)
+		mb := NewMultiBackend(dirs)
+		mb.SetDisabledSkills(config.DisabledSkills)
+		backend = mb
 	}
 
 	// Create Eino skill middleware to get the tool
