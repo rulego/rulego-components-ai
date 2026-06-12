@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"testing"
 
+	"github.com/cloudwego/eino/adk"
 	"github.com/cloudwego/eino/schema"
 	"github.com/rulego/rulego-components-ai/config"
 	"github.com/rulego/rulego/api/types"
@@ -228,6 +229,47 @@ func TestConvertRuleMsgToAgentInput_JSONInput(t *testing.T) {
 	assert.Equal(t, "Hello", input.Messages[0].Content)
 	assert.Equal(t, schema.Assistant, input.Messages[1].Role)
 	assert.Equal(t, "Hi there!", input.Messages[1].Content)
+}
+
+// TestParseChatMessages_WithToolCallHistory 测试从前端消息中恢复 tool_calls / tool_call_id。
+func TestParseChatMessages_WithToolCallHistory(t *testing.T) {
+	data := `{
+		"messages": [
+			{
+				"role": "assistant",
+				"content": "",
+				"tool_calls": [
+					{
+						"id": "call-1",
+						"type": "function",
+						"function": {
+							"name": "read",
+							"arguments": "{\"path\":\"a.txt\"}"
+						}
+					}
+				]
+			},
+			{
+				"role": "tool",
+				"content": "file content",
+				"tool_call_id": "call-1"
+			}
+		]
+	}`
+
+	input := &adk.AgentInput{Messages: make([]*schema.Message, 0)}
+	parseChatMessages(data, false, "", input, nil)
+
+	assert.Equal(t, 2, len(input.Messages))
+	assert.Equal(t, schema.Assistant, input.Messages[0].Role)
+	assert.Equal(t, 1, len(input.Messages[0].ToolCalls))
+	assert.Equal(t, "call-1", input.Messages[0].ToolCalls[0].ID)
+	assert.Equal(t, "read", input.Messages[0].ToolCalls[0].Function.Name)
+	assert.Equal(t, "{\"path\":\"a.txt\"}", input.Messages[0].ToolCalls[0].Function.Arguments)
+
+	assert.Equal(t, schema.Tool, input.Messages[1].Role)
+	assert.Equal(t, "call-1", input.Messages[1].ToolCallID)
+	assert.Equal(t, "file content", input.Messages[1].Content)
 }
 
 // TestConvertRuleMsgToAgentInput_WithImages_NonVisionModel 测试非视觉模型处理图片

@@ -116,10 +116,7 @@ func processSingleMessage(m config.ChatMessage, supportsVision bool, agentID str
 
 	// 纯文本消息优化：直接添加
 	if len(allImages) == 0 {
-		input.Messages = append(input.Messages, &schema.Message{
-			Role:    schema.RoleType(m.Role),
-			Content: content,
-		})
+		input.Messages = append(input.Messages, buildSchemaMessage(m, content, nil, nil))
 		return
 	}
 
@@ -127,11 +124,7 @@ func processSingleMessage(m config.ChatMessage, supportsVision bool, agentID str
 	finalContent, extra := processImages(allImages, content, agentID, logger)
 
 	if !supportsVision {
-		input.Messages = append(input.Messages, &schema.Message{
-			Role:    schema.RoleType(m.Role),
-			Content: finalContent,
-			Extra:   extra,
-		})
+		input.Messages = append(input.Messages, buildSchemaMessage(m, finalContent, extra, nil))
 	} else {
 		// 模型支持视觉能力，使用多模态格式
 		if logger != nil {
@@ -140,12 +133,56 @@ func processSingleMessage(m config.ChatMessage, supportsVision bool, agentID str
 
 		multiContent := buildVisionMultiContent(allImages, finalContent, logger)
 
-		input.Messages = append(input.Messages, &schema.Message{
-			Role:                  schema.RoleType(m.Role),
-			UserInputMultiContent: multiContent,
-			Extra:                 extra,
-		})
+		input.Messages = append(input.Messages, buildSchemaMessage(m, "", extra, multiContent))
 	}
+}
+
+// buildSchemaMessage 构建 schema.Message，并保留工具调用历史字段。
+func buildSchemaMessage(m config.ChatMessage, content string, extra map[string]any, multiContent []schema.MessageInputPart) *schema.Message {
+	msg := &schema.Message{
+		Role:    schema.RoleType(m.Role),
+		Content: content,
+		Extra:   extra,
+	}
+
+	if len(multiContent) > 0 {
+		msg.UserInputMultiContent = multiContent
+		msg.Content = ""
+	}
+
+	if len(m.ToolCalls) > 0 {
+		msg.ToolCalls = make([]schema.ToolCall, 0, len(m.ToolCalls))
+		for _, tc := range m.ToolCalls {
+			msg.ToolCalls = append(msg.ToolCalls, schema.ToolCall{
+				ID:   tc.ID,
+				Type: tc.Type,
+				Function: schema.FunctionCall{
+					Name:      tc.Function.Name,
+					Arguments: normalizeToolCallArguments(tc.Function.Arguments),
+				},
+			})
+		}
+	}
+
+	if m.ToolCallID != "" {
+		msg.ToolCallID = m.ToolCallID
+	}
+
+	return msg
+}
+
+// normalizeToolCallArguments 确保工具调用参数始终是合法 JSON 字符串。
+func normalizeToolCallArguments(arguments string) string {
+	args := strings.TrimSpace(arguments)
+	if args == "" || args == "null" {
+		return "{}"
+	}
+
+	var check map[string]any
+	if err := json.Unmarshal([]byte(args), &check); err != nil {
+		return "{}"
+	}
+	return args
 }
 
 // processImages 处理图片，生成包含图片引用的文本内容和扩展字段

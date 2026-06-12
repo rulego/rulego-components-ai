@@ -53,8 +53,23 @@ type ModelParams struct {
 // ChatMessage 上下文消息/用户消息
 // 支持 OpenAI 标准格式：content 可以是字符串或数组
 type ChatMessage struct {
-	Role    string      `json:"role"`    // 消息角色 user/assistant/system
-	Content interface{} `json:"content"` // 消息内容。可以是字符串或 []ContentPart 数组（OpenAI 多模态格式）
+	Role       string         `json:"role"`                    // 消息角色 user/assistant/system/tool
+	Content    interface{}    `json:"content"`                 // 消息内容。可以是字符串或 []ContentPart 数组（OpenAI 多模态格式）
+	ToolCalls  []ChatToolCall `json:"tool_calls,omitempty"`    // assistant 消息的工具调用历史
+	ToolCallID string         `json:"tool_call_id,omitempty"`  // tool 消息关联的 tool call ID
+}
+
+// ChatToolCall OpenAI 兼容的工具调用结构。
+type ChatToolCall struct {
+	ID       string           `json:"id"`       // 工具调用 ID
+	Type     string           `json:"type"`     // 工具调用类型，通常为 function
+	Function ChatFunctionCall `json:"function"` // 工具函数信息
+}
+
+// ChatFunctionCall OpenAI 兼容的函数调用结构。
+type ChatFunctionCall struct {
+	Name      string `json:"name"`      // 工具名称
+	Arguments string `json:"arguments"` // JSON 字符串参数
 }
 
 // ContentPart OpenAI 标准的消息内容部分
