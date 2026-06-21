@@ -20,6 +20,17 @@ const (
 	DefaultSkillsPath = ".agents/skills"
 )
 
+// defaultGlobalSkillDirs 可注入的默认全局技能目录；非空时覆盖默认的 ~/.agents/skills。
+// 供宿主应用把自身技能目录接入 agent 运行时，使宿主管理的技能对 agent 可见。
+// 应在进程启动阶段（加载 agent 之前）调用 SetDefaultGlobalSkillDirs 设置一次。
+var defaultGlobalSkillDirs []string
+
+// SetDefaultGlobalSkillDirs 覆盖 agent 未配置 GlobalDirs 时的默认全局技能目录。
+// 传 nil/空切片恢复默认行为（~/.agents/skills）。
+func SetDefaultGlobalSkillDirs(dirs []string) {
+	defaultGlobalSkillDirs = dirs
+}
+
 // 以下常量基于 eino adk/middlewares/skill/prompt.go 中的未导出常量修改。
 // 与 eino 原版的区别：去掉了 <available_skills> 动态技能列表段落。
 // 原因：技能列表改由 MessageModifier 在每次请求时动态注入 system prompt，
@@ -186,9 +197,11 @@ func NewTool(config Config) (tool.BaseTool, error) {
 		// 添加全局目录
 		dirs = append(dirs, config.GlobalDirs...)
 
-		// 如果 globalDirs 未配置，添加默认目录 ~/.agents/skills
+		// 如果 globalDirs 未配置，优先用注入的默认目录，否则回退 ~/.agents/skills
 		if len(config.GlobalDirs) == 0 {
-			if home, err := os.UserHomeDir(); err == nil {
+			if len(defaultGlobalSkillDirs) > 0 {
+				dirs = append(dirs, defaultGlobalSkillDirs...)
+			} else if home, err := os.UserHomeDir(); err == nil {
 				dirs = append(dirs, filepath.Join(home, DefaultSkillsPath))
 			}
 		}

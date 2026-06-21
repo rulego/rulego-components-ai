@@ -264,6 +264,33 @@ User only content
 	assert.Contains(t, output, "User only content")
 }
 
+// TestNewTool_InjectedDefaultGlobalDirs 验证 SetDefaultGlobalSkillDirs 注入的默认目录
+// 在 GlobalDirs 未配置时生效（供宿主把自身技能目录接入 agent 运行时）。
+func TestNewTool_InjectedDefaultGlobalDirs(t *testing.T) {
+	globalDir := t.TempDir()
+	skillDir := filepath.Join(globalDir, "injected_skill")
+	assert.NoError(t, os.MkdirAll(skillDir, 0755))
+	assert.NoError(t, os.WriteFile(filepath.Join(skillDir, "SKILL.md"), []byte(`---
+name: injected_skill
+description: from injected default dir
+---
+body
+`), 0644))
+
+	SetDefaultGlobalSkillDirs([]string{globalDir})
+	defer SetDefaultGlobalSkillDirs(nil)
+
+	// GlobalDirs 未配置 → 使用注入的默认目录
+	tTool, err := NewTool(Config{})
+	assert.NoError(t, err)
+
+	dst, ok := tTool.(*dynamicSkillTool)
+	assert.True(t, ok)
+	skillsText, err := dst.ListSkills(context.Background())
+	assert.NoError(t, err)
+	assert.Contains(t, skillsText, "injected_skill")
+}
+
 // TestMultiBackendMultipleLocalDirs 测试多个用户目录
 func TestMultiBackendMultipleLocalDirs(t *testing.T) {
 	// Setup: 创建多个用户目录
