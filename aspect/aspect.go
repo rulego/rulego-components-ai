@@ -244,6 +244,7 @@ type TokenUsage struct {
 	PromptTokens     int // Input tokens / 输入 tokens
 	CompletionTokens int // Output tokens / 输出 tokens
 	TotalTokens      int // Total tokens / 总 tokens
+	CachedTokens     int // Cached prompt tokens / 缓存的输入 tokens
 }
 
 // ToolCallInfo represents information about a tool call before execution.

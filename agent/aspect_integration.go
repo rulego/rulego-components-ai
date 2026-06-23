@@ -313,6 +313,7 @@ func (e *AgentAspectExecutor) buildOutput(ctx context.Context, msg *schema.Messa
 			PromptTokens:     msg.ResponseMeta.Usage.PromptTokens,
 			CompletionTokens: msg.ResponseMeta.Usage.CompletionTokens,
 			TotalTokens:      msg.ResponseMeta.Usage.TotalTokens,
+			CachedTokens:     msg.ResponseMeta.Usage.PromptTokenDetails.CachedTokens,
 		}
 	}
 
@@ -338,6 +339,7 @@ func (e *AgentAspectExecutor) buildStreamOutput(ctx context.Context, fullContent
 			PromptTokens:     lastChunk.ResponseMeta.Usage.PromptTokens,
 			CompletionTokens: lastChunk.ResponseMeta.Usage.CompletionTokens,
 			TotalTokens:      lastChunk.ResponseMeta.Usage.TotalTokens,
+			CachedTokens:     lastChunk.ResponseMeta.Usage.PromptTokenDetails.CachedTokens,
 		}
 	}
 
@@ -362,11 +364,12 @@ func InjectAspectManager(ctx context.Context, manager *aspect.AspectManager) con
 
 // BuildTokenMetadata 构建 token 统计元数据
 func BuildTokenMetadata(msg types.RuleMsg, tokenUsage aspect.TokenUsage, modelName string) {
-	msg.Metadata.PutValue("model", modelName)
+	msg.Metadata.PutValue(config.KeyModel, modelName)
 	if tokenUsage.TotalTokens > 0 {
-		msg.Metadata.PutValue("prompt_tokens", formatInt(tokenUsage.PromptTokens))
-		msg.Metadata.PutValue("completion_tokens", formatInt(tokenUsage.CompletionTokens))
-		msg.Metadata.PutValue("total_tokens", formatInt(tokenUsage.TotalTokens))
+		msg.Metadata.PutValue(config.KeyPromptTokens, formatInt(tokenUsage.PromptTokens))
+		msg.Metadata.PutValue(config.KeyCompletionTokens, formatInt(tokenUsage.CompletionTokens))
+		msg.Metadata.PutValue(config.KeyTotalTokens, formatInt(tokenUsage.TotalTokens))
+		msg.Metadata.PutValue(config.KeyCachedTokens, formatInt(tokenUsage.CachedTokens))
 	}
 }
 
@@ -384,6 +387,14 @@ func BuildStreamChunkMetadata(msg types.RuleMsg, isFirst bool) {
 	// 导致长耗时的工具调用后，后续流式 chunk 会因为 Context 被 Cancel 而被丢弃
 	// 我们依赖最后的 types.Success 消息来触发 childDone() 结束请求
 	msg.Metadata.Delete(config.KeyStreamStart)
+}
+
+// BuildStreamChunkMetadataWithModel 构建流式块元数据（带模型名称）
+func BuildStreamChunkMetadataWithModel(msg types.RuleMsg, isFirst bool, modelName string) {
+	BuildStreamChunkMetadata(msg, isFirst)
+	if modelName != "" {
+		msg.Metadata.PutValue(config.KeyModel, modelName)
+	}
 }
 
 func formatInt(n int) string {

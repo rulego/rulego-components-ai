@@ -223,6 +223,16 @@ const (
 	// DefaultMaxStep 默认最大迭代次数 - 定义在 defaults.go 中
 	// KeyStream 流式标志键
 	KeyStream = "stream"
+	// KeyModel 模型名称键
+	KeyModel = "model"
+	// KeyPromptTokens 输入 token 键
+	KeyPromptTokens = "prompt_tokens"
+	// KeyCompletionTokens 输出 token 键
+	KeyCompletionTokens = "completion_tokens"
+	// KeyTotalTokens 总 token 键
+	KeyTotalTokens = "total_tokens"
+	// KeyCachedTokens 缓存 token 键
+	KeyCachedTokens = "cached_tokens"
 	// KeyToolCalls 工具调用键
 	KeyToolCalls = "tool_calls"
 	// KeyFinishReason 结束原因键

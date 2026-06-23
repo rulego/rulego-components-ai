@@ -406,7 +406,7 @@ func (x *ReactAgentNode) executeStream(ctx types.RuleContext, msg types.RuleMsg,
 			chunkMsg := msg.Copy()
 			chunkMsg.SetData(chunk)
 			chunkMsg.DataType = types.TEXT
-			BuildStreamChunkMetadata(chunkMsg, isFirst)
+			BuildStreamChunkMetadataWithModel(chunkMsg, isFirst, x.Config.Model)
 			ctx.TellNext(chunkMsg, types.Stream)
 		},
 	)
@@ -436,14 +436,15 @@ func (x *ReactAgentNode) executeStream(ctx types.RuleContext, msg types.RuleMsg,
 	}
 
 	// 正常的 AI 流式响应流程
-	// 发送流式结束消息
+	// 发送流式结束消息（包含 token 统计，这样 [DONE] 前会发送 usage）
 	endMsg := msg.Copy()
 	endMsg.SetData("")
 	endMsg.DataType = types.TEXT
 	BuildStreamEndMetadata(endMsg)
+	BuildTokenMetadata(endMsg, output.TokenUsage, x.Config.Model)
 	ctx.TellNext(endMsg, types.Stream)
 
-	// 发送最终完成消息
+	// 发送最终完成消息（用于下游处理，如日志）
 	finalMsg := msg.Copy()
 	finalMsg.SetData(output.Content)
 	finalMsg.DataType = types.TEXT

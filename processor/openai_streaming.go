@@ -100,6 +100,10 @@ const (
 	KeyPromptTokensMetadata     = "prompt_tokens"
 	KeyCompletionTokensMetadata = "completion_tokens"
 	KeyTotalTokensMetadata      = "total_tokens"
+	KeyCachedTokensMetadata     = "cached_tokens"
+
+	// OpenAI usage sub-keys
+	KeyPromptTokensDetails = "prompt_tokens_details"
 )
 
 func init() {
@@ -174,7 +178,7 @@ func handleMessage(exchange *endpoint.Exchange, msg *types.RuleMsg, isSSE bool) 
 	isCompleted := msg.Metadata.GetValue(KeyStreamCompleted) == ValueTrue
 
 	// 如果是流式请求的完整内容消息（full_content=true），跳过处理
-	// 流式内容已通过 chunk 发送，此消息只用于下游其他处理（如日志）
+	// 流式内容已通过 chunk 发送，token 统计已在 handleCompletion 中处理
 	if msg.Metadata.GetValue(KeyStream) == ValueTrue && msg.Metadata.GetValue(KeyFullContent) == ValueTrue {
 		return
 	}
@@ -248,15 +252,11 @@ func handleChunk(exchange *endpoint.Exchange, msg *types.RuleMsg, id, model stri
 func handleCompletion(exchange *endpoint.Exchange, msg *types.RuleMsg, id, model string, isSSE bool) {
 	// 确保 SSE headers 已设置（如果之前没有设置）
 	if !isSSE {
-		// fmt.Printf("[DEBUG] processor: Setting SSE headers for completion\n")
 		setSSEHeaders(exchange)
 	}
 
 	// 从 metadata 中获取 token 使用统计
-	promptTokens, completionTokens, totalTokens := getTokenUsage(msg)
-
-	// 打印调试日志
-	// fmt.Printf("[DEBUG] processor: handleCompletion called, content length=%d, totalTokens=%d\n", len(msg.GetData()), totalTokens)
+	_, _, totalTokens := getTokenUsage(msg)
 
 	// 先发送最终内容（如果有）
 	var finalData string
@@ -279,10 +279,9 @@ func handleCompletion(exchange *endpoint.Exchange, msg *types.RuleMsg, id, model
 		}
 		contentBytes, _ := json.Marshal(contentResp)
 		finalData = fmt.Sprintf("%s%s\n\n", SSEDataPrefix, string(contentBytes))
-		// fmt.Printf("[DEBUG] processor: Sending final content, length=%d\n", len(msg.GetData()))
 	}
 
-	// 发送完成信号（包含 token 使用统计）
+	// 发送完成信号（包含标准 token 使用统计）
 	chunkResp := map[string]interface{}{
 		KeyID:      id,
 		KeyObject:  ValueChatCompletionChunk,
@@ -296,18 +295,13 @@ func handleCompletion(exchange *endpoint.Exchange, msg *types.RuleMsg, id, model
 			},
 		},
 	}
-	// 如果有 token 统计，添加到响应中
+	// 如果有 token 统计，添加标准 usage 结构
 	if totalTokens > 0 {
-		chunkResp[KeyUsage] = map[string]interface{}{
-			KeyPromptTokens:     promptTokens,
-			KeyCompletionTokens: completionTokens,
-			KeyTotalTokens:      totalTokens,
-		}
+		chunkResp[KeyUsage] = buildUsageObject(msg)
 	}
 	chunkBytes, _ := json.Marshal(chunkResp)
 	// 格式: [finalData]data: {chunk}\n\ndata: [DONE]\n\n
 	completeData := finalData + fmt.Sprintf("%s%s\n\n%s%s\n\n", SSEDataPrefix, string(chunkBytes), SSEDataPrefix, SSEDone)
-	// fmt.Printf("[DEBUG] processor: Complete response length=%d\n", len(completeData))
 	exchange.Out.SetBody([]byte(completeData))
 }
 
@@ -317,9 +311,6 @@ func handleFullResponse(exchange *endpoint.Exchange, msg *types.RuleMsg, id, mod
 	if t, ok := exchange.Out.(endpoint.HeaderModifier); ok {
 		t.SetHeader(processor.HeaderKeyContentType, processor.HeaderValueApplicationJson)
 	}
-
-	// 从 metadata 中获取 token 使用统计
-	promptTokens, completionTokens, totalTokens := getTokenUsage(msg)
 
 	fullResp := map[string]interface{}{
 		KeyID:      id,
@@ -336,11 +327,7 @@ func handleFullResponse(exchange *endpoint.Exchange, msg *types.RuleMsg, id, mod
 				KeyFinishReason: ValueStop,
 			},
 		},
-		KeyUsage: map[string]interface{}{
-			KeyPromptTokens:     promptTokens,
-			KeyCompletionTokens: completionTokens,
-			KeyTotalTokens:      totalTokens,
-		},
+		KeyUsage: buildUsageObject(msg),
 	}
 	fullData, _ := json.Marshal(fullResp)
 	exchange.Out.SetBody(fullData)
@@ -366,6 +353,28 @@ func getTokenUsage(msg *types.RuleMsg) (int, int, int) {
 	completionTokens := parseIntFromString(msg.Metadata.GetValue(KeyCompletionTokensMetadata))
 	totalTokens := parseIntFromString(msg.Metadata.GetValue(KeyTotalTokensMetadata))
 	return promptTokens, completionTokens, totalTokens
+}
+
+// buildUsageObject 构建标准 OpenAI usage 对象。
+// 只有 cached_tokens > 0 时才返回 prompt_tokens_details，兼容不支持缓存的接口。
+func buildUsageObject(msg *types.RuleMsg) map[string]interface{} {
+	promptTokens, completionTokens, totalTokens := getTokenUsage(msg)
+	cachedTokens := parseIntFromString(msg.Metadata.GetValue(KeyCachedTokensMetadata))
+
+	usage := map[string]interface{}{
+		KeyPromptTokens:     promptTokens,
+		KeyCompletionTokens: completionTokens,
+		KeyTotalTokens:      totalTokens,
+	}
+
+	// 仅在有缓存数据时返回 prompt_tokens_details，兼容不支持缓存的 LLM
+	if cachedTokens > 0 {
+		usage[KeyPromptTokensDetails] = map[string]interface{}{
+			"cached_tokens": cachedTokens,
+		}
+	}
+
+	return usage
 }
 
 // parseIntFromString safely parses an integer from a string, returns 0 on error.

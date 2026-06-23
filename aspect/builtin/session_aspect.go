@@ -373,12 +373,9 @@ func (a *SessionAspect) updateSessionStats(ctx context.Context, sessionKey strin
 		a.log("[SessionAspect] After: Get session for stats update failed: %v", err)
 		return
 	}
-	// 使用模型返回的 token 统计修正估算值
+	// 使用模型返回的 token 统计作为当前上下文占用
 	if output.TokenUsage.TotalTokens > 0 && output.Content != "" {
-		diff := output.TokenUsage.TotalTokens - totalEstimatedTokens
-		if diff != 0 {
-			sess.Metadata.TotalTokenCount += diff
-		}
+		sess.Metadata.TotalTokenCount = output.TokenUsage.TotalTokens
 	}
 	if err := a.sessionMgr.Update(ctx, sess); err != nil {
 		a.log("[SessionAspect] After: Update session failed: %v", err)
