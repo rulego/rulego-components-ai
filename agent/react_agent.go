@@ -383,6 +383,10 @@ func (x *ReactAgentNode) executeSync(ctx types.RuleContext, msg types.RuleMsg, r
 	msg.SetData(output.Content)
 	msg.DataType = types.TEXT
 	BuildTokenMetadata(msg, output.TokenUsage, x.Config.Model)
+	// 如果 Around 切面拦截了请求（如 CommandAspect），传递切面输出的元数据
+	if output.SkippedAI {
+		transferOutputMetadata(msg, output)
+	}
 	ctx.TellSuccess(msg)
 }
 
@@ -425,6 +429,8 @@ func (x *ReactAgentNode) executeStream(ctx types.RuleContext, msg types.RuleMsg,
 		endMsg.DataType = types.TEXT
 		BuildStreamEndMetadata(endMsg)
 		BuildTokenMetadata(endMsg, output.TokenUsage, x.Config.Model)
+		// 传递切面输出的元数据（如 CommandAspect 设置的 _isCommandResponse）
+		transferOutputMetadata(endMsg, output)
 		ctx.TellSuccess(endMsg)
 		return
 	}
@@ -504,4 +510,27 @@ func ExtractOriginalSystemContent(content string) string {
 		return content[:idx]
 	}
 	return content
+}
+
+// transferOutputMetadata 将切面输出的元数据传递到消息元数据
+// 用于传递 CommandAspect 等切面设置的元数据（如 _isCommandResponse）
+func transferOutputMetadata(msg types.RuleMsg, output *aspect.AgentOutput) {
+	for k, v := range output.Metadata {
+		switch sv := v.(type) {
+		case string:
+			msg.Metadata.PutValue(k, sv)
+		case bool:
+			if sv {
+				msg.Metadata.PutValue(k, config.ValueTrue)
+			} else {
+				msg.Metadata.PutValue(k, config.ValueFalse)
+			}
+		case int:
+			msg.Metadata.PutValue(k, fmt.Sprintf("%d", sv))
+		case float64:
+			msg.Metadata.PutValue(k, fmt.Sprintf("%g", sv))
+		default:
+			msg.Metadata.PutValue(k, fmt.Sprintf("%v", v))
+		}
+	}
 }

@@ -250,6 +250,8 @@ const (
 
 	// ValueTrue 真值字符串
 	ValueTrue = "true"
+	// ValueFalse 假值字符串
+	ValueFalse = "false"
 
 	// ShareRuleContextKey 用于在 Context 中传递 RuleContext
 	ShareRuleContextKey = "share_rule_context"
