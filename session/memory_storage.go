@@ -6,19 +6,47 @@ import (
 	"time"
 )
 
+// defaultMaxMessages 单会话在内存中保留的最大消息数，超过后裁剪最旧消息
+const defaultMaxMessages = 2000
+
 // MemoryStorage 内存存储实现
 type MemoryStorage struct {
-	mu       sync.RWMutex
-	sessions map[string]*Session
-	messages map[string][]*SessionMessage
+	mu          sync.RWMutex
+	sessions    map[string]*Session
+	messages    map[string][]*SessionMessage
+	maxMessages int
 }
 
-// NewMemoryStorage 创建新的内存存储
+// NewMemoryStorage 创建新的内存存储，默认单会话保留 2000 条消息
 func NewMemoryStorage() *MemoryStorage {
-	return &MemoryStorage{
-		sessions: make(map[string]*Session),
-		messages: make(map[string][]*SessionMessage),
+	return NewMemoryStorageWithLimit(defaultMaxMessages)
+}
+
+// NewMemoryStorageWithLimit 创建带消息上限的内存存储，超过上限裁剪最旧消息防止 OOM
+func NewMemoryStorageWithLimit(maxMessages int) *MemoryStorage {
+	if maxMessages <= 0 {
+		maxMessages = defaultMaxMessages
 	}
+	return &MemoryStorage{
+		sessions:    make(map[string]*Session),
+		messages:    make(map[string][]*SessionMessage),
+		maxMessages: maxMessages,
+	}
+}
+
+// cloneMessage 深拷贝消息，隔离调用方与存储内部的切片
+func cloneMessage(msg *SessionMessage) *SessionMessage {
+	if msg == nil {
+		return nil
+	}
+	cp := *msg
+	if msg.Images != nil {
+		cp.Images = append([]string(nil), msg.Images...)
+	}
+	if msg.ToolCalls != nil {
+		cp.ToolCalls = append([]ToolCallInfo(nil), msg.ToolCalls...)
+	}
+	return &cp
 }
 
 // Create 创建会话
@@ -53,7 +81,9 @@ func (m *MemoryStorage) Get(ctx context.Context, key string) (*Session, error) {
 	// 深拷贝返回
 	sessionCopy := *session
 	sessionCopy.Messages = make([]*SessionMessage, 0, len(m.messages[key]))
-	sessionCopy.Messages = append(sessionCopy.Messages, m.messages[key]...)
+	for _, msg := range m.messages[key] {
+		sessionCopy.Messages = append(sessionCopy.Messages, cloneMessage(msg))
+	}
 
 	return &sessionCopy, nil
 }
@@ -72,7 +102,11 @@ func (m *MemoryStorage) Update(ctx context.Context, session *Session) error {
 	sessionCopy.Messages = make([]*SessionMessage, 0, len(session.Messages))
 
 	m.sessions[session.Key] = &sessionCopy
-	m.messages[session.Key] = append(m.messages[session.Key][:0], session.Messages...)
+	msgs := make([]*SessionMessage, 0, len(session.Messages))
+	for _, msg := range session.Messages {
+		msgs = append(msgs, cloneMessage(msg))
+	}
+	m.messages[session.Key] = msgs
 
 	return nil
 }
@@ -101,14 +135,20 @@ func (m *MemoryStorage) AddMessage(ctx context.Context, sessionKey string, msg *
 		return ErrSessionNotFound
 	}
 
-	// 深拷贝消息
-	msgCopy := *msg
-	m.messages[sessionKey] = append(m.messages[sessionKey], &msgCopy)
+	m.messages[sessionKey] = append(m.messages[sessionKey], cloneMessage(msg))
 
-	// 更新会话元数据
+	// 超过上限裁剪最旧消息，防止内存无限增长
 	session := m.sessions[sessionKey]
+	droppedTokens := 0
+	if m.maxMessages > 0 && len(m.messages[sessionKey]) > m.maxMessages {
+		excess := m.messages[sessionKey][:len(m.messages[sessionKey])-m.maxMessages]
+		for _, d := range excess {
+			droppedTokens += d.TokenCount
+		}
+		m.messages[sessionKey] = m.messages[sessionKey][len(m.messages[sessionKey])-m.maxMessages:]
+	}
 	session.Metadata.MessageCount++
-	session.Metadata.TotalTokenCount += msg.TokenCount
+	session.Metadata.TotalTokenCount += msg.TokenCount - droppedTokens
 	session.UpdatedAt = time.Now()
 	session.LastActivityAt = time.Now()
 
@@ -136,7 +176,9 @@ func (m *MemoryStorage) GetHistory(ctx context.Context, sessionKey string, limit
 	}
 
 	result := make([]*SessionMessage, limit)
-	copy(result, messages[start:])
+	for i, msg := range messages[start:] {
+		result[i] = cloneMessage(msg)
+	}
 
 	return result, nil
 }
@@ -169,7 +211,9 @@ func (m *MemoryStorage) List(ctx context.Context, query *SessionQuery) ([]*Sessi
 
 		sessionCopy := *session
 		sessionCopy.Messages = make([]*SessionMessage, 0, len(m.messages[session.Key]))
-		sessionCopy.Messages = append(sessionCopy.Messages, m.messages[session.Key]...)
+		for _, msg := range m.messages[session.Key] {
+			sessionCopy.Messages = append(sessionCopy.Messages, cloneMessage(msg))
+		}
 
 		result = append(result, &sessionCopy)
 	}
