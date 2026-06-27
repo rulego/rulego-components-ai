@@ -134,7 +134,7 @@ func (e *AgentAspectExecutor) ExecuteStream(
 	input *aspect.AgentInput,
 	messages []*schema.Message,
 	streamExecutor func(ctx context.Context, msgs []*schema.Message) (*schema.StreamReader[*schema.Message], error),
-	onChunk func(chunk string, isFirst bool),
+	onChunk func(content, reasoning string, isFirst bool),
 ) (*aspect.AgentOutput, error) {
 	point := e.buildPoint(opts)
 	startTime := time.Now()
@@ -186,10 +186,12 @@ func (e *AgentAspectExecutor) ExecuteStream(
 				break
 			}
 			lastChunk = chunk
-			chunkCount++
 
-			if chunk.Content != "" {
-				fullContent.WriteString(chunk.Content)
+			if chunk.Content != "" || chunk.ReasoningContent != "" {
+				chunkCount++
+				if chunk.Content != "" {
+					fullContent.WriteString(chunk.Content)
+				}
 
 				streamChunk := &aspect.StreamChunk{
 					Content:   chunk.Content,
@@ -199,7 +201,7 @@ func (e *AgentAspectExecutor) ExecuteStream(
 				e.manager.ExecuteStreamChunk(ctx, point, streamChunk)
 
 				if onChunk != nil {
-					onChunk(chunk.Content, chunkCount == 1)
+					onChunk(chunk.Content, chunk.ReasoningContent, chunkCount == 1)
 				}
 			}
 

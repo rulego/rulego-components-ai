@@ -145,8 +145,8 @@ func TestAspectIntegration_MultipleAroundAspects_Stream(t *testing.T) {
 	}
 
 	var chunks []string
-	onChunk := func(chunk string, isFirst bool) {
-		chunks = append(chunks, chunk)
+	onChunk := func(content, reasoning string, isFirst bool) {
+		chunks = append(chunks, content)
 	}
 
 	output, err := executor.ExecuteStream(context.Background(), opts, agentInput, messages, streamExecutor, onChunk)
@@ -219,7 +219,7 @@ func TestAspectIntegration_MultipleAroundAspects_Interrupt(t *testing.T) {
 		}
 
 		onChunkCalled := false
-		onChunk := func(chunk string, isFirst bool) {
+		onChunk := func(content, reasoning string, isFirst bool) {
 			onChunkCalled = true
 		}
 

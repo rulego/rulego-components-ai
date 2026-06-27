@@ -170,13 +170,13 @@ func CreateChatModel(llmConfig config.LLMConfig, opts ...ModelOptions) (model.To
 		openaiConfig.Stop = llmConfig.Params.Stop
 	}
 
-	// 合并用户自定义的 ExtraFields
+	// 合并用户自定义的 ExtraFields（支持点路径 key，如 thinking.type → thinking:{type:...}）
 	if len(llmConfig.Params.ExtraFields) > 0 {
 		if openaiConfig.ExtraFields == nil {
 			openaiConfig.ExtraFields = make(map[string]any)
 		}
 		for k, v := range llmConfig.Params.ExtraFields {
-			openaiConfig.ExtraFields[k] = v
+			setNestedExtraField(openaiConfig.ExtraFields, k, v)
 		}
 	}
 
@@ -193,6 +193,30 @@ func CreateChatModel(llmConfig config.LLMConfig, opts ...ModelOptions) (model.To
 	}
 
 	return chatModel, nil
+}
+
+// setNestedExtraField 把点路径 key（如 "thinking.type"）展开为嵌套 map。
+// 无点的 key 直接赋值。用于把扁平的 ExtraFields 配置转成模型 API 需要的嵌套结构。
+func setNestedExtraField(m map[string]any, key string, value any) {
+	if !strings.Contains(key, ".") {
+		m[key] = value
+		return
+	}
+	parts := strings.Split(key, ".")
+	cur := m
+	for i, p := range parts {
+		if i == len(parts)-1 {
+			cur[p] = value
+			return
+		}
+		if next, ok := cur[p].(map[string]any); ok {
+			cur = next
+		} else {
+			next := make(map[string]any)
+			cur[p] = next
+			cur = next
+		}
+	}
 }
 
 // ============================================

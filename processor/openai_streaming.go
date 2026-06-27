@@ -26,6 +26,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/rulego/rulego-components-ai/config"
 	"github.com/rulego/rulego/api/types"
 	"github.com/rulego/rulego/api/types/endpoint"
 	"github.com/rulego/rulego/builtin/processor"
@@ -241,14 +242,17 @@ func handleChunk(exchange *endpoint.Exchange, msg *types.RuleMsg, id, model stri
 	// Stream chunk data
 	// Format: data: {"id":"...","object":"chat.completion.chunk",...}
 	delta := map[string]interface{}{}
+	if reasoning := msg.Metadata.GetValue(config.KeyReasoningContent); reasoning != "" {
+		delta["reasoning_content"] = reasoning
+	}
 	if isToolCall {
 		// AG-UI 扩展模式：透传工具调用事件（type/toolCallName/content）
 		var toolCallData map[string]interface{}
 		if err := json.Unmarshal([]byte(msg.GetData()), &toolCallData); err == nil {
 			delta["tool_calls"] = []interface{}{toolCallData}
 		}
-	} else {
-		delta["content"] = msg.GetData()
+	} else if content := msg.GetData(); content != "" {
+		delta["content"] = content
 	}
 
 	chunkResp := map[string]interface{}{

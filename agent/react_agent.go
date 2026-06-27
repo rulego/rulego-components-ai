@@ -403,9 +403,12 @@ func (x *ReactAgentNode) executeStream(ctx types.RuleContext, msg types.RuleMsg,
 			ctx = InjectSessionModelToContext(ctx, agentInput.Metadata)
 			return x.agent.Stream(ctx, msgs)
 		},
-		func(chunk string, isFirst bool) {
+		func(content, reasoning string, isFirst bool) {
 			chunkMsg := msg.Copy()
-			chunkMsg.SetData(chunk)
+			chunkMsg.SetData(content)
+			if reasoning != "" {
+				chunkMsg.Metadata.PutValue(config.KeyReasoningContent, reasoning)
+			}
 			chunkMsg.DataType = types.TEXT
 			BuildStreamChunkMetadataWithModel(chunkMsg, isFirst, x.Config.Model)
 			ctx.TellNext(chunkMsg, types.Stream)
