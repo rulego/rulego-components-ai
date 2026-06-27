@@ -47,9 +47,6 @@ func ErrorResultFromString(message string) *Result {
 // String returns a simple text format for LLM consumption.
 func (r *Result) String() string {
 	if r.Success {
-		if r.Data != nil {
-			return fmt.Sprintf("Success: %s", r.Message)
-		}
 		return fmt.Sprintf("Success: %s", r.Message)
 	}
 	return r.Message // Error message already has "Error:" prefix from ToolError

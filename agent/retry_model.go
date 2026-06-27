@@ -103,17 +103,6 @@ func (w *RetryChatModelWrapper) isRetryableError(err error) bool {
 	return false
 }
 
-// getHTTPStatusCode 尝试从错误中提取 HTTP 状态码
-func getHTTPStatusCode(err error) int {
-	type httpError interface {
-		HTTPStatusCode() int
-	}
-	if he, ok := err.(httpError); ok {
-		return he.HTTPStatusCode()
-	}
-	return 0
-}
-
 // containsHTTPStatus 检查错误字符串中是否包含指定的 HTTP 状态码。
 // 要求状态码前后不是数字字符，避免 UUID 等字符串中的误判。
 func containsHTTPStatus(errStr string, code string) bool {
