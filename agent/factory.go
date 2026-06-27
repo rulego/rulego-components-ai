@@ -187,8 +187,8 @@ func CreateChatModel(llmConfig config.LLMConfig, opts ...ModelOptions) (model.To
 
 	var chatModel model.ToolCallingChatModel = baseModel
 
-	// 可选：包装重试逻辑
-	if len(opts) > 0 && opts[0].WrapRetry && opts[0].MaxRetries > 0 {
+	// 可选：包装重试逻辑。MaxRetries<=0 时由 wrapper 使用默认次数。
+	if len(opts) > 0 && opts[0].WrapRetry {
 		chatModel = NewRetryChatModelWrapper(chatModel, opts[0].MaxRetries, opts[0].Logger)
 	}
 

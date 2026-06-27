@@ -218,9 +218,9 @@ func (w *RetryChatModelWrapper) Generate(ctx context.Context, input []*schema.Me
 	return nil, fmt.Errorf("Generate failed after %d attempts: %w", maxAttempts, lastErr)
 }
 
-// Stream 带重试的流式生成。覆盖建立阶段与读取中途（mid-stream）的间歇性错误（如 "Error in input stream"）。
-// 通过 Copy(2) 将流分两份：一份探测整条流是否出错，另一份仅在无误时才返回给调用方，
-// 因此中途断流可安全重试且不会产生重复内容。
+// Stream 带重试的流式生成。仅在建立阶段（首 chunk 之前）重试，以保留流式实时性；
+// 首 chunk 后的中途断流不再重试（避免重复内容），直接透传。
+// Copy(2) 共享缓存：probe 只读首 chunk 探测，passCopy 从首节点实时读取整条流。
 func (w *RetryChatModelWrapper) Stream(ctx context.Context, input []*schema.Message, opts ...model.Option) (*schema.StreamReader[*schema.Message], error) {
 	maxAttempts := w.maxRetries + 1
 	var lastErr error
@@ -243,14 +243,19 @@ func (w *RetryChatModelWrapper) Stream(ctx context.Context, input []*schema.Mess
 			continue
 		}
 
+		// 探测首 chunk，确认上游已开始输出
 		copies := stream.Copy(2)
 		probeCopy, passCopy := copies[0], copies[1]
-		probeErr := consumeStreamForError(probeCopy)
-		if probeErr == nil {
+		_, probeErr := probeCopy.Recv()
+		probeCopy.Close()
+
+		// 首 chunk 到达（含空流 EOF），交给调用方
+		if probeErr == nil || errors.Is(probeErr, io.EOF) {
 			return passCopy, nil
 		}
 
-		passCopy.Close() // 断流：丢弃 passCopy（调用方从未收到），可安全重试
+		// 首 chunk 前出错，丢弃 passCopy 重试
+		passCopy.Close()
 		if !w.isRetryableError(probeErr) {
 			return nil, probeErr
 		}
@@ -258,7 +263,7 @@ func (w *RetryChatModelWrapper) Stream(ctx context.Context, input []*schema.Mess
 		if attempt >= maxAttempts {
 			break
 		}
-		w.logf("[RetryChatModel] Stream read attempt %d failed (mid-stream): %v, retrying...", attempt, probeErr)
+		w.logf("[RetryChatModel] Stream probe attempt %d failed: %v, retrying...", attempt, probeErr)
 		if !w.sleep(ctx, w.calculateDelay(attempt)) {
 			return nil, ctx.Err()
 		}
@@ -268,21 +273,6 @@ func (w *RetryChatModelWrapper) Stream(ctx context.Context, input []*schema.Mess
 		lastErr = errors.New("stream failed")
 	}
 	return nil, fmt.Errorf("Stream failed after %d attempts: %w", maxAttempts, lastErr)
-}
-
-// consumeStreamForError 完整消费流以探测错误，返回首个非 EOF 错误（io.EOF 视为正常结束返回 nil）。
-func consumeStreamForError(stream *schema.StreamReader[*schema.Message]) error {
-	defer stream.Close()
-	for {
-		_, err := stream.Recv()
-		if err == nil {
-			continue
-		}
-		if errors.Is(err, io.EOF) {
-			return nil
-		}
-		return err
-	}
 }
 
 // sleep 等待指定时长，期间响应 ctx 取消。返回 false 表示 ctx 已取消。

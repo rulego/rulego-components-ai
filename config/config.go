@@ -33,7 +33,7 @@ type LLMConfig struct {
 	Images       []string      `json:"images"`       // 允许模型输入图片，并根据图像内容的理解回答用户问题
 	Params       ModelParams   `json:"params"`       //大模型参数
 	Tools        []Tool        `json:"tools"`        // 工具列表
-	MaxRetries   int           `json:"maxRetries"`   // 最大重试次数，0 表示不重试，默认 3。对 429/5xx/网络错误/超时自动重试
+	MaxRetries   int           `json:"maxRetries"`   // 最大重试次数，0 表示使用默认值 3。对 429/5xx/网络错误/超时/流建立中断自动重试
 }
 
 // ModelParams 大模型参数

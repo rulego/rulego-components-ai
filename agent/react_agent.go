@@ -142,10 +142,11 @@ func (x *ReactAgentNode) Init(ruleConfig types.Config, configuration types.Confi
 	}
 
 	// 4.1 包装模型以支持动态模型切换（会话级模型切换）
+	// 会话切换创建的新模型也需要重试包装
 	chatModel := WrapModelWithDynamicSupport(baseChatModel, x.Config.LLMConfig, ModelOptions{
 		Logger:     ruleConfig.Logger,
-		WrapRetry:  false, // 不重复包装重试，baseChatModel 已经有重试功能
-		MaxRetries: 0,
+		WrapRetry:  true,
+		MaxRetries: x.Config.MaxRetries,
 	})
 	x.chatModel = chatModel
 

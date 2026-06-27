@@ -394,31 +394,30 @@ func TestRetryStream_RetriesOnPreOutputReadError(t *testing.T) {
 	}
 }
 
-// TestRetryStream_RetriesOnMidStreamError 验证：上游已输出若干 chunk 后中途断流，
-// 重试后拿到完整内容且不重复（中途断流的部分被丢弃）。
-func TestRetryStream_RetriesOnMidStreamError(t *testing.T) {
+// TestRetryStream_NoRetryOnMidStreamError 验证：上游已输出首个 chunk 后中途断流，
+// 不再重试（保留实时性、避免重复内容），直接透传给调用方。
+func TestRetryStream_NoRetryOnMidStreamError(t *testing.T) {
 	fake := &fakeChatModel{
 		behaviors: []streamBehavior{
 			{stream: streamReaderWithChunksThenError([]string{"A", "B"}, errors.New("Error in input stream"))},
-			{stream: streamReaderFromChunks("OK")},
 		},
 	}
 	w := NewRetryChatModelWrapper(fake, 3)
 
 	sr, err := w.Stream(context.Background(), nil)
 	if err != nil {
-		t.Fatalf("Stream 应返回 reader，got err: %v", err)
+		t.Fatalf("首个 chunk 成功后应返回 reader（mid-stream 错误透传），got err: %v", err)
 	}
 	contents, recvErr := drainStream(sr)
-	if !errors.Is(recvErr, io.EOF) {
-		t.Fatalf("重试后应正常结束(io.EOF)，got: %v", recvErr)
+	if recvErr == nil || !strings.Contains(recvErr.Error(), "input stream") {
+		t.Fatalf("期望透传 mid-stream 错误，got: %v", recvErr)
 	}
-	// 第一次的 A、B 因断流被整体丢弃，只保留重试后的 OK，绝不重复
-	if len(contents) != 1 || contents[0] != "OK" {
-		t.Fatalf("期望仅 [OK]（中途断流的部分被丢弃、无重复），got %v", contents)
+	// 已输出的 A、B 保留，错误透传，不重试
+	if len(contents) != 2 || contents[0] != "A" || contents[1] != "B" {
+		t.Fatalf("期望收到已输出的 [A B]，got %v", contents)
 	}
-	if calls := fake.callsCount(); calls != 2 {
-		t.Fatalf("期望 2 次调用（1 次中途断流 + 1 次重试成功），got %d", calls)
+	if calls := fake.callsCount(); calls != 1 {
+		t.Fatalf("mid-stream 错误不应重试，期望 1 次，got %d", calls)
 	}
 }
 
