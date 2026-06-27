@@ -268,7 +268,7 @@ func (t *bashTool) executeShell(ctx context.Context, params OperationParams) (st
 		if err != nil {
 			return common.NewErrorf(common.ErrCodeFileNotFound, "command '%s' not found: %v", params.Command, err).Error(), nil
 		}
-		cmd = exec.Command(cmdPath, params.Args...)
+		cmd = exec.CommandContext(ctx, cmdPath, params.Args...)
 	} else {
 		// 使用 shell 执行完整命令字符串，支持管道、重定向等
 		shellArgs := make([]string, len(t.platform.ShellArgs))
@@ -304,7 +304,7 @@ func (t *bashTool) executeShell(ctx context.Context, params OperationParams) (st
 			shellArgs = append(shellArgs, fullCommand)
 		}
 
-		cmd = exec.Command(t.platform.ShellCommand, shellArgs...)
+		cmd = exec.CommandContext(ctx, t.platform.ShellCommand, shellArgs...)
 	}
 
 	// Set working directory
@@ -323,6 +323,15 @@ func (t *bashTool) executeShell(ctx context.Context, params OperationParams) (st
 
 	// 设置进程组属性（Linux/macOS 下设置 Setpgid，用于超时时 kill 整个进程组）
 	setSysProcAttr(cmd)
+
+	// ctx 超时/取消时触发 Cancel 杀进程组，WaitDelay 兜底回收残留 IO
+	cmd.Cancel = func() error {
+		if cmd.Process != nil {
+			killProcessGroup(cmd.Process.Pid)
+		}
+		return os.ErrProcessDone
+	}
+	cmd.WaitDelay = 5 * time.Second
 
 	// Set environment variables
 	cmd.Env = os.Environ()
@@ -350,25 +359,8 @@ func (t *bashTool) executeShell(ctx context.Context, params OperationParams) (st
 		return "", fmt.Errorf("启动命令失败: %w", err)
 	}
 
-	// 使用 goroutine 等待进程完成，同时监听 context 取消以 kill 进程组
-	waitCh := make(chan error, 1)
-	go func() {
-		waitCh <- cmd.Wait()
-	}()
-
-	var err error
-	select {
-	case err = <-waitCh:
-		// 进程正常结束
-	case <-ctx.Done():
-		// 超时或取消，kill 整个进程组
-		if cmd.Process != nil {
-			killProcessGroup(cmd.Process.Pid)
-			// 等待进程真正退出
-			<-waitCh
-		}
-		err = ctx.Err()
-	}
+	// exec.CommandContext 在 ctx 超时/取消时自动触发上面的 Cancel 杀进程
+	err := cmd.Wait()
 	executionTime := time.Since(startTime).Milliseconds()
 
 	// Convert encoding and truncate output if needed
