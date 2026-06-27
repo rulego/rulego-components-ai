@@ -37,8 +37,9 @@ func DefaultPathSecurityConfig() PathSecurityConfig {
 
 // SecurePathResolver provides path resolution with security checks.
 type SecurePathResolver struct {
-	resolver *PathResolver
-	config   PathSecurityConfig
+	resolver      *PathResolver
+	config        PathSecurityConfig
+	realWorkspace string
 }
 
 // NewSecurePathResolver creates a new secure path resolver.
@@ -47,9 +48,15 @@ func NewSecurePathResolver(workDir string, config PathSecurityConfig) (*SecurePa
 	if err != nil {
 		return nil, err
 	}
+	// 解析工作区的符号链接，确保与 resolved 的基准一致，否则 Rel 会因软链失配
+	ws := resolver.Workspace()
+	if real, err := filepath.EvalSymlinks(ws); err == nil {
+		ws = real
+	}
 	return &SecurePathResolver{
-		resolver: resolver,
-		config:   config,
+		resolver:      resolver,
+		config:        config,
+		realWorkspace: ws,
 	}, nil
 }
 
@@ -61,6 +68,19 @@ func (s *SecurePathResolver) Resolve(path string) (string, error) {
 	}
 
 	resolved := s.resolver.Resolve(path)
+
+	// UNC 路径（\\server\share 或 //server/share）可绕过工作区根，直接拒绝
+	if strings.HasPrefix(resolved, `\\`) || strings.HasPrefix(resolved, "//") {
+		return "", NewErrorf(ErrCodePathEscape, "UNC paths not allowed")
+	}
+
+	// 解析符号链接后再做越界检查，防止工作区内软链指向工作区外。
+	// 路径不存在时解析父目录的软链，避免写入新文件时跟随软链逃逸
+	if real, err := filepath.EvalSymlinks(resolved); err == nil {
+		resolved = real
+	} else if realDir, derr := filepath.EvalSymlinks(filepath.Dir(resolved)); derr == nil {
+		resolved = filepath.Join(realDir, filepath.Base(resolved))
+	}
 
 	if err := s.checkPathTraversal(resolved); err != nil {
 		return "", err
@@ -81,9 +101,9 @@ func (s *SecurePathResolver) Resolve(path string) (string, error) {
 	return resolved, nil
 }
 
-// Workspace returns the workspace directory.
+// Workspace returns the workspace directory (symlinks resolved).
 func (s *SecurePathResolver) Workspace() string {
-	return s.resolver.Workspace()
+	return s.realWorkspace
 }
 
 // checkPathTraversal ensures the path doesn't escape the workspace.
@@ -94,7 +114,7 @@ func (s *SecurePathResolver) checkPathTraversal(resolved string) error {
 		return nil
 	}
 
-	workspace := s.resolver.Workspace()
+	workspace := s.realWorkspace
 
 	// Get relative path
 	rel, err := filepath.Rel(workspace, resolved)
@@ -120,7 +140,7 @@ func (s *SecurePathResolver) checkPathTraversal(resolved string) error {
 
 // checkHiddenPath checks if the path contains hidden files/directories.
 func (s *SecurePathResolver) checkHiddenPath(resolved string) error {
-	workspace := s.resolver.Workspace()
+	workspace := s.realWorkspace
 
 	rel, err := filepath.Rel(workspace, resolved)
 	if err != nil {
@@ -148,7 +168,7 @@ func (s *SecurePathResolver) checkExcludedDirs(resolved string) error {
 		return nil
 	}
 
-	workspace := s.resolver.Workspace()
+	workspace := s.realWorkspace
 
 	rel, err := filepath.Rel(workspace, resolved)
 	if err != nil {

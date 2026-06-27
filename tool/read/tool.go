@@ -42,7 +42,16 @@ func DefaultConfig() Config {
 
 type readTool struct {
 	config   Config
-	resolver *common.PathResolver
+	resolver *common.SecurePathResolver
+}
+
+// readPathSecurity 读取操作的路径安全策略：允许隐藏文件、不排除目录，
+// 但仍禁止越界（AI 需读取 .env、node_modules 等用于代码审查）
+func readPathSecurity() common.PathSecurityConfig {
+	cfg := common.DefaultPathSecurityConfig()
+	cfg.AllowHiddenFiles = true
+	cfg.ExcludeDirs = nil
+	return cfg
 }
 
 // NewTool creates a new read tool.
@@ -54,7 +63,7 @@ func NewTool(config Config) (tool.BaseTool, error) {
 		config.MaxSearchResults = DefaultConfig().MaxSearchResults
 	}
 
-	resolver, err := common.NewPathResolver(config.WorkDir)
+	resolver, err := common.NewSecurePathResolver(config.WorkDir, readPathSecurity())
 	if err != nil {
 		return nil, err
 	}
@@ -147,7 +156,10 @@ func (t *readTool) readFile(params OperationParams) (string, error) {
 		return common.ErrPathEmpty().Error(), nil
 	}
 
-	path := t.resolver.Resolve(params.Path)
+	path, err := t.resolver.Resolve(params.Path)
+	if err != nil {
+		return "", err
+	}
 
 	info, err := os.Stat(path)
 	if os.IsNotExist(err) {
@@ -279,7 +291,11 @@ func (t *readTool) search(ctx context.Context, params OperationParams) (string, 
 
 	searchDir := t.config.WorkDir
 	if params.Path != "" {
-		searchDir = t.resolver.Resolve(params.Path)
+		resolved, err := t.resolver.Resolve(params.Path)
+		if err != nil {
+			return "", err
+		}
+		searchDir = resolved
 	}
 
 	var results []map[string]interface{}
@@ -441,7 +457,11 @@ func (t *readTool) list(params OperationParams) (string, error) {
 	path := t.config.WorkDir
 	displayPath := params.Path
 	if params.Path != "" {
-		path = t.resolver.Resolve(params.Path)
+		resolved, err := t.resolver.Resolve(params.Path)
+		if err != nil {
+			return "", err
+		}
+		path = resolved
 	}
 
 	entries, err := os.ReadDir(path)

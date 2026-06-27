@@ -123,7 +123,7 @@ func TestFileNotExist(t *testing.T) {
 }
 
 func TestUnsupportedOperation(t *testing.T) {
-	config := DefaultConfig()
+	config := Config{WorkDir: t.TempDir()}
 
 	tTool, err := NewTool(config)
 	require.NoError(t, err)
@@ -134,10 +134,7 @@ func TestUnsupportedOperation(t *testing.T) {
 	ctx := context.Background()
 
 	// Create a temp file for testing
-	tmpFile := filepath.Join(os.TempDir(), "test_edit.txt")
-	err = os.WriteFile(tmpFile, []byte("test content"), 0644)
-	require.NoError(t, err)
-	defer os.Remove(tmpFile)
+	tmpFile := createTestFile(t, config.WorkDir, "test content")
 
 	result, err := invokable.InvokableRun(ctx, buildParams(map[string]interface{}{
 		"operation": "invalid_op",
@@ -147,14 +144,15 @@ func TestUnsupportedOperation(t *testing.T) {
 	assert.Contains(t, result, "Operation not supported")
 }
 
-func createTestFile(t *testing.T, content string) string {
-	tmpFile := filepath.Join(os.TempDir(), "test_edit_"+filepath.Base(t.Name())+".txt")
-	err := os.WriteFile(tmpFile, []byte(content), 0644)
-	require.NoError(t, err)
+func createTestFile(t *testing.T, workspace, content string) string {
+	tmpFile := filepath.Join(workspace, "test_edit_"+filepath.Base(t.Name())+".txt")
+	require.NoError(t, os.WriteFile(tmpFile, []byte(content), 0644))
 	t.Cleanup(func() {
 		os.Remove(tmpFile)
 	})
-	return tmpFile
+	rel, err := filepath.Rel(workspace, tmpFile)
+	require.NoError(t, err)
+	return rel
 }
 
 func buildParams(params map[string]interface{}) string {
@@ -163,7 +161,7 @@ func buildParams(params map[string]interface{}) string {
 }
 
 func TestEditLine(t *testing.T) {
-	config := DefaultConfig()
+	config := Config{WorkDir: t.TempDir()}
 
 	tTool, err := NewTool(config)
 	require.NoError(t, err)
@@ -174,7 +172,7 @@ func TestEditLine(t *testing.T) {
 	ctx := context.Background()
 
 	// Create test file
-	tmpFile := createTestFile(t, "line1\nline2\nline3\n")
+	tmpFile := createTestFile(t, config.WorkDir, "line1\nline2\nline3\n")
 
 	tests := []struct {
 		name        string
@@ -230,7 +228,7 @@ func TestEditLine(t *testing.T) {
 }
 
 func TestEditSearch(t *testing.T) {
-	config := DefaultConfig()
+	config := Config{WorkDir: t.TempDir()}
 
 	tTool, err := NewTool(config)
 	require.NoError(t, err)
@@ -341,7 +339,7 @@ func TestEditSearch(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			tmpFile := createTestFile(t, tt.content)
+			tmpFile := createTestFile(t, config.WorkDir, tt.content)
 			tt.params["path"] = tmpFile
 
 			result, err := invokable.InvokableRun(ctx, buildParams(tt.params))
@@ -353,7 +351,7 @@ func TestEditSearch(t *testing.T) {
 }
 
 func TestEditInsert(t *testing.T) {
-	config := DefaultConfig()
+	config := Config{WorkDir: t.TempDir()}
 
 	tTool, err := NewTool(config)
 	require.NoError(t, err)
@@ -431,7 +429,7 @@ func TestEditInsert(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			tmpFile := createTestFile(t, tt.content)
+			tmpFile := createTestFile(t, config.WorkDir, tt.content)
 			tt.params["path"] = tmpFile
 
 			result, err := invokable.InvokableRun(ctx, buildParams(tt.params))
@@ -443,7 +441,7 @@ func TestEditInsert(t *testing.T) {
 }
 
 func TestEditDelete(t *testing.T) {
-	config := DefaultConfig()
+	config := Config{WorkDir: t.TempDir()}
 
 	tTool, err := NewTool(config)
 	require.NoError(t, err)
@@ -507,7 +505,7 @@ func TestEditDelete(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			tmpFile := createTestFile(t, tt.content)
+			tmpFile := createTestFile(t, config.WorkDir, tt.content)
 			tt.params["path"] = tmpFile
 
 			result, err := invokable.InvokableRun(ctx, buildParams(tt.params))

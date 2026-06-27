@@ -36,12 +36,19 @@ func DefaultConfig() Config {
 
 type writeTool struct {
 	config   Config
-	resolver *common.PathResolver
+	resolver *common.SecurePathResolver
+}
+
+// writePathSecurity 写入操作的路径安全策略：禁止隐藏文件、排除版本库元数据目录
+func writePathSecurity() common.PathSecurityConfig {
+	cfg := common.DefaultPathSecurityConfig()
+	cfg.ExcludeDirs = []string{".git", ".svn", ".hg"}
+	return cfg
 }
 
 // NewTool creates a new write tool.
 func NewTool(config Config) (tool.BaseTool, error) {
-	resolver, err := common.NewPathResolver(config.WorkDir)
+	resolver, err := common.NewSecurePathResolver(config.WorkDir, writePathSecurity())
 	if err != nil {
 		return nil, err
 	}
@@ -128,7 +135,10 @@ func (t *writeTool) InvokableRun(ctx context.Context, arguments string, opts ...
 
 // writeFile writes to a file.
 func (t *writeTool) writeFile(params OperationParams) (string, error) {
-	path := t.resolver.Resolve(params.Path)
+	path, err := t.resolver.Resolve(params.Path)
+	if err != nil {
+		return "", err
+	}
 
 	// Check if path is a directory
 	if info, err := os.Stat(path); err == nil && info.IsDir() {

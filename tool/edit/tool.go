@@ -44,8 +44,15 @@ func DefaultConfig() Config {
 
 type editTool struct {
 	config   Config
-	resolver *common.PathResolver
+	resolver *common.SecurePathResolver
 	backup   *common.BackupManager
+}
+
+// editPathSecurity 编辑操作的路径安全策略：禁止隐藏文件、排除版本库元数据目录
+func editPathSecurity() common.PathSecurityConfig {
+	cfg := common.DefaultPathSecurityConfig()
+	cfg.ExcludeDirs = []string{".git", ".svn", ".hg"}
+	return cfg
 }
 
 // NewTool creates a new edit tool.
@@ -54,7 +61,7 @@ func NewTool(config Config) (tool.BaseTool, error) {
 		config.MaxHistory = DefaultConfig().MaxHistory
 	}
 
-	resolver, err := common.NewPathResolver(config.WorkDir)
+	resolver, err := common.NewSecurePathResolver(config.WorkDir, editPathSecurity())
 	if err != nil {
 		return nil, err
 	}
@@ -173,7 +180,10 @@ func (t *editTool) InvokableRun(ctx context.Context, arguments string, opts ...t
 		return common.ErrPathEmpty().Error(), nil
 	}
 
-	path := t.resolver.Resolve(params.Path)
+	path, err := t.resolver.Resolve(params.Path)
+	if err != nil {
+		return "", err
+	}
 
 	// Get session key from context for session-isolated backups
 	sessionKey, _ := session.SessionKeyFromContext(ctx)
