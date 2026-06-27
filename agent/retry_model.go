@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"io"
 	"math/rand"
 	"net"
 	"net/url"
@@ -84,6 +85,12 @@ func (w *RetryChatModelWrapper) isRetryableError(err error) bool {
 
 	// 网络错误
 	if isNetworkError(err) {
+		return true
+	}
+
+	// 流式响应中断错误（如 "Error in input stream"、unexpected EOF）
+	if strings.Contains(errStr, "input stream") ||
+		strings.Contains(errStr, "unexpected EOF") {
 		return true
 	}
 
@@ -211,39 +218,89 @@ func (w *RetryChatModelWrapper) Generate(ctx context.Context, input []*schema.Me
 	return nil, fmt.Errorf("Generate failed after %d attempts: %w", maxAttempts, lastErr)
 }
 
-// Stream 带重试的流式生成方法
+// Stream 带重试的流式生成。覆盖建立阶段与读取中途（mid-stream）的间歇性错误（如 "Error in input stream"）。
+// 通过 Copy(2) 将流分两份：一份探测整条流是否出错，另一份仅在无误时才返回给调用方，
+// 因此中途断流可安全重试且不会产生重复内容。
 func (w *RetryChatModelWrapper) Stream(ctx context.Context, input []*schema.Message, opts ...model.Option) (*schema.StreamReader[*schema.Message], error) {
-	var lastErr error
 	maxAttempts := w.maxRetries + 1
+	var lastErr error
 
 	for attempt := 1; attempt <= maxAttempts; attempt++ {
 		stream, err := w.ToolCallingChatModel.Stream(ctx, input, opts...)
-		if err == nil {
-			return stream, nil
-		}
-
-		lastErr = err
-
-		// 如果不是可重试错误，直接返回
-		if !w.isRetryableError(err) {
-			return nil, err
-		}
-
-		// 如果还有重试机会，等待后重试
-		if attempt < maxAttempts {
-			delay := w.calculateDelay(attempt)
-			w.logf("[RetryChatModel] Stream attempt %d failed: %v, retrying in %v...", attempt, err, delay)
-
-			select {
-			case <-ctx.Done():
-				return nil, ctx.Err()
-			case <-time.After(delay):
-				continue
+		if err != nil {
+			// 建立流失败：不可重试直接透传，可重试则记录后等待重试
+			if !w.isRetryableError(err) {
+				return nil, err
 			}
+			lastErr = err
+			if attempt >= maxAttempts {
+				break
+			}
+			w.logf("[RetryChatModel] Stream open attempt %d failed: %v, retrying...", attempt, err)
+			if !w.sleep(ctx, w.calculateDelay(attempt)) {
+				return nil, ctx.Err()
+			}
+			continue
+		}
+
+		copies := stream.Copy(2)
+		probeCopy, passCopy := copies[0], copies[1]
+		probeErr := consumeStreamForError(probeCopy)
+		if probeErr == nil {
+			return passCopy, nil
+		}
+
+		passCopy.Close() // 断流：丢弃 passCopy（调用方从未收到），可安全重试
+		if !w.isRetryableError(probeErr) {
+			return nil, probeErr
+		}
+		lastErr = probeErr
+		if attempt >= maxAttempts {
+			break
+		}
+		w.logf("[RetryChatModel] Stream read attempt %d failed (mid-stream): %v, retrying...", attempt, probeErr)
+		if !w.sleep(ctx, w.calculateDelay(attempt)) {
+			return nil, ctx.Err()
 		}
 	}
 
+	if lastErr == nil {
+		lastErr = errors.New("stream failed")
+	}
 	return nil, fmt.Errorf("Stream failed after %d attempts: %w", maxAttempts, lastErr)
+}
+
+// consumeStreamForError 完整消费流以探测错误，返回首个非 EOF 错误（io.EOF 视为正常结束返回 nil）。
+func consumeStreamForError(stream *schema.StreamReader[*schema.Message]) error {
+	defer stream.Close()
+	for {
+		_, err := stream.Recv()
+		if err == nil {
+			continue
+		}
+		if errors.Is(err, io.EOF) {
+			return nil
+		}
+		return err
+	}
+}
+
+// sleep 等待指定时长，期间响应 ctx 取消。返回 false 表示 ctx 已取消。
+func (w *RetryChatModelWrapper) sleep(ctx context.Context, d time.Duration) bool {
+	if d <= 0 {
+		select {
+		case <-ctx.Done():
+			return false
+		default:
+			return true
+		}
+	}
+	select {
+	case <-ctx.Done():
+		return false
+	case <-time.After(d):
+		return true
+	}
 }
 
 // WithTools 设置工具

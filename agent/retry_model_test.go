@@ -1,13 +1,18 @@
 package agent
 
 import (
+	"context"
 	"errors"
+	"io"
 	"net"
 	"net/url"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
+	"github.com/cloudwego/eino/components/model"
+	"github.com/cloudwego/eino/schema"
 	"github.com/rulego/rulego-components-ai/config"
 )
 
@@ -259,5 +264,280 @@ func BenchmarkIsRetryableError(b *testing.B) {
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
 		_ = wrapper.isRetryableError(err)
+	}
+}
+
+// ============================================
+// Stream 重试行为测试（复现并验证 "Error in input stream" 的修复）
+// ============================================
+
+// streamBehavior 描述 fakeChatModel 单次 Stream 调用的预设行为。
+type streamBehavior struct {
+	openErr error                                 // 非 nil：建立流直接失败
+	stream  *schema.StreamReader[*schema.Message] // 建立成功时的流（可能在中途返回错误）
+}
+
+// fakeChatModel 是可控的 ChatModel mock，按调用顺序依次返回预设行为。
+type fakeChatModel struct {
+	mu        sync.Mutex
+	calls     int
+	behaviors []streamBehavior
+}
+
+func (f *fakeChatModel) Generate(context.Context, []*schema.Message, ...model.Option) (*schema.Message, error) {
+	return nil, errors.New("not implemented")
+}
+
+func (f *fakeChatModel) Stream(_ context.Context, _ []*schema.Message, _ ...model.Option) (*schema.StreamReader[*schema.Message], error) {
+	f.mu.Lock()
+	f.calls++
+	idx := f.calls - 1
+	f.mu.Unlock()
+	// 超出预设行为时默认返回一个成功的空流
+	b := streamBehavior{stream: streamReaderFromChunks()}
+	if idx < len(f.behaviors) {
+		b = f.behaviors[idx]
+	}
+	if b.openErr != nil {
+		return nil, b.openErr
+	}
+	return b.stream, nil
+}
+
+func (f *fakeChatModel) WithTools(_ []*schema.ToolInfo) (model.ToolCallingChatModel, error) {
+	return f, nil
+}
+
+func (f *fakeChatModel) callsCount() int {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	return f.calls
+}
+
+// streamReaderFromChunks 构造一个依次输出 chunks 后正常结束的流。
+func streamReaderFromChunks(chunks ...string) *schema.StreamReader[*schema.Message] {
+	r, w := schema.Pipe[*schema.Message](0)
+	go func() {
+		defer w.Close()
+		for _, c := range chunks {
+			w.Send(&schema.Message{Content: c, Role: schema.Assistant}, nil)
+		}
+	}()
+	return r
+}
+
+// streamReaderWithError 构造一个不输出任何 chunk、直接返回错误的流。
+// 模拟 "Error in input stream" 的典型场景：连接已建立，但首个有效内容前上游即中断。
+func streamReaderWithError(err error) *schema.StreamReader[*schema.Message] {
+	r, w := schema.Pipe[*schema.Message](0)
+	go func() {
+		defer w.Close()
+		w.Send(nil, err)
+	}()
+	return r
+}
+
+// streamReaderWithChunksThenError 构造一个先输出 chunks 再返回错误的流（已输出后的中途断流）。
+func streamReaderWithChunksThenError(chunks []string, err error) *schema.StreamReader[*schema.Message] {
+	r, w := schema.Pipe[*schema.Message](0)
+	go func() {
+		defer w.Close()
+		for _, c := range chunks {
+			w.Send(&schema.Message{Content: c, Role: schema.Assistant}, nil)
+		}
+		w.Send(nil, err)
+	}()
+	return r
+}
+
+// drainStream 消费流直到结束或出错，返回收到的 content 列表与错误（正常结束时为 io.EOF）。
+func drainStream(sr *schema.StreamReader[*schema.Message]) ([]string, error) {
+	defer sr.Close()
+	var contents []string
+	for {
+		msg, err := sr.Recv()
+		if err != nil {
+			return contents, err
+		}
+		if msg != nil {
+			contents = append(contents, msg.Content)
+		}
+	}
+}
+
+// TestRetryStream_RetriesOnPreOutputReadError 验证：上游在首个 chunk 前返回可重试错误时，
+// 自动重试直到成功，底层 Stream 被调用多次。
+func TestRetryStream_RetriesOnPreOutputReadError(t *testing.T) {
+	fake := &fakeChatModel{
+		behaviors: []streamBehavior{
+			{stream: streamReaderWithError(errors.New("Error in input stream"))},
+			{stream: streamReaderWithError(errors.New("error, Error in input stream (Please retry)"))},
+			{stream: streamReaderFromChunks("Hello")},
+		},
+	}
+	w := NewRetryChatModelWrapper(fake, 3)
+
+	sr, err := w.Stream(context.Background(), []*schema.Message{{Role: schema.User, Content: "hi"}})
+	if err != nil {
+		t.Fatalf("Stream 建立应立即返回 reader，got err: %v", err)
+	}
+
+	contents, recvErr := drainStream(sr)
+	if !errors.Is(recvErr, io.EOF) {
+		t.Fatalf("重试后应正常结束(io.EOF)，got: %v", recvErr)
+	}
+	if len(contents) != 1 || contents[0] != "Hello" {
+		t.Fatalf("期望收到 [Hello]，got %v", contents)
+	}
+	if calls := fake.callsCount(); calls != 3 {
+		t.Fatalf("期望底层 Stream 被调用 3 次（含 2 次重试），got %d", calls)
+	}
+}
+
+// TestRetryStream_RetriesOnMidStreamError 验证：上游已输出若干 chunk 后中途断流，
+// 重试后拿到完整内容且不重复（中途断流的部分被丢弃）。
+func TestRetryStream_RetriesOnMidStreamError(t *testing.T) {
+	fake := &fakeChatModel{
+		behaviors: []streamBehavior{
+			{stream: streamReaderWithChunksThenError([]string{"A", "B"}, errors.New("Error in input stream"))},
+			{stream: streamReaderFromChunks("OK")},
+		},
+	}
+	w := NewRetryChatModelWrapper(fake, 3)
+
+	sr, err := w.Stream(context.Background(), nil)
+	if err != nil {
+		t.Fatalf("Stream 应返回 reader，got err: %v", err)
+	}
+	contents, recvErr := drainStream(sr)
+	if !errors.Is(recvErr, io.EOF) {
+		t.Fatalf("重试后应正常结束(io.EOF)，got: %v", recvErr)
+	}
+	// 第一次的 A、B 因断流被整体丢弃，只保留重试后的 OK，绝不重复
+	if len(contents) != 1 || contents[0] != "OK" {
+		t.Fatalf("期望仅 [OK]（中途断流的部分被丢弃、无重复），got %v", contents)
+	}
+	if calls := fake.callsCount(); calls != 2 {
+		t.Fatalf("期望 2 次调用（1 次中途断流 + 1 次重试成功），got %d", calls)
+	}
+}
+
+// TestRetryStream_RetriesOnOpenError 验证建立流失败仍会重试（保持原有逻辑不回归）。
+func TestRetryStream_RetriesOnOpenError(t *testing.T) {
+	fake := &fakeChatModel{
+		behaviors: []streamBehavior{
+			{openErr: errors.New("status code: 502 bad gateway")},
+			{openErr: errors.New("status code: 503")},
+			{stream: streamReaderFromChunks("OK")},
+		},
+	}
+	w := NewRetryChatModelWrapper(fake, 3)
+
+	sr, err := w.Stream(context.Background(), nil)
+	if err != nil {
+		t.Fatalf("Stream 建立应成功，got err: %v", err)
+	}
+	contents, recvErr := drainStream(sr)
+	if !errors.Is(recvErr, io.EOF) {
+		t.Fatalf("期望 io.EOF，got: %v", recvErr)
+	}
+	if len(contents) != 1 || contents[0] != "OK" {
+		t.Fatalf("期望 [OK]，got %v", contents)
+	}
+	if calls := fake.callsCount(); calls != 3 {
+		t.Fatalf("期望 3 次调用，got %d", calls)
+	}
+}
+
+// TestRetryStream_NoRetryOnNonRetryableError 验证不可重试错误直接透传、不重试。
+func TestRetryStream_NoRetryOnNonRetryableError(t *testing.T) {
+	fake := &fakeChatModel{
+		behaviors: []streamBehavior{
+			{stream: streamReaderWithError(errors.New("invalid_api_key"))},
+		},
+	}
+	w := NewRetryChatModelWrapper(fake, 3)
+
+	sr, err := w.Stream(context.Background(), nil)
+	if sr != nil {
+		sr.Close()
+	}
+	if err == nil || !strings.Contains(err.Error(), "invalid_api_key") {
+		t.Fatalf("期望透传不可重试错误，got: %v", err)
+	}
+	if calls := fake.callsCount(); calls != 1 {
+		t.Fatalf("不可重试错误不应重试，期望 1 次，got %d", calls)
+	}
+}
+
+// TestRetryStream_ExhaustsRetries 验证持续可重试错误在用尽次数后抛出汇总错误。
+func TestRetryStream_ExhaustsRetries(t *testing.T) {
+	fake := &fakeChatModel{
+		behaviors: []streamBehavior{
+			{stream: streamReaderWithError(errors.New("Error in input stream"))},
+			{stream: streamReaderWithError(errors.New("Error in input stream"))},
+			{stream: streamReaderWithError(errors.New("Error in input stream"))},
+			{stream: streamReaderWithError(errors.New("Error in input stream"))},
+		},
+	}
+	w := NewRetryChatModelWrapper(fake, 2) // maxRetries=2 → 共 3 次尝试
+
+	sr, err := w.Stream(context.Background(), nil)
+	if sr != nil {
+		sr.Close()
+	}
+	if err == nil {
+		t.Fatal("期望用尽重试后抛错")
+	}
+	if !strings.Contains(err.Error(), "Stream failed after 3 attempts") {
+		t.Fatalf("期望汇总错误信息，got: %v", err)
+	}
+	if !strings.Contains(err.Error(), "input stream") {
+		t.Fatalf("期望包含原始错误，got: %v", err)
+	}
+	if calls := fake.callsCount(); calls != 3 {
+		t.Fatalf("期望 3 次调用，got %d", calls)
+	}
+}
+
+// TestRetryStream_NormalStream 验证正常流被原样透传、不触发重试。
+func TestRetryStream_NormalStream(t *testing.T) {
+	fake := &fakeChatModel{
+		behaviors: []streamBehavior{
+			{stream: streamReaderFromChunks("A", "B", "C")},
+		},
+	}
+	w := NewRetryChatModelWrapper(fake, 3)
+
+	sr, _ := w.Stream(context.Background(), nil)
+	contents, recvErr := drainStream(sr)
+	if !errors.Is(recvErr, io.EOF) {
+		t.Fatalf("期望 io.EOF，got: %v", recvErr)
+	}
+	if len(contents) != 3 || contents[0] != "A" || contents[2] != "C" {
+		t.Fatalf("期望 [A B C]，got %v", contents)
+	}
+	if calls := fake.callsCount(); calls != 1 {
+		t.Fatalf("正常流不应重试，期望 1 次，got %d", calls)
+	}
+}
+
+// TestIsRetryableError_InputStream 验证流中断类错误被正确识别为可重试。
+func TestIsRetryableError_InputStream(t *testing.T) {
+	w := &RetryChatModelWrapper{}
+	cases := []struct {
+		err  error
+		want bool
+	}{
+		{errors.New("Error in input stream"), true},
+		{errors.New("error, Error in input stream (Please retry the request.)"), true},
+		{io.ErrUnexpectedEOF, true},
+		{errors.New("unexpected EOF"), true},
+		{errors.New("invalid request"), false},
+	}
+	for _, c := range cases {
+		if got := w.isRetryableError(c.err); got != c.want {
+			t.Errorf("isRetryableError(%v) = %v, want %v", c.err, got, c.want)
+		}
 	}
 }
