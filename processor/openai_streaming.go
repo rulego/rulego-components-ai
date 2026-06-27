@@ -104,6 +104,12 @@ const (
 
 	// OpenAI usage sub-keys
 	KeyPromptTokensDetails = "prompt_tokens_details"
+
+	// 调用方流式协议标识。客户端需要流式展示工具调用过程（调用、参数、结果）时，
+	// 在请求头带 X-Stream-Protocol: agui 走 AG-UI 扩展模式；不带时走标准 OpenAI 模式，
+	// 不发 tool_calls、只返回最终文本（适用于严格遵循 OpenAI 规范的客户端）。
+	HeaderStreamProtocol = "X-Stream-Protocol"
+	ValueAGUI            = "agui"
 )
 
 func init() {
@@ -208,6 +214,16 @@ func handleMessage(exchange *endpoint.Exchange, msg *types.RuleMsg, isSSE bool) 
 	}
 }
 
+// isAGUIConsumer 判断请求头是否带 X-Stream-Protocol: agui（即是否走 AG-UI 扩展模式）。
+func isAGUIConsumer(exchange *endpoint.Exchange) bool {
+	if exchange != nil && exchange.In != nil {
+		if h := exchange.In.Headers(); h != nil {
+			return h.Get(HeaderStreamProtocol) == ValueAGUI
+		}
+	}
+	return false
+}
+
 // handleChunk processes streaming chunk responses.
 func handleChunk(exchange *endpoint.Exchange, msg *types.RuleMsg, id, model string, isSSE bool) {
 	if !isSSE {
@@ -217,11 +233,16 @@ func handleChunk(exchange *endpoint.Exchange, msg *types.RuleMsg, id, model stri
 	// Check if this is a tool call chunk
 	isToolCall := msg.Metadata.GetValue(KeyToolCall) == ValueTrue
 
+	// 标准模式下跳过工具调用 chunk（只返回最终文本）；AG-UI 扩展模式透传工具调用过程。
+	if isToolCall && !isAGUIConsumer(exchange) {
+		return
+	}
+
 	// Stream chunk data
 	// Format: data: {"id":"...","object":"chat.completion.chunk",...}
 	delta := map[string]interface{}{}
 	if isToolCall {
-		// Tool call chunk - 直接透传数据（react_agent_node.go 已发送 OpenAI 格式）
+		// AG-UI 扩展模式：透传工具调用事件（type/toolCallName/content）
 		var toolCallData map[string]interface{}
 		if err := json.Unmarshal([]byte(msg.GetData()), &toolCallData); err == nil {
 			delta["tool_calls"] = []interface{}{toolCallData}
