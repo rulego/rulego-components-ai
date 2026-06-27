@@ -19,6 +19,7 @@ package agent
 import (
 	"context"
 	"sync"
+	"sync/atomic"
 
 	"github.com/cloudwego/eino/components/model"
 	"github.com/cloudwego/eino/schema"
@@ -53,8 +54,8 @@ const maxCachedModels = 32
 type DynamicModelWrapper struct {
 	baseModel    model.ToolCallingChatModel
 	llmConfig    config.LLMConfig
-	modelCache   sync.Map // modelID -> model.ToolCallingChatModel
-	cacheCount   int32    // 缓存中的模型数量
+	modelCache   *sync.Map // modelID -> model.ToolCallingChatModel（指针，WithTools 派生实例共享）
+	cacheCount   *int32    // 缓存中的模型数量（指针，WithTools 派生实例共享）
 	logger       types.Logger
 	modelOptions ModelOptions
 }
@@ -64,6 +65,8 @@ func NewDynamicModelWrapper(baseModel model.ToolCallingChatModel, llmConfig conf
 	return &DynamicModelWrapper{
 		baseModel:    baseModel,
 		llmConfig:    llmConfig,
+		modelCache:   &sync.Map{},
+		cacheCount:   new(int32),
 		modelOptions: opts,
 	}
 }
@@ -99,9 +102,9 @@ func (w *DynamicModelWrapper) getModelForContext(ctx context.Context) model.Tool
 	}
 
 	// 缓存模型（达到上限时不再缓存，但仍然返回新模型）
-	if w.cacheCount < maxCachedModels {
+	if atomic.LoadInt32(w.cacheCount) < maxCachedModels {
 		w.modelCache.Store(sessionModel, newModel)
-		w.cacheCount++
+		atomic.AddInt32(w.cacheCount, 1)
 	}
 
 	if w.logger != nil {
@@ -129,7 +132,7 @@ func (w *DynamicModelWrapper) WithTools(tools []*schema.ToolInfo) (model.ToolCal
 	if err != nil {
 		return nil, err
 	}
-	// 返回包装后的模型，共享 modelCache
+	// modelCache/cacheCount 为指针，派生实例与原实例共享同一份缓存与计数
 	return &DynamicModelWrapper{
 		baseModel:    newModel,
 		llmConfig:    w.llmConfig,
