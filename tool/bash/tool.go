@@ -274,30 +274,12 @@ func (t *bashTool) executeShell(ctx context.Context, params OperationParams) (st
 		shellArgs := make([]string, len(t.platform.ShellArgs))
 		copy(shellArgs, t.platform.ShellArgs)
 
-		// PowerShell 兼容性处理
+		// PowerShell 5.1 不支持 &&，替换为 ; 以兼容 AI 常生成的命令（有损：忽略错误码继续执行）
 		if t.platform.ShellType == ShellTypePowerShell {
-			// 1. 替换 && 为 ; if ($?) { ... } 是比较复杂的，简单替换为 ; 可能会改变语义（忽略错误继续执行）
-			// 但考虑到 AI 经常生成 &&，且 PowerShell 5.1 不支持，这是一个权衡。
-			// 更好的方式是如果包含 &&，提示用户或尝试用 cmd。
-			// 这里我们简单替换，并在文档中说明。
-			// 或者，我们可以尝试检测 PowerShell 版本，如果是 5.1 则替换。
-			// 由于难以检测版本，我们尝试对常见模式 " && " 进行替换。
-			// 注意：这非常粗糙，可能误伤字符串中的 &&。但作为 workaround 是可行的。
-			// 最终决定：不做魔改，因为 && 在 PowerShell 7 是合法的。
-			// 如果用户用的是 PowerShell 5，报错是预期的。
-			// 我们应该让 AI 意识到这一点。
-			// 但是，为了解决用户当前的痛点，我们可以尝试追加一个提示。
 			if strings.Contains(fullCommand, " && ") {
-				// PowerShell 5.1 不支持 &&，但它是默认 shell。
-				// 为了兼容性，我们可以将 && 替换为 ;
-				// 这是一个有损的兼容（忽略错误码），但能让命令跑通。
-				// 更好的方案是提示用户升级 PowerShell 或安装 Git Bash。
-				// 这里我们做一个简单的替换，因为 AI 生成的代码很难改习惯。
 				fullCommand = strings.ReplaceAll(fullCommand, " && ", "; ")
 			}
-
-			// 对于 PowerShell，我们需要把用户命令拼接到 ShellArgs 的最后一个元素后面
-			// 因为我们在 platform.go 里定义了前缀 "[Console]::...;"
+			// 用户命令拼到 ShellArgs 末尾，接在 platform.go 定义的 [Console]:: 前缀之后
 			lastIdx := len(shellArgs) - 1
 			shellArgs[lastIdx] = shellArgs[lastIdx] + " " + fullCommand
 		} else {
