@@ -394,30 +394,115 @@ func TestRetryStream_RetriesOnPreOutputReadError(t *testing.T) {
 	}
 }
 
-// TestRetryStream_NoRetryOnMidStreamError 验证：上游已输出首个 chunk 后中途断流，
-// 不再重试（保留实时性、避免重复内容），直接透传给调用方。
-func TestRetryStream_NoRetryOnMidStreamError(t *testing.T) {
+// TestRetryStream_NoRetryAfterProbeWindow 验证：断流发生在探测窗口（默认 3 个 chunk）之后，
+// 不再重试（已向调用方输出，重试会重复内容），直接透传。窗口外内容 A、B、C、D 全部保留。
+func TestRetryStream_NoRetryAfterProbeWindow(t *testing.T) {
 	fake := &fakeChatModel{
 		behaviors: []streamBehavior{
-			{stream: streamReaderWithChunksThenError([]string{"A", "B"}, errors.New("Error in input stream"))},
+			{stream: streamReaderWithChunksThenError([]string{"A", "B", "C", "D"}, errors.New("Error in input stream"))},
+		},
+	}
+	w := NewRetryChatModelWrapper(fake, 3) // probeChunks 默认 3
+
+	sr, err := w.Stream(context.Background(), nil)
+	if err != nil {
+		t.Fatalf("越过窗口后应返回 reader（错误透传），got err: %v", err)
+	}
+	contents, recvErr := drainStream(sr)
+	if recvErr == nil || !strings.Contains(recvErr.Error(), "input stream") {
+		t.Fatalf("期望透传 mid-stream 错误，got: %v", recvErr)
+	}
+	// 窗口外 4 个 chunk 全部保留，错误透传，不重试
+	if len(contents) != 4 || contents[0] != "A" || contents[3] != "D" {
+		t.Fatalf("期望收到 [A B C D]，got %v", contents)
+	}
+	if calls := fake.callsCount(); calls != 1 {
+		t.Fatalf("窗口外断流不应重试，期望 1 次，got %d", calls)
+	}
+}
+
+// TestRetryStream_RetriesWithinProbeWindow 验证：断流发生在探测窗口内（默认 3 个 chunk），
+// 会自动重试，且窗口内已收到的内容不会泄漏给调用方（避免重复）。
+func TestRetryStream_RetriesWithinProbeWindow(t *testing.T) {
+	fake := &fakeChatModel{
+		behaviors: []streamBehavior{
+			// 第 1 次：只输出 A 后断流（窗口内），触发重试
+			{stream: streamReaderWithChunksThenError([]string{"A"}, errors.New("Error in input stream"))},
+			// 第 2 次：正常输出
+			{stream: streamReaderFromChunks("Hello", "World")},
 		},
 	}
 	w := NewRetryChatModelWrapper(fake, 3)
 
 	sr, err := w.Stream(context.Background(), nil)
 	if err != nil {
-		t.Fatalf("首个 chunk 成功后应返回 reader（mid-stream 错误透传），got err: %v", err)
+		t.Fatalf("重试后应返回 reader，got err: %v", err)
+	}
+	contents, recvErr := drainStream(sr)
+	if !errors.Is(recvErr, io.EOF) {
+		t.Fatalf("重试成功后应 io.EOF，got: %v", recvErr)
+	}
+	// 关键：第 1 次窗口内的 A 不应泄漏，只看到第 2 次的 Hello World
+	if len(contents) != 2 || contents[0] != "Hello" || contents[1] != "World" {
+		t.Fatalf("期望只收到第 2 次的 [Hello World]（窗口内 A 不泄漏），got %v", contents)
+	}
+	if calls := fake.callsCount(); calls != 2 {
+		t.Fatalf("窗口内断流应重试 1 次，期望 2 次调用，got %d", calls)
+	}
+}
+
+// TestRetryStream_ShortStreamPassesThrough 验证：短流（chunk 数少于探测窗口）正常结束，
+// 不被误判为断流，原样透传。
+func TestRetryStream_ShortStreamPassesThrough(t *testing.T) {
+	fake := &fakeChatModel{
+		behaviors: []streamBehavior{
+			// 只有 1 个 chunk A 然后 EOF，少于 probeChunks=3
+			{stream: streamReaderFromChunks("A")},
+		},
+	}
+	w := NewRetryChatModelWrapper(fake, 3)
+
+	sr, err := w.Stream(context.Background(), nil)
+	if err != nil {
+		t.Fatalf("短流应返回 reader，got err: %v", err)
+	}
+	contents, recvErr := drainStream(sr)
+	if !errors.Is(recvErr, io.EOF) {
+		t.Fatalf("短流正常结束应 io.EOF，got: %v", recvErr)
+	}
+	if len(contents) != 1 || contents[0] != "A" {
+		t.Fatalf("期望收到 [A]，got %v", contents)
+	}
+	if calls := fake.callsCount(); calls != 1 {
+		t.Fatalf("短流不应重试，期望 1 次，got %d", calls)
+	}
+}
+
+// TestRetryStream_ProbeChunksOneKeepsOldBehavior 验证：SetProbeChunks(1) 退化为
+// "仅探测首 chunk" 的旧行为——首 chunk 后的断流即视为越过窗口，直接透传不重试。
+func TestRetryStream_ProbeChunksOneKeepsOldBehavior(t *testing.T) {
+	fake := &fakeChatModel{
+		behaviors: []streamBehavior{
+			{stream: streamReaderWithChunksThenError([]string{"A", "B"}, errors.New("Error in input stream"))},
+		},
+	}
+	w := NewRetryChatModelWrapper(fake, 3)
+	w.SetProbeChunks(1)
+
+	sr, err := w.Stream(context.Background(), nil)
+	if err != nil {
+		t.Fatalf("应返回 reader，got err: %v", err)
 	}
 	contents, recvErr := drainStream(sr)
 	if recvErr == nil || !strings.Contains(recvErr.Error(), "input stream") {
 		t.Fatalf("期望透传 mid-stream 错误，got: %v", recvErr)
 	}
-	// 已输出的 A、B 保留，错误透传，不重试
+	// N=1：首 chunk A 越过窗口即透传，后续 B 和错误一并透传，不重试
 	if len(contents) != 2 || contents[0] != "A" || contents[1] != "B" {
-		t.Fatalf("期望收到已输出的 [A B]，got %v", contents)
+		t.Fatalf("期望收到 [A B]，got %v", contents)
 	}
 	if calls := fake.callsCount(); calls != 1 {
-		t.Fatalf("mid-stream 错误不应重试，期望 1 次，got %d", calls)
+		t.Fatalf("N=1 时首 chunk 后断流不应重试，期望 1 次，got %d", calls)
 	}
 }
 

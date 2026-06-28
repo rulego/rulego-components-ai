@@ -18,11 +18,18 @@ import (
 	"github.com/rulego/rulego/api/types"
 )
 
+// DefaultStreamProbeChunks 流式探测窗口默认大小（chunk 数）。
+// Stream 建立后会预读这么多 chunk 以捕获早期断流（如 "Error in input stream"）：
+// 窗口内断流会重试；越过窗口后中途断流则直接透传，不再重试。
+// 值越大对早期断流的覆盖率越高，但首字延迟也越大。
+const DefaultStreamProbeChunks = 3
+
 // RetryChatModelWrapper 包装 ChatModel 以提供重试功能
 type RetryChatModelWrapper struct {
 	model.ToolCallingChatModel
-	maxRetries int
-	logger     types.Logger
+	maxRetries  int
+	probeChunks int // 流式探测窗口大小，<=0 时取默认值
+	logger      types.Logger
 }
 
 // NewRetryChatModelWrapper 创建带重试功能的 ChatModel 包装器
@@ -37,7 +44,19 @@ func NewRetryChatModelWrapper(baseModel model.ToolCallingChatModel, maxRetries i
 	return &RetryChatModelWrapper{
 		ToolCallingChatModel: baseModel,
 		maxRetries:           maxRetries,
+		probeChunks:          DefaultStreamProbeChunks,
 		logger:               log,
+	}
+}
+
+// SetProbeChunks 设置流式探测窗口大小（chunk 数）。
+// n<=0 时恢复默认值；设为 1 时退化为"仅探测首 chunk"的旧行为。
+// 用于在不改动构造参数的情况下调整早期断流的探测力度。
+func (w *RetryChatModelWrapper) SetProbeChunks(n int) {
+	if n > 0 {
+		w.probeChunks = n
+	} else {
+		w.probeChunks = DefaultStreamProbeChunks
 	}
 }
 
@@ -207,9 +226,25 @@ func (w *RetryChatModelWrapper) Generate(ctx context.Context, input []*schema.Me
 	return nil, fmt.Errorf("Generate failed after %d attempts: %w", maxAttempts, lastErr)
 }
 
-// Stream 带重试的流式生成。仅在建立阶段（首 chunk 之前）重试，以保留流式实时性；
-// 首 chunk 后的中途断流不再重试（避免重复内容），直接透传。
-// Copy(2) 共享缓存：probe 只读首 chunk 探测，passCopy 从首节点实时读取整条流。
+// probeStream 预读流的前 n 个 chunk，用于捕获建立后的早期断流。
+// 返回 nil：已成功接收 n 个 chunk（流健康），应透传。
+// 返回 io.EOF：短流在 n 个 chunk 内正常结束，应透传。
+// 返回其它错误：窗口内断流，由调用方按可重试性决定是否重试。
+func probeStream(sr *schema.StreamReader[*schema.Message], n int) error {
+	if n < 1 {
+		n = 1
+	}
+	for i := 0; i < n; i++ {
+		if _, err := sr.Recv(); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// Stream 带重试的流式生成。在建立阶段及"探测窗口"（前 probeChunks 个 chunk）内重试；
+// 一旦流越过探测窗口开始向调用方输出，中途断流不再重试（避免重复内容），直接透传。
+// Copy(2) 共享缓存：probe 预读窗口内 chunk 探测，passCopy 从首节点完整重放整条流（广播缓冲，不丢数据）。
 func (w *RetryChatModelWrapper) Stream(ctx context.Context, input []*schema.Message, opts ...model.Option) (*schema.StreamReader[*schema.Message], error) {
 	maxAttempts := w.maxRetries + 1
 	var lastErr error
@@ -232,18 +267,20 @@ func (w *RetryChatModelWrapper) Stream(ctx context.Context, input []*schema.Mess
 			continue
 		}
 
-		// 探测首 chunk，确认上游已开始输出
+		// 探测前 probeChunks 个 chunk：在向前端输出前捕获早期断流（如 "Error in input stream"）。
+		// 窗口内断流则重试；越过窗口后断流直接透传，避免重复内容。
+		// probe 预读的内容由 passCopy 完整重放（StreamReader.Copy 为广播缓冲，不丢数据）。
 		copies := stream.Copy(2)
 		probeCopy, passCopy := copies[0], copies[1]
-		_, probeErr := probeCopy.Recv()
+		probeErr := probeStream(probeCopy, w.probeChunks)
 		probeCopy.Close()
 
-		// 首 chunk 到达（含空流 EOF），交给调用方
+		// 探测窗口内未发现错误（已收到足够 chunk，或短流正常 EOF），交给调用方
 		if probeErr == nil || errors.Is(probeErr, io.EOF) {
 			return passCopy, nil
 		}
 
-		// 首 chunk 前出错，丢弃 passCopy 重试
+		// 窗口内断流，丢弃 passCopy 重试
 		passCopy.Close()
 		if !w.isRetryableError(probeErr) {
 			return nil, probeErr
@@ -252,7 +289,7 @@ func (w *RetryChatModelWrapper) Stream(ctx context.Context, input []*schema.Mess
 		if attempt >= maxAttempts {
 			break
 		}
-		w.logf("[RetryChatModel] Stream probe attempt %d failed: %v, retrying...", attempt, probeErr)
+		w.logf("[RetryChatModel] Stream probe attempt %d failed (in window): %v, retrying...", attempt, probeErr)
 		if !w.sleep(ctx, w.calculateDelay(attempt)) {
 			return nil, ctx.Err()
 		}
