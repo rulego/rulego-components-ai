@@ -22,6 +22,7 @@ import (
 	"fmt"
 	"io"
 	"strings"
+	"time"
 
 	"github.com/cloudwego/eino-ext/components/model/openai"
 	"github.com/cloudwego/eino/components/model"
@@ -122,8 +123,58 @@ type ModelOptions struct {
 	MaxRetries int
 }
 
-// CreateChatModel 创建聊天模型
+// CreateChatModel 创建聊天模型。按 config 自动组装：
+//   - 每个端点（主 + Failover 备用）建裸 openai ChatModel，并按 opts.WrapRetry 包 RetryChatModelWrapper
+//     （StreamRetry=StreamRetryFull 时启用完整 mid-stream 重试）。
+//   - 配置了 Failover 时，用 FailoverChatModelWrapper 包装，形成"同模型重试 → 切备用端点"链路。
 func CreateChatModel(llmConfig config.LLMConfig, opts ...ModelOptions) (model.ToolCallingChatModel, error) {
+	primary, err := createEndpointModel(llmConfig, opts)
+	if err != nil {
+		return nil, err
+	}
+	if len(llmConfig.Failover) == 0 {
+		return primary, nil
+	}
+
+	var logger types.Logger
+	if len(opts) > 0 {
+		logger = opts[0].Logger
+	}
+	failovers := make([]model.ToolCallingChatModel, 0, len(llmConfig.Failover))
+	for i, ep := range llmConfig.Failover {
+		epCfg := llmConfig // 继承主配置（Params 等），覆盖端点信息
+		if ep.Url != "" {
+			epCfg.Url = ep.Url
+		}
+		if ep.Key != "" {
+			epCfg.Key = ep.Key
+		}
+		if ep.Model != "" {
+			epCfg.Model = ep.Model
+		}
+		epModel, err := createEndpointModel(epCfg, opts)
+		if err != nil {
+			return nil, fmt.Errorf("failed to create failover model #%d (%s): %v", i+1, epCfg.Model, err)
+		}
+		failovers = append(failovers, epModel)
+	}
+	fo := NewFailoverChatModelWrapper(primary, failovers, logger)
+	// 启用主端点熔断器：主连续失败达阈值后熔断，冷却期内跳过主直接用备用，
+	// 避免主长时间故障时每个请求都等主 retry 耗尽。阈值/冷却可由 config 覆盖，0 用默认。
+	fo = fo.WithCircuit(llmConfig.CircuitFailureThreshold, time.Duration(llmConfig.CircuitCooldownSec)*time.Second)
+
+	// off 模式下 failover 只覆盖建立/早期断流：端点 Stream 一旦返回 reader，中后段 mid-stream
+	// 断流会透传给前端（off 已把前半段实时吐出，换端点会内容重复，无法 rescue）；只有 full 模式
+	// 才有完整 mid-stream 容错。配置了 failover 但用默认 off 时提示一次，避免误以为已全面容错。
+	if llmConfig.StreamRetryMode != config.StreamRetryFull && logger != nil {
+		logger.Printf("[FailoverChatModel] streamRetryMode=off: failover covers only connect/early-stream errors; mid-stream breaks pass through. Set streamRetryMode=full for mid-stream failover.")
+	}
+	return fo, nil
+}
+
+// createEndpointModel 为单个端点创建 ChatModel（裸 openai），按 opts.WrapRetry 决定是否包重试，
+// 并按 llmConfig.StreamRetry 设置完整 mid-stream 重试模式。
+func createEndpointModel(llmConfig config.LLMConfig, opts []ModelOptions) (model.ToolCallingChatModel, error) {
 	llmConfig.Url = strings.TrimSpace(llmConfig.Url)
 	if llmConfig.Url == "" {
 		return nil, fmt.Errorf("URL is missing")
@@ -188,8 +239,11 @@ func CreateChatModel(llmConfig config.LLMConfig, opts ...ModelOptions) (model.To
 	var chatModel model.ToolCallingChatModel = baseModel
 
 	// 可选：包装重试逻辑。MaxRetries<=0 时由 wrapper 使用默认次数。
+	// StreamRetryMode=full 时启用完整 mid-stream 重试（缓冲重放，牺牲实时）。
 	if len(opts) > 0 && opts[0].WrapRetry {
-		chatModel = NewRetryChatModelWrapper(chatModel, opts[0].MaxRetries, opts[0].Logger)
+		rw := NewRetryChatModelWrapper(chatModel, opts[0].MaxRetries, opts[0].Logger)
+		rw.SetStreamFull(llmConfig.StreamRetryMode == config.StreamRetryFull)
+		chatModel = rw
 	}
 
 	return chatModel, nil

@@ -64,6 +64,10 @@ func TestIsRetryableError(t *testing.T) {
 		{name: "503 error", err: errors.New("service unavailable 503"), expected: true},
 		{name: "504 error", err: errors.New("gateway timeout 504"), expected: true},
 
+		// 防误判：时间戳/计数里的数字串不应被判为可重试（回归 containsHTTPStatus）
+		{name: "timestamp 429 not rate limit", err: errors.New("event at 20260429 done"), expected: false},
+		{name: "count 500 not server error", err: errors.New("processed 1500 items"), expected: false},
+
 		// 超时错误
 		{name: "timeout error", err: errors.New("request timeout"), expected: true},
 		{name: "deadline exceeded", err: errors.New("deadline exceeded"), expected: true},
@@ -623,5 +627,123 @@ func TestIsRetryableError_InputStream(t *testing.T) {
 		if got := w.isRetryableError(c.err); got != c.want {
 			t.Errorf("isRetryableError(%v) = %v, want %v", c.err, got, c.want)
 		}
+	}
+}
+
+// ============================================
+// full 模式（完整 mid-stream 重试）测试
+// ============================================
+
+// TestRetryStream_FullMode_RetriesMidStream full 模式：流中途断流 → 重试 → 成功（缓冲重放）。
+// 关键：第 1 次已收到的 A、B 被丢弃重试，调用方只看到第 2 次的完整内容。
+func TestRetryStream_FullMode_RetriesMidStream(t *testing.T) {
+	fake := &fakeChatModel{
+		behaviors: []streamBehavior{
+			{stream: streamReaderWithChunksThenError([]string{"A", "B"}, errors.New("Error in input stream"))},
+			{stream: streamReaderFromChunks("Hello", "World")},
+		},
+	}
+	w := NewRetryChatModelWrapper(fake, 3)
+	w.SetStreamFull(true)
+
+	sr, err := w.Stream(context.Background(), nil)
+	if err != nil {
+		t.Fatalf("期望重试后返回 reader，got err: %v", err)
+	}
+	contents, recvErr := drainStream(sr)
+	if !errors.Is(recvErr, io.EOF) {
+		t.Fatalf("期望 io.EOF，got: %v", recvErr)
+	}
+	// full 模式：第 1 次的 A、B 被丢弃重试，只看到第 2 次的 Hello World
+	if len(contents) != 2 || contents[0] != "Hello" || contents[1] != "World" {
+		t.Fatalf("期望 [Hello World]（A/B 被丢弃重试），got %v", contents)
+	}
+	if calls := fake.callsCount(); calls != 2 {
+		t.Fatalf("期望 2 次调用，got %d", calls)
+	}
+}
+
+// TestRetryStream_FullMode_Exhausts full 模式持续断流 → 重试耗尽，抛汇总错误。
+func TestRetryStream_FullMode_Exhausts(t *testing.T) {
+	fake := &fakeChatModel{
+		behaviors: []streamBehavior{
+			{stream: streamReaderWithChunksThenError([]string{"A"}, errors.New("Error in input stream"))},
+			{stream: streamReaderWithChunksThenError([]string{"B"}, errors.New("Error in input stream"))},
+		},
+	}
+	w := NewRetryChatModelWrapper(fake, 1) // maxRetries=1 → 共 2 次尝试
+	w.SetStreamFull(true)
+
+	sr, err := w.Stream(context.Background(), nil)
+	if sr != nil {
+		sr.Close()
+	}
+	if err == nil {
+		t.Fatal("期望重试耗尽后报错")
+	}
+	if !strings.Contains(err.Error(), "Stream failed after 2 attempts") {
+		t.Fatalf("期望汇总错误，got: %v", err)
+	}
+}
+
+// TestRetryStream_FullMode_NormalReplays full 模式正常流 → 缓冲后完整重放。
+func TestRetryStream_FullMode_NormalReplays(t *testing.T) {
+	fake := &fakeChatModel{
+		behaviors: []streamBehavior{
+			{stream: streamReaderFromChunks("A", "B", "C")},
+		},
+	}
+	w := NewRetryChatModelWrapper(fake, 3)
+	w.SetStreamFull(true)
+
+	sr, err := w.Stream(context.Background(), nil)
+	if err != nil {
+		t.Fatalf("期望返回 reader，got err: %v", err)
+	}
+	contents, recvErr := drainStream(sr)
+	if !errors.Is(recvErr, io.EOF) {
+		t.Fatalf("期望 io.EOF，got: %v", recvErr)
+	}
+	if len(contents) != 3 || contents[0] != "A" || contents[2] != "C" {
+		t.Fatalf("期望 [A B C] 完整重放，got %v", contents)
+	}
+	if calls := fake.callsCount(); calls != 1 {
+		t.Fatalf("正常流不应重试，期望 1 次，got %d", calls)
+	}
+}
+
+// TestRetry_WithTools_KeepsStreamFull 防回归：WithTools 必须保留 streamFull/probeChunks。
+// eino react 绑工具必经 WithTools，若丢失 streamFull，full 模式会静默退化为 off，
+// 窗口外断流不再重试而直接透传错误给调用方。
+func TestRetry_WithTools_KeepsStreamFull(t *testing.T) {
+	// 6 chunk 后断流：> 探测窗口 3，断流在窗口外。off 透传错误，full 重试成功。
+	fake := &fakeChatModel{
+		behaviors: []streamBehavior{
+			{stream: streamReaderWithChunksThenError([]string{"A", "B", "C", "D", "E", "F"}, errors.New("Error in input stream"))},
+			{stream: streamReaderFromChunks("OK")},
+		},
+	}
+	w := NewRetryChatModelWrapper(fake, 2)
+	w.SetStreamFull(true)
+
+	// 模拟 eino react 绑工具（生产路径必经）
+	wt, err := w.WithTools(nil)
+	if err != nil {
+		t.Fatalf("WithTools 失败: %v", err)
+	}
+
+	sr, err := wt.Stream(context.Background(), nil)
+	if err != nil {
+		t.Fatalf("WithTools 后 full 应保留并重试成功，got err: %v（说明 streamFull 被重置为 off）", err)
+	}
+	contents, recvErr := drainStream(sr)
+	if !errors.Is(recvErr, io.EOF) {
+		t.Fatalf("full 应重放成功(io.EOF)，got %v", recvErr)
+	}
+	if len(contents) != 1 || contents[0] != "OK" {
+		t.Fatalf("期望重试后 [OK]，got %v", contents)
+	}
+	if calls := fake.callsCount(); calls != 2 {
+		t.Fatalf("full 应重试一次（共 2 次调用），got %d", calls)
 	}
 }

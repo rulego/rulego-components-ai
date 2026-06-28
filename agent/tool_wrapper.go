@@ -74,6 +74,7 @@ type SSEHandler struct {
 	msg     types.RuleMsg
 	enabled bool
 	mu      sync.Mutex
+	queue   *StreamTellQueue // 非空时工具事件入队，与 chunk 统一保序
 }
 
 // NewSSEHandler 创建 SSE 处理器
@@ -88,6 +89,12 @@ func NewSSEHandler(ctx types.RuleContext, msg types.RuleMsg) *SSEHandler {
 // IsEnabled 返回是否启用 SSE
 func (h *SSEHandler) IsEnabled() bool {
 	return h.enabled
+}
+
+// UseQueue 设置流式 TellNext 队列：设置后工具事件改为入队，与 chunk 统一保序。
+// 必须在 Callback 注入（工具执行）之前调用；由 executeStream 初始化阶段保证 happens-before，queue 字段无需加锁。
+func (h *SSEHandler) UseQueue(q *StreamTellQueue) {
+	h.queue = q
 }
 
 // Callback 返回 SSE 回调函数（用于注入到 context）
@@ -111,7 +118,11 @@ func (h *SSEHandler) sendEvent(toolCallId, toolName, eventType, data string, ind
 	chunkMsg.DataType = types.TEXT
 	chunkMsg.Metadata.PutValue(config.KeyChunk, config.ValueTrue)
 	chunkMsg.Metadata.PutValue(config.KeyToolCall, config.ValueTrue)
-	h.ctx.TellNext(chunkMsg, types.Stream)
+	if h.queue != nil {
+		h.queue.Enqueue(chunkMsg)
+	} else {
+		h.ctx.TellNext(chunkMsg, types.Stream)
+	}
 }
 
 // buildEventData 构建 SSE 事件数据

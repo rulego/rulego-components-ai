@@ -175,6 +175,7 @@ func (e *AgentAspectExecutor) ExecuteStream(
 		var lastChunk *schema.Message
 		chunkCount := 0
 
+		// onChunk 由上层（react_agent）负责入 StreamTellQueue，非阻塞，这里直接同步调用即可。
 		for {
 			chunk, err := streamReader.Recv()
 			if err != nil {

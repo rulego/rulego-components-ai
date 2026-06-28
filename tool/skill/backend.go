@@ -122,7 +122,12 @@ func (m *MultiBackend) getBackends() []einoskill.Backend {
 		}
 
 		// 4. 解析目录
-		backend, err := einoskill.NewLocalBackend(&einoskill.LocalBackendConfig{BaseDir: dir})
+		// eino v0.9+ 起 NewLocalBackend 改为 NewBackendFromFilesystem（需 filesystem.Backend）。
+		// osBackend 提供基于 os 的磁盘读取实现（skill 仅用 GlobInfo + Read）。
+		backend, err := einoskill.NewBackendFromFilesystem(context.Background(), &einoskill.BackendFromFilesystemConfig{
+			Backend: newOSBackend(),
+			BaseDir: dir,
+		})
 		if err != nil {
 			m.mu.Unlock()
 			continue

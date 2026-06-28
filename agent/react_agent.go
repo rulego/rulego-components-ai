@@ -395,9 +395,17 @@ func (x *ReactAgentNode) executeSync(ctx types.RuleContext, msg types.RuleMsg, r
 func (x *ReactAgentNode) executeStream(ctx types.RuleContext, msg types.RuleMsg, runCtx context.Context, opts ExecuteOptions, agentInput *aspect.AgentInput, adkInput *adk.AgentInput) {
 	// 创建 SSE 处理器
 	sseHandler := NewSSEHandler(ctx, msg)
-	runCtx = WithSSECallback(runCtx, sseHandler.Callback())
+	// 统一流式 TellNext 队列：chunk（onChunk）和工具事件（sendEvent）都入队，
+	// 单 goroutine 串行 TellNext 保序。有界容量：瞬时慢消费由缓冲吸收，不反压 LLM 读取（避免
+	// "Error in input stream"）；缓冲满（前端失活）则 abort 上游流止损，不重新引入背压也不无限吃内存。
+	streamCtx, cancel := context.WithCancel(runCtx)
+	defer cancel()
+	tellQueue := NewStreamTellQueue(ctx, DefaultStreamTellQueueCap, cancel, x.logger)
+	defer tellQueue.Close() // panic/异常兜底：防消费 goroutine 泄漏（正常路径由 Wait 关闭，幂等不冲突）
+	sseHandler.UseQueue(tellQueue)
+	streamCtx = WithSSECallback(streamCtx, sseHandler.Callback())
 
-	output, err := x.aspectExecutor.ExecuteStream(runCtx, opts, agentInput, adkInput.Messages,
+	output, err := x.aspectExecutor.ExecuteStream(streamCtx, opts, agentInput, adkInput.Messages,
 		func(ctx context.Context, msgs []*schema.Message) (*schema.StreamReader[*schema.Message], error) {
 			// 注入 session_model 到 context（用于动态模型切换）
 			ctx = InjectSessionModelToContext(ctx, agentInput.Metadata)
@@ -411,9 +419,22 @@ func (x *ReactAgentNode) executeStream(ctx types.RuleContext, msg types.RuleMsg,
 			}
 			chunkMsg.DataType = types.TEXT
 			BuildStreamChunkMetadataWithModel(chunkMsg, isFirst, x.Config.Model)
-			ctx.TellNext(chunkMsg, types.Stream)
+			tellQueue.Enqueue(chunkMsg)
 		},
 	)
+	// 流结束：等队列把 chunk/工具事件全部 TellNext 完，再发结束消息，保证顺序。
+	tellQueue.Wait()
+
+	// 缓冲满止损：流被中途 abort（前端失活）。ExecuteStream 会吞掉 cancel 错误（返回 nil err），
+	// 故需单独检查 Aborted()，发 Failure 让前端知道是中断而非正常完成——避免把截断内容当成功。
+	if tellQueue.Aborted() {
+		endMsg := msg.Copy()
+		endMsg.SetData("流式响应中断：前端消费过慢或已断开连接")
+		endMsg.DataType = types.TEXT
+		BuildStreamEndMetadata(endMsg)
+		ctx.TellNext(endMsg, types.Stream, types.Failure)
+		return
+	}
 
 	if err != nil {
 		endMsg := msg.Copy()

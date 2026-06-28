@@ -33,8 +33,28 @@ type LLMConfig struct {
 	Images       []string      `json:"images"`       // 允许模型输入图片，并根据图像内容的理解回答用户问题
 	Params       ModelParams   `json:"params"`       //大模型参数
 	Tools        []Tool        `json:"tools"`        // 工具列表
-	MaxRetries   int           `json:"maxRetries"`   // 最大重试次数，0 表示使用默认值 3。对 429/5xx/网络错误/超时/流建立中断自动重试
+	MaxRetries  int                `json:"maxRetries"`  // 同模型重试次数，0 表示使用默认值 3。对 429/5xx/网络错误/超时/流建立中断自动重试
+	StreamRetryMode string        `json:"streamRetryMode"` // 流式 mid-stream 重试模式："off"(默认，仅探测窗口内重试，保留实时) / "full"(完整缓冲重放，牺牲实时换中途断流可重试)
+	Failover    []FailoverEndpoint `json:"failover"`    // 故障转移备用端点，按优先级；主端点重试耗尽后依次切换。空=关闭 failover
+	// 熔断器（仅 Failover 启用时生效）：主端点连续失败达阈值后熔断，冷却期内跳过主直接用备用
+	CircuitFailureThreshold int `json:"circuitFailureThreshold"` // 主连续失败次数阈值，0=默认 3
+	CircuitCooldownSec      int `json:"circuitCooldownSec"`      // 熔断冷却秒数，0=默认 30
 }
+
+// FailoverEndpoint 故障转移备用端点
+type FailoverEndpoint struct {
+	Url   string `json:"url"`   // 备用请求地址
+	Key   string `json:"key"`   // 备用 API Key
+	Model string `json:"model"` // 备用模型名称，空则沿用主模型名
+}
+
+// 流式 mid-stream 重试模式（LLMConfig.StreamRetryMode 取值）
+const (
+	// StreamRetryOff 默认：仅探测窗口内重试，保留实时。
+	StreamRetryOff = "off"
+	// StreamRetryFull 完整 mid-stream 重试（缓冲重放，牺牲实时）。
+	StreamRetryFull = "full"
+)
 
 // ModelParams 大模型参数
 type ModelParams struct {

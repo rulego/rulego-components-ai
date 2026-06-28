@@ -28,7 +28,8 @@ const DefaultStreamProbeChunks = 3
 type RetryChatModelWrapper struct {
 	model.ToolCallingChatModel
 	maxRetries  int
-	probeChunks int // 流式探测窗口大小，<=0 时取默认值
+	probeChunks int  // 流式探测窗口大小，<=0 时取默认值（off 模式用）
+	streamFull  bool // 完整 mid-stream 重试：true 时完整缓冲+重试+重放（牺牲实时）
 	logger      types.Logger
 }
 
@@ -60,6 +61,12 @@ func (w *RetryChatModelWrapper) SetProbeChunks(n int) {
 	}
 }
 
+// SetStreamFull 切换流式重试模式：true=完整 mid-stream 重试（缓冲重放，牺牲实时），
+// false=仅探测窗口内重试（off，保留实时）。由 CreateChatModel 按 config.StreamRetryMode 设置。
+func (w *RetryChatModelWrapper) SetStreamFull(full bool) {
+	w.streamFull = full
+}
+
 // logf 日志输出，如果 logger 存在则使用 logger，否则不输出
 func (w *RetryChatModelWrapper) logf(format string, v ...interface{}) {
 	if w.logger != nil {
@@ -67,8 +74,8 @@ func (w *RetryChatModelWrapper) logf(format string, v ...interface{}) {
 	}
 }
 
-// isRetryableError 判断错误是否可重试
-func (w *RetryChatModelWrapper) isRetryableError(err error) bool {
+// IsRetryableError 判断错误是否可重试（包级，供 retry/failover 的 ShouldRetry/ShouldFailover 共用）。
+func IsRetryableError(err error) bool {
 	if err == nil {
 		return false
 	}
@@ -87,18 +94,18 @@ func (w *RetryChatModelWrapper) isRetryableError(err error) bool {
 
 	errStr := err.Error()
 
-	// 429 速率限制错误
-	if strings.Contains(errStr, "429") ||
+	// 429 速率限制错误（containsHTTPStatus 避免时间戳/UUID 等数字串里的 429 误判）
+	if containsHTTPStatus(errStr, "429") ||
 		strings.Contains(errStr, "rate limit") ||
 		strings.Contains(errStr, "Too Many Requests") {
 		return true
 	}
 
-	// 5xx 服务器错误
-	if strings.Contains(errStr, "500") ||
-		strings.Contains(errStr, "502") ||
-		strings.Contains(errStr, "503") ||
-		strings.Contains(errStr, "504") {
+	// 5xx 服务器错误（containsHTTPStatus 避免端口/计数等数字里的 500/502/503/504 误判）
+	if containsHTTPStatus(errStr, "500") ||
+		containsHTTPStatus(errStr, "502") ||
+		containsHTTPStatus(errStr, "503") ||
+		containsHTTPStatus(errStr, "504") {
 		return true
 	}
 
@@ -120,6 +127,11 @@ func (w *RetryChatModelWrapper) isRetryableError(err error) bool {
 	}
 
 	return false
+}
+
+// isRetryableError 保留方法（委托包级 IsRetryableError），向后兼容现有调用与测试。
+func (w *RetryChatModelWrapper) isRetryableError(err error) bool {
+	return IsRetryableError(err)
 }
 
 // containsHTTPStatus 检查错误字符串中是否包含指定的 HTTP 状态码。
@@ -246,6 +258,10 @@ func probeStream(sr *schema.StreamReader[*schema.Message], n int) error {
 // 一旦流越过探测窗口开始向调用方输出，中途断流不再重试（避免重复内容），直接透传。
 // Copy(2) 共享缓存：probe 预读窗口内 chunk 探测，passCopy 从首节点完整重放整条流（广播缓冲，不丢数据）。
 func (w *RetryChatModelWrapper) Stream(ctx context.Context, input []*schema.Message, opts ...model.Option) (*schema.StreamReader[*schema.Message], error) {
+	// full 模式：完整缓冲整条流→出错重试→成功重放（牺牲实时，换 mid-stream 完整可重试性）
+	if w.streamFull {
+		return w.streamFullRetry(ctx, input, opts...)
+	}
 	maxAttempts := w.maxRetries + 1
 	var lastErr error
 
@@ -301,6 +317,80 @@ func (w *RetryChatModelWrapper) Stream(ctx context.Context, input []*schema.Mess
 	return nil, fmt.Errorf("Stream failed after %d attempts: %w", maxAttempts, lastErr)
 }
 
+// streamFullRetry 完整 mid-stream 重试模式：完整缓冲每条流，出错则重试，成功后重放。
+// 牺牲实时性（首字延迟≈完整生成时间）换取 mid-stream 断流的完整可重试性。
+func (w *RetryChatModelWrapper) streamFullRetry(ctx context.Context, input []*schema.Message, opts ...model.Option) (*schema.StreamReader[*schema.Message], error) {
+	maxAttempts := w.maxRetries + 1
+	var lastErr error
+	for attempt := 1; attempt <= maxAttempts; attempt++ {
+		stream, err := w.ToolCallingChatModel.Stream(ctx, input, opts...)
+		if err != nil {
+			if !IsRetryableError(err) {
+				return nil, err
+			}
+			lastErr = err
+			if attempt >= maxAttempts {
+				break
+			}
+			w.logf("[RetryChatModel] streamFull open attempt %d failed: %v, retrying...", attempt, err)
+			if !w.sleep(ctx, w.calculateDelay(attempt)) {
+				return nil, ctx.Err()
+			}
+			continue
+		}
+		// 完整缓冲整条流，探测是否中途断流
+		chunks, streamErr := drainAndBufferStream(stream)
+		if streamErr == nil {
+			return streamReaderFromMessages(chunks), nil // 成功，重放
+		}
+		if !IsRetryableError(streamErr) {
+			return nil, streamErr
+		}
+		lastErr = streamErr
+		if attempt >= maxAttempts {
+			break
+		}
+		w.logf("[RetryChatModel] streamFull attempt %d failed: %v, retrying...", attempt, streamErr)
+		if !w.sleep(ctx, w.calculateDelay(attempt)) {
+			return nil, ctx.Err()
+		}
+	}
+	if lastErr == nil {
+		lastErr = errors.New("stream failed")
+	}
+	return nil, fmt.Errorf("Stream failed after %d attempts: %w", maxAttempts, lastErr)
+}
+
+// drainAndBufferStream 消费整条流到 io.EOF（返回全部 chunk，nil）或错误（返回已收 chunk，err）。
+func drainAndBufferStream(stream *schema.StreamReader[*schema.Message]) ([]*schema.Message, error) {
+	defer stream.Close()
+	var chunks []*schema.Message
+	for {
+		msg, err := stream.Recv()
+		if err == io.EOF {
+			return chunks, nil
+		}
+		if err != nil {
+			return chunks, err
+		}
+		if msg != nil {
+			chunks = append(chunks, msg)
+		}
+	}
+}
+
+// streamReaderFromMessages 从已缓冲的 chunk 构造可重放的 StreamReader。
+func streamReaderFromMessages(chunks []*schema.Message) *schema.StreamReader[*schema.Message] {
+	r, w := schema.Pipe[*schema.Message](0)
+	go func() {
+		defer w.Close()
+		for _, c := range chunks {
+			w.Send(c, nil)
+		}
+	}()
+	return r
+}
+
 // sleep 等待指定时长，期间响应 ctx 取消。返回 false 表示 ctx 已取消。
 func (w *RetryChatModelWrapper) sleep(ctx context.Context, d time.Duration) bool {
 	if d <= 0 {
@@ -325,8 +415,12 @@ func (w *RetryChatModelWrapper) WithTools(tools []*schema.ToolInfo) (model.ToolC
 	if err != nil {
 		return nil, err
 	}
-	// 返回包装后的模型，保持重试能力
-	return NewRetryChatModelWrapper(newModel, w.maxRetries, w.logger), nil
+	// 返回包装后的模型，保持重试能力。必须复制 streamFull/probeChunks：
+	// eino react 绑工具必经此路径，若丢失则 full 模式会静默退化为 off（窗口外断流不再重试）。
+	rw := NewRetryChatModelWrapper(newModel, w.maxRetries, w.logger)
+	rw.streamFull = w.streamFull
+	rw.probeChunks = w.probeChunks
+	return rw, nil
 }
 
 // Ensure RetryChatModelWrapper implements model.ToolCallingChatModel
