@@ -150,9 +150,10 @@ func CreateChatModel(llmConfig config.LLMConfig, opts ...ModelOptions) (model.To
 		failovers = append(failovers, epModel)
 	}
 	fo := NewFailoverChatModelWrapper(primary, failovers, logger)
-	// 启用主端点熔断器：主连续失败达阈值后熔断，冷却期内跳过主直接用备用，
-	// 避免主长时间故障时每个请求都等主 retry 耗尽。阈值/冷却可由 config 覆盖，0 用默认。
-	fo = fo.WithCircuit(llmConfig.CircuitFailureThreshold, time.Duration(llmConfig.CircuitCooldownSec)*time.Second)
+	// 启用主端点熔断器：主 retry 耗尽即熔断，冷却期内跳过主直接用备用，
+	// 避免主长时间故障时每个请求都等主 retry 耗尽。冷却可由 config 覆盖，0 用默认；
+	// 主持续故障时探测冷却逐次翻倍封顶 10 分钟，探测成功重置回基础冷却。
+	fo = fo.WithCircuit(time.Duration(llmConfig.CircuitCooldownSec) * time.Second)
 
 	// off 模式下 failover 只覆盖建立/早期断流：端点 Stream 一旦返回 reader，中后段 mid-stream
 	// 断流会透传给前端（off 已把前半段实时吐出，换端点会内容重复，无法 rescue）；只有 full 模式

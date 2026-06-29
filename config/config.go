@@ -25,20 +25,20 @@ import (
 
 // LLMConfig 组件配置
 type LLMConfig struct {
-	Url          string        `json:"url"`          // 请求地址
-	Key          string        `json:"key"`          // API Key
-	Model        string        `json:"model"`        // 模型名称
-	SystemPrompt string        `json:"systemPrompt"` // 系统提示，用于预先定义模型的基础行为框架和响应风格。可以使用${} 占位符变量，支持 ${include("/path/to/file")} 包含文件（使用绝对路径）
-	Messages     []ChatMessage `json:"messages"`     // 上下文/用户消息列表
-	Images       []string      `json:"images"`       // 允许模型输入图片，并根据图像内容的理解回答用户问题
-	Params       ModelParams   `json:"params"`       //大模型参数
-	Tools        []Tool        `json:"tools"`        // 工具列表
-	MaxRetries  int                `json:"maxRetries"`  // 同模型重试次数，0 表示使用默认值 3。对 429/5xx/网络错误/超时/流建立中断自动重试
-	StreamRetryMode string        `json:"streamRetryMode"` // 流式 mid-stream 重试模式："off"(默认，仅探测窗口内重试，保留实时) / "full"(完整缓冲重放，牺牲实时换中途断流可重试)
-	Failover    []FailoverEndpoint `json:"failover"`    // 故障转移备用端点，按优先级；主端点重试耗尽后依次切换。空=关闭 failover
-	// 熔断器（仅 Failover 启用时生效）：主端点连续失败达阈值后熔断，冷却期内跳过主直接用备用
-	CircuitFailureThreshold int `json:"circuitFailureThreshold"` // 主连续失败次数阈值，0=默认 3
-	CircuitCooldownSec      int `json:"circuitCooldownSec"`      // 熔断冷却秒数，0=默认 30
+	Url             string             `json:"url"`             // 请求地址
+	Key             string             `json:"key"`             // API Key
+	Model           string             `json:"model"`           // 模型名称
+	SystemPrompt    string             `json:"systemPrompt"`    // 系统提示，用于预先定义模型的基础行为框架和响应风格。可以使用${} 占位符变量，支持 ${include("/path/to/file")} 包含文件（使用绝对路径）
+	Messages        []ChatMessage      `json:"messages"`        // 上下文/用户消息列表
+	Images          []string           `json:"images"`          // 允许模型输入图片，并根据图像内容的理解回答用户问题
+	Tools           []Tool             `json:"tools"`           // 工具列表
+	Params          ModelParams        `json:"params"`          //大模型参数
+	MaxRetries      int                `json:"maxRetries"`      // 同模型重试次数，0 表示使用默认值 3。对 429/5xx/网络错误/超时/流建立中断自动重试
+	StreamRetryMode string             `json:"streamRetryMode"` // 流式 mid-stream 重试模式："off"(默认，仅探测窗口内重试，保留实时) / "full"(完整缓冲重放，牺牲实时换中途断流可重试)
+	Failover        []FailoverEndpoint `json:"failover"`        // 故障转移备用端点，按优先级；主端点重试耗尽后依次切换。空=关闭 failover
+	// 熔断器（仅 Failover 启用时生效）：主端点 retry 耗尽即熔断，冷却期内跳过主直接用备用。
+	// 主持续故障时探测冷却逐次翻倍（探测失败翻倍，封顶 10 分钟），探测成功重置回基础冷却。
+	CircuitCooldownSec int `json:"circuitCooldownSec"` // 熔断基础冷却秒数，0=默认 60。主持续故障时探测冷却逐次翻倍封顶 10 分钟
 }
 
 // FailoverEndpoint 故障转移备用端点
@@ -74,10 +74,10 @@ type ModelParams struct {
 // ChatMessage 上下文消息/用户消息
 // 支持 OpenAI 标准格式：content 可以是字符串或数组
 type ChatMessage struct {
-	Role       string         `json:"role"`                    // 消息角色 user/assistant/system/tool
-	Content    interface{}    `json:"content"`                 // 消息内容。可以是字符串或 []ContentPart 数组（OpenAI 多模态格式）
-	ToolCalls  []ChatToolCall `json:"tool_calls,omitempty"`    // assistant 消息的工具调用历史
-	ToolCallID string         `json:"tool_call_id,omitempty"`  // tool 消息关联的 tool call ID
+	Role       string         `json:"role"`                   // 消息角色 user/assistant/system/tool
+	Content    interface{}    `json:"content"`                // 消息内容。可以是字符串或 []ContentPart 数组（OpenAI 多模态格式）
+	ToolCalls  []ChatToolCall `json:"tool_calls,omitempty"`   // assistant 消息的工具调用历史
+	ToolCallID string         `json:"tool_call_id,omitempty"` // tool 消息关联的 tool call ID
 }
 
 // ChatToolCall OpenAI 兼容的工具调用结构。

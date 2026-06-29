@@ -14,6 +14,10 @@ import (
 
 // ===== 主端点熔断器 =====
 
+// maxCircuitCooldown 探测退避上限：half-open 探测失败后冷却逐次翻倍，封顶至此值，
+// 避免主端点长时间故障时冷却无限增长导致恢复后迟迟切不回主。
+const maxCircuitCooldown = 10 * time.Minute
+
 // circuitState 熔断状态机：closed（正常）→ open（熔断）→ half-open（半开试探）。
 type circuitState int32
 
@@ -23,36 +27,34 @@ const (
 	circuitHalfOpen                     // 半开，试探主一次
 )
 
-// circuitBreaker 保护主端点的熔断器。
+// circuitBreaker 保护主端点的熔断器。主端点已是 RetryChatModelWrapper，故"一次失败"即代表
+// 同模型 retry 耗尽，熔断无需累计阈值——closed 下主失败一次直接转 open。
 //
 // 行为：
-//   - closed：主端点连续失败达 failureThreshold 次 → 转 open（openUntil = now + cooldown）。
-//     主成功 → 清零计数，保持 closed。
+//   - closed：主端点失败（retry 已耗尽）→ 转 open（用基础冷却 cooldown）。
+//     主成功 → 保持 closed。
 //   - open：allowPrimary 返回 false（跳过主直接用备用）。冷却到期（now > openUntil）→ 转 half-open。
 //   - half-open：allowPrimary 只放行"一个"请求试探主（halfOpenProbing 占用），其余返回 false 走备用，
-//     避免冷却到期瞬间并发请求全打主。试探成功 → closed；失败 → 重新 open（重置冷却）。
+//     避免冷却到期瞬间并发请求全打主。试探成功 → closed（冷却重置回基础值）；失败 → 重新 open，
+//     且探测冷却翻倍封顶 maxCircuitCooldown（持续故障时探测频率逐次降低，减少坏主期间的无谓探测）。
 //     recordSuccess/recordFailure 释放试探权。
 //
 // 线程安全。
 type circuitBreaker struct {
-	mu               sync.Mutex
-	state            circuitState
-	failureCount     int
-	failureThreshold int
-	cooldown         time.Duration
-	openUntil        time.Time
-	halfOpenProbing  bool // half-open 时：true=已有请求在试探主，其余请求走备用
+	mu              sync.Mutex
+	state           circuitState
+	cooldown        time.Duration // 基础冷却（用户配置值）
+	currentCooldown time.Duration // 当前实际冷却：随探测失败翻倍增长，探测成功重置回 cooldown
+	openUntil       time.Time
+	halfOpenProbing bool // half-open 时：true=已有请求在试探主，其余请求走备用
 }
 
-// newCircuitBreaker 创建熔断器。threshold/cooldown <=0 时用默认值（3 次 / 30s）。
-func newCircuitBreaker(threshold int, cooldown time.Duration) *circuitBreaker {
-	if threshold <= 0 {
-		threshold = 3
-	}
+// newCircuitBreaker 创建熔断器。cooldown <=0 时用默认值（60s）。
+func newCircuitBreaker(cooldown time.Duration) *circuitBreaker {
 	if cooldown <= 0 {
-		cooldown = 30 * time.Second
+		cooldown = 60 * time.Second
 	}
-	return &circuitBreaker{failureThreshold: threshold, cooldown: cooldown}
+	return &circuitBreaker{cooldown: cooldown, currentCooldown: cooldown}
 }
 
 // allowPrimary 是否允许尝试主端点。open 到期会自动转 half-open。
@@ -81,30 +83,54 @@ func (c *circuitBreaker) allowPrimary() bool {
 	return true
 }
 
-// recordSuccess 主端点成功 → 恢复 closed（清零计数），并释放 half-open 试探权。
+// recordSuccess 主端点成功 → 恢复 closed，退避冷却重置回基础值，并释放 half-open 试探权。
 func (c *circuitBreaker) recordSuccess() {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	c.state = circuitClosed
-	c.failureCount = 0
+	c.currentCooldown = c.cooldown // 探测成功 → 退避归位
 	c.halfOpenProbing = false
 }
 
-// recordFailure 主端点失败。half-open 失败立即重新熔断（并释放试探权）；closed 累计达阈值熔断。
+// recordFailure 主端点失败（retry 已耗尽）。
+// half-open 探测失败：冷却翻倍封顶后重新 open（并释放试探权）。
+// closed 下主失败：首次熔断，用基础冷却转 open。
 func (c *circuitBreaker) recordFailure() {
 	c.mu.Lock()
 	defer c.mu.Unlock()
-	c.failureCount++
 	if c.state == circuitHalfOpen {
+		c.currentCooldown = c.nextCooldown() // 探测失败 → 冷却翻倍封顶
 		c.state = circuitOpen
-		c.openUntil = time.Now().Add(c.cooldown)
+		c.openUntil = time.Now().Add(c.currentCooldown)
 		c.halfOpenProbing = false // 释放试探权，重新熔断
 		return
 	}
-	if c.failureCount >= c.failureThreshold {
-		c.state = circuitOpen
-		c.openUntil = time.Now().Add(c.cooldown)
+	c.state = circuitOpen
+	c.currentCooldown = c.cooldown // 首次熔断用基础冷却
+	c.openUntil = time.Now().Add(c.currentCooldown)
+}
+
+// nextCooldown 计算探测失败后的下一次冷却：当前冷却翻倍，封顶 maxCircuitCooldown。
+func (c *circuitBreaker) nextCooldown() time.Duration {
+	if doubled := c.currentCooldown * 2; doubled < maxCircuitCooldown {
+		return doubled
 	}
+	return maxCircuitCooldown
+}
+
+// onPrimaryNonFailoverError 主端点返回非 failover 错误（如 400 请求格式错）时的处理。
+// closed 态：不熔断（客户端类错误不代表主端点不可用）。
+// half-open 态：探测未成功，必须推进状态机——释放探测权并重新 open（走备用），
+// 否则 halfOpenProbing 永不释放、状态永久卡 half-open（主端点被冻结）。冷却维持当前值不额外翻倍。
+func (c *circuitBreaker) onPrimaryNonFailoverError() {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	if c.state != circuitHalfOpen {
+		return // closed 态：客户端错误不熔断
+	}
+	c.state = circuitOpen
+	c.openUntil = time.Now().Add(c.currentCooldown)
+	c.halfOpenProbing = false // 释放试探权，重新 open 走备用
 }
 
 // getState 返回当前状态（日志/测试用）。
@@ -166,9 +192,9 @@ func NewFailoverChatModelWrapper(primary model.ToolCallingChatModel, failovers [
 	return &FailoverChatModelWrapper{primary: primary, failovers: failovers, logger: log}
 }
 
-// WithCircuit 启用主端点熔断器（builder 模式）。threshold 连续失败次数，cooldown 冷却时长；<=0 用默认。
-func (w *FailoverChatModelWrapper) WithCircuit(threshold int, cooldown time.Duration) *FailoverChatModelWrapper {
-	w.circuit = newCircuitBreaker(threshold, cooldown)
+// WithCircuit 启用主端点熔断器（builder 模式）。cooldown 冷却时长；<=0 用默认（60s）。
+func (w *FailoverChatModelWrapper) WithCircuit(cooldown time.Duration) *FailoverChatModelWrapper {
+	w.circuit = newCircuitBreaker(cooldown)
 	return w
 }
 
@@ -219,10 +245,15 @@ func (w *FailoverChatModelWrapper) Generate(ctx context.Context, input []*schema
 			}
 			return msg, nil
 		}
+		isFailover := IsFailoverError(err)
 		if i == 0 && tryPrimary && w.circuit != nil {
-			w.circuit.recordFailure()
+			if isFailover {
+				w.circuit.recordFailure() // failover 错误：熔断/退避
+			} else {
+				w.circuit.onPrimaryNonFailoverError() // half-open 释放探测权重新 open；closed 不熔断
+			}
 		}
-		if !IsFailoverError(err) {
+		if !isFailover {
 			return nil, err // 非故障转移类错误（如请求格式错误）直接返回，不切换
 		}
 		lastErr = err
@@ -255,11 +286,16 @@ func (w *FailoverChatModelWrapper) Stream(ctx context.Context, input []*schema.M
 			}
 			return stream, nil
 		}
+		isFailover := IsFailoverError(err)
 		if i == 0 && tryPrimary && w.circuit != nil {
-			w.circuit.recordFailure()
+			if isFailover {
+				w.circuit.recordFailure() // failover 错误：熔断/退避
+			} else {
+				w.circuit.onPrimaryNonFailoverError() // half-open 释放探测权重新 open；closed 不熔断
+			}
 		}
-		if !IsFailoverError(err) {
-			return nil, err
+		if !isFailover {
+			return nil, err // 非故障转移类错误直接返回，不切换
 		}
 		lastErr = err
 		w.logf("[FailoverChatModel] Stream endpoint #%d failed: %v, trying next...", i, err)

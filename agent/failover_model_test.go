@@ -226,27 +226,25 @@ func TestFailover_StreamPrimarySuccessNoSwitch(t *testing.T) {
 
 // ===== 熔断器（circuit breaker）测试 =====
 
-// TestCircuit_OpensAndSkipsPrimary 主连续失败达阈值 → 熔断 open → 后续跳过主直接用备用。
+// TestCircuit_OpensAndSkipsPrimary 主 retry 耗尽即熔断 → open → 后续跳过主直接用备用。
 func TestCircuit_OpensAndSkipsPrimary(t *testing.T) {
 	primary := &endpointModel{name: "primary", genErr: errors.New("502")} // 主持续失败
 	backup := &endpointModel{name: "backup", genResult: schema.AssistantMessage("OK", nil)}
 	w := NewFailoverChatModelWrapper(primary, []model.ToolCallingChatModel{backup}).
-		WithCircuit(2, 50*time.Millisecond) // 阈值 2，冷却 50ms
+		WithCircuit(50 * time.Millisecond) // 冷却 50ms
 
-	// 前 2 次：试主失败（累计）→ 切备用成功。主被试 2 次（达阈值 → open）。
-	for i := 0; i < 2; i++ {
-		msg, err := w.Generate(context.Background(), nil)
-		if err != nil || msg.Content != "OK" {
-			t.Fatalf("第 %d 次应 failover 成功，got msg=%v err=%v", i+1, msg, err)
-		}
-	}
-	if primary.genCalls != 2 {
-		t.Fatalf("阈值 2，主应被试 2 次后熔断，got %d", primary.genCalls)
-	}
-
-	// 第 3 次：主已 open → 跳过主直接备用。主不再被试。
-	primary.genCalls = 0
+	// 第 1 次：试主失败（retry 耗尽）→ 切备用成功。主被试 1 次即 open。
 	msg, err := w.Generate(context.Background(), nil)
+	if err != nil || msg.Content != "OK" {
+		t.Fatalf("第 1 次应 failover 成功，got msg=%v err=%v", msg, err)
+	}
+	if primary.genCalls != 1 {
+		t.Fatalf("主应被试 1 次后熔断，got %d", primary.genCalls)
+	}
+
+	// 第 2 次：主已 open → 跳过主直接备用。主不再被试。
+	primary.genCalls = 0
+	msg, err = w.Generate(context.Background(), nil)
 	if err != nil || msg.Content != "OK" {
 		t.Fatalf("熔断后应直接用 backup，got msg=%v err=%v", msg, err)
 	}
@@ -260,10 +258,9 @@ func TestCircuit_HalfOpenRecovery(t *testing.T) {
 	primary := &endpointModel{name: "primary", genErr: errors.New("502")}
 	backup := &endpointModel{name: "backup", genResult: schema.AssistantMessage("OK", nil)}
 	w := NewFailoverChatModelWrapper(primary, []model.ToolCallingChatModel{backup}).
-		WithCircuit(2, 50*time.Millisecond)
+		WithCircuit(50 * time.Millisecond)
 
-	// 2 次失败 → open
-	w.Generate(context.Background(), nil)
+	// 1 次失败 → open
 	w.Generate(context.Background(), nil)
 
 	time.Sleep(60 * time.Millisecond) // 冷却到期 → half-open
@@ -291,10 +288,9 @@ func TestCircuit_HalfOpenReOpensOnFailure(t *testing.T) {
 	primary := &endpointModel{name: "primary", genErr: errors.New("502")} // 主持续失败
 	backup := &endpointModel{name: "backup", genResult: schema.AssistantMessage("OK", nil)}
 	w := NewFailoverChatModelWrapper(primary, []model.ToolCallingChatModel{backup}).
-		WithCircuit(2, 50*time.Millisecond)
+		WithCircuit(50 * time.Millisecond)
 
-	// 2 次失败 → open
-	w.Generate(context.Background(), nil)
+	// 1 次失败 → open
 	w.Generate(context.Background(), nil)
 
 	time.Sleep(60 * time.Millisecond) // 冷却到期 → half-open
@@ -334,10 +330,9 @@ func TestFailover_WithTools_SharesCircuit(t *testing.T) {
 	primary := &endpointModel{name: "primary", genErr: errors.New("status code: 502 bad gateway")}
 	backup := &endpointModel{name: "backup", genResult: schema.AssistantMessage("OK", nil)}
 	w := NewFailoverChatModelWrapper(primary, []model.ToolCallingChatModel{backup})
-	w = w.WithCircuit(2, time.Hour) // 阈值 2，冷却 1h（测试期间保持 open）
+	w = w.WithCircuit(time.Hour) // 冷却 1h（测试期间保持 open）
 
-	// 触发主失败 2 次达阈值 → 熔断 open
-	_, _ = w.Generate(context.Background(), nil)
+	// 触发主失败 1 次 → 熔断 open
 	_, _ = w.Generate(context.Background(), nil)
 	callsBefore := primary.genCalls
 
@@ -361,7 +356,7 @@ func TestFailover_WithTools_SharesCircuit(t *testing.T) {
 // TestCircuit_HalfOpenAllowsOnlyOneProbe half-open 期间只放行一个请求试探主，其余走备用。
 // 防回归：避免冷却到期瞬间并发请求全部打到刚（未）恢复的主。
 func TestCircuit_HalfOpenAllowsOnlyOneProbe(t *testing.T) {
-	c := newCircuitBreaker(1, time.Hour)
+	c := newCircuitBreaker(time.Hour)
 	// 直接构造 open 且已过冷却 → 下次 allowPrimary 转 half-open
 	c.state = circuitOpen
 	c.openUntil = time.Now().Add(-time.Second)
@@ -393,7 +388,7 @@ func TestCircuit_HalfOpenAllowsOnlyOneProbe(t *testing.T) {
 
 // TestCircuit_HalfOpenProbeReleasedOnFailure half-open 试探失败释放试探权，下个冷却到期可再次试探。
 func TestCircuit_HalfOpenProbeReleasedOnFailure(t *testing.T) {
-	c := newCircuitBreaker(1, time.Hour)
+	c := newCircuitBreaker(time.Hour)
 	c.state = circuitHalfOpen
 	c.halfOpenProbing = true // 模拟已有请求在试探
 
@@ -405,6 +400,153 @@ func TestCircuit_HalfOpenProbeReleasedOnFailure(t *testing.T) {
 	c.openUntil = time.Now().Add(-time.Second)
 	if !c.allowPrimary() {
 		t.Fatal("试探权释放后，冷却到期应能再次抢占试探")
+	}
+}
+
+// TestCircuit_ProbeBackoff half-open 探测失败 → 冷却逐次翻倍封顶；探测成功 → 重置回基础冷却。
+func TestCircuit_ProbeBackoff(t *testing.T) {
+	base := 60 * time.Second
+	c := newCircuitBreaker(base)
+	if c.currentCooldown != base {
+		t.Fatalf("初始冷却应为基础值 %v，got %v", base, c.currentCooldown)
+	}
+
+	// closed 下首次失败 → open，用基础冷却
+	c.recordFailure()
+	if c.currentCooldown != base {
+		t.Fatalf("首次熔断冷却应为基础值 %v，got %v", base, c.currentCooldown)
+	}
+
+	// 模拟探测连续失败：每次 half-open 失败冷却翻倍。
+	// 序列：60s → 120s → 240s → 480s → 960s → 封顶 maxCircuitCooldown(10m)。
+	want := base
+	for step := 0; step < 4; step++ {
+		c.state = circuitHalfOpen // 强制进入探测态
+		c.recordFailure()
+		want *= 2
+		if want > maxCircuitCooldown {
+			want = maxCircuitCooldown
+		}
+		if c.currentCooldown != want {
+			t.Fatalf("第 %d 次探测失败后冷却应为 %v，got %v", step+1, want, c.currentCooldown)
+		}
+	}
+
+	// 再多次失败应封顶在 maxCircuitCooldown
+	for i := 0; i < 3; i++ {
+		c.state = circuitHalfOpen
+		c.recordFailure()
+		if c.currentCooldown != maxCircuitCooldown {
+			t.Fatalf("冷却应封顶 %v，got %v", maxCircuitCooldown, c.currentCooldown)
+		}
+	}
+
+	// 探测成功 → 重置回基础冷却
+	c.state = circuitHalfOpen
+	c.recordSuccess()
+	if c.currentCooldown != base {
+		t.Fatalf("探测成功后冷却应重置为基础值 %v，got %v", base, c.currentCooldown)
+	}
+}
+
+// TestCircuit_DefaultCooldown newCircuitBreaker(0) 用默认冷却 60s。
+func TestCircuit_DefaultCooldown(t *testing.T) {
+	c := newCircuitBreaker(0)
+	if c.cooldown != 60*time.Second {
+		t.Fatalf("默认冷却应为 60s，got %v", c.cooldown)
+	}
+	if c.currentCooldown != 60*time.Second {
+		t.Fatalf("初始 currentCooldown 应为 60s，got %v", c.currentCooldown)
+	}
+}
+
+// TestCircuit_NoFailoverOnClientError 主返回非 failover 错误（如 400 请求格式错）不应熔断、不切换，直接返回。
+// 防回归：去掉阈值后一次失败即熔断，需确保只有 failover 类错误才计入熔断。
+func TestCircuit_NoFailoverOnClientError(t *testing.T) {
+	primary := &endpointModel{name: "primary", genErr: errors.New("400 bad request: invalid model")}
+	backup := &endpointModel{name: "backup", genResult: schema.AssistantMessage("OK", nil)}
+	w := NewFailoverChatModelWrapper(primary, []model.ToolCallingChatModel{backup}).
+		WithCircuit(time.Hour)
+
+	// 主返回 400（非 failover 错误）→ 直接返回错误，不熔断、不切备用
+	_, err := w.Generate(context.Background(), nil)
+	if err == nil {
+		t.Fatal("主返回 400 应直接返回错误")
+	}
+	if primary.genCalls != 1 {
+		t.Fatalf("主应被试 1 次，got %d", primary.genCalls)
+	}
+	// 熔断器不应 open：下次请求仍试主（未跳过）
+	primary.genCalls = 0
+	w.Generate(context.Background(), nil)
+	if primary.genCalls != 1 {
+		t.Fatalf("非 failover 错误不应熔断，下次仍应试主，got %d", primary.genCalls)
+	}
+}
+
+// TestCircuit_HalfOpenProbeNonFailoverError half-open 探测遇非 failover 错误（如 400）时，
+// 释放探测权并重新 open（走备用），不卡在 half-open。
+// 防回归：B 节曾使探测权泄漏 → halfOpenProbing 永不释放 → 主端点永久冻结。
+func TestCircuit_HalfOpenProbeNonFailoverError(t *testing.T) {
+	primary := &endpointModel{name: "primary", genErr: errors.New("502")}
+	backup := &endpointModel{name: "backup", genResult: schema.AssistantMessage("OK", nil)}
+	w := NewFailoverChatModelWrapper(primary, []model.ToolCallingChatModel{backup}).
+		WithCircuit(50 * time.Millisecond)
+
+	// 主 502 → 1 次失败即 open
+	w.Generate(context.Background(), nil)
+	time.Sleep(60 * time.Millisecond) // 冷却到期 → half-open
+
+	// half-open 探测：主返回 400（非 failover）→ 本次直接返回错误（不切换），
+	// 但 onPrimaryNonFailoverError 释放探测权并重新 open（关键：不卡死）
+	primary.genErr = errors.New("400 bad request: invalid model")
+	primary.genCalls = 0
+	_, err := w.Generate(context.Background(), nil)
+	if err == nil {
+		t.Fatal("half-open 探测遇 400 应直接返回错误（非 failover 不切换）")
+	}
+	if primary.genCalls != 1 {
+		t.Fatalf("half-open 应试主 1 次，got %d", primary.genCalls)
+	}
+
+	// 紧接着的请求：重新 open 未到期 → 跳过主走备用（证明未卡在 half-open）
+	primary.genCalls = 0
+	msg, err := w.Generate(context.Background(), nil)
+	if err != nil || msg.Content != "OK" {
+		t.Fatalf("探测遇 400 重新 open 后应 failover 到 backup，got msg=%v err=%v", msg, err)
+	}
+	if primary.genCalls != 0 {
+		t.Fatalf("重新 open 后应跳过主，但主被试 %d 次（探测权泄漏？）", primary.genCalls)
+	}
+}
+
+// TestCircuit_StreamOpensAndSkipsPrimary Stream 路径熔断：主 retry 耗尽即熔断 → open → 后续 Stream 跳过主。
+// 覆盖 Stream 与 Generate 镜像代码的熔断行为（防回归：两段镜像代码易只改其一）。
+func TestCircuit_StreamOpensAndSkipsPrimary(t *testing.T) {
+	primary := &endpointModel{name: "primary", streamErr: errors.New("502")}
+	backup := &endpointModel{name: "backup"}
+	w := NewFailoverChatModelWrapper(primary, []model.ToolCallingChatModel{backup}).
+		WithCircuit(50 * time.Millisecond)
+
+	// 第 1 次 Stream：主失败 → 切备用成功。主被试 1 次即 open。
+	sr, err := w.Stream(context.Background(), nil)
+	if err != nil {
+		t.Fatalf("第 1 次 Stream 应 failover 成功，got err: %v", err)
+	}
+	drainStream(sr)
+	if primary.streamCalls != 1 {
+		t.Fatalf("主应被 Stream 试 1 次后熔断，got %d", primary.streamCalls)
+	}
+
+	// 第 2 次 Stream：主已 open → 跳过主直接备用。主不再被试。
+	primary.streamCalls = 0
+	sr, err = w.Stream(context.Background(), nil)
+	if err != nil {
+		t.Fatalf("熔断后应直接 Stream backup，got err: %v", err)
+	}
+	drainStream(sr)
+	if primary.streamCalls != 0 {
+		t.Fatalf("熔断后应跳过主，但主被 Stream 试 %d 次", primary.streamCalls)
 	}
 }
 
