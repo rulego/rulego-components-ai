@@ -3,6 +3,7 @@ package agent
 import (
 	"context"
 	"fmt"
+	"strings"
 	"sync"
 	"time"
 
@@ -113,9 +114,30 @@ func (c *circuitBreaker) getState() circuitState {
 	return c.state
 }
 
+// IsFailoverError 判断错误是否应触发故障转移（切备用端点）。
+// 比 IsRetryableError 更宽松：除可重试错误外，认证/授权类错误（401/403/invalid_api_key）也触发——
+// 备用端点用不同 key/url，认证可能成功；而 retry 重试同一模型对认证错误无意义，故二者判断分离。
+func IsFailoverError(err error) bool {
+	if err == nil {
+		return false
+	}
+	if IsRetryableError(err) {
+		return true
+	}
+	errStr := err.Error()
+	if containsHTTPStatus(errStr, "401") ||
+		containsHTTPStatus(errStr, "403") ||
+		strings.Contains(errStr, "Unauthorized") ||
+		strings.Contains(errStr, "invalid_api_key") ||
+		strings.Contains(errStr, "invalid api key") {
+		return true
+	}
+	return false
+}
+
 // ===== FailoverChatModelWrapper =====
 
-// FailoverChatModelWrapper 故障转移包装器：主端点失败（可重试错误）后依次切换备用端点。
+// FailoverChatModelWrapper 故障转移包装器：主端点失败（可重试错误或 401/403 认证错误）后依次切换备用端点。
 //
 // primary 与 failovers 通常各自已是 *RetryChatModelWrapper（先在同模型内重试，耗尽后才触发 failover），
 // 从而组合出 "retry（同模型）→ failover（切模型）" 的完整链路。
@@ -124,7 +146,7 @@ func (c *circuitBreaker) getState() circuitState {
 // 避免主长时间故障时每个请求都等主 retry 耗尽。
 //
 // 行为与流式模式相关：
-//   - Generate：任一端点返回可重试错误 → 切下一个；不可重试错误直接返回。
+//   - Generate：任一端点返回可重试错误或认证错误 → 切下一个；请求格式等不可切换错误直接返回。
 //   - Stream（off 模式）：端点 Stream 返回错误（建立失败 / 探测窗口内重试耗尽）→ 切下一个；
 //     一旦某端点 Stream 成功返回 reader，后续 mid-stream 错误由该 reader 透传，不再 failover。
 //   - Stream（full 模式）：端点 Stream 内部完整缓冲重试，mid-stream 断流耗尽才返回错误 → 切下一个。
@@ -200,8 +222,8 @@ func (w *FailoverChatModelWrapper) Generate(ctx context.Context, input []*schema
 		if i == 0 && tryPrimary && w.circuit != nil {
 			w.circuit.recordFailure()
 		}
-		if !IsRetryableError(err) {
-			return nil, err // 不可重试错误直接返回，不切换
+		if !IsFailoverError(err) {
+			return nil, err // 非故障转移类错误（如请求格式错误）直接返回，不切换
 		}
 		lastErr = err
 		w.logf("[FailoverChatModel] Generate endpoint #%d failed: %v, trying next...", i, err)
@@ -236,7 +258,7 @@ func (w *FailoverChatModelWrapper) Stream(ctx context.Context, input []*schema.M
 		if i == 0 && tryPrimary && w.circuit != nil {
 			w.circuit.recordFailure()
 		}
-		if !IsRetryableError(err) {
+		if !IsFailoverError(err) {
 			return nil, err
 		}
 		lastErr = err

@@ -82,18 +82,39 @@ func TestFailover_GenerateAllFail(t *testing.T) {
 	}
 }
 
-// TestFailover_GenerateNonRetryableNoSwitch 主端点不可重试错误 → 不切换备用。
+// TestFailover_GenerateNonRetryableNoSwitch 请求格式类错误（400）→ 不切换备用：
+// 备用端点收到同样请求也会失败，切换无意义。注意：认证错误（401/invalid_api_key）不属此类，
+// 会被 TestFailover_AuthErrorSwitchesToBackup 覆盖——备用端点用不同 key，认证可能成功。
 func TestFailover_GenerateNonRetryableNoSwitch(t *testing.T) {
-	primary := &endpointModel{name: "primary", genErr: errors.New("invalid_api_key")}
+	primary := &endpointModel{name: "primary", genErr: errors.New("400 Bad Request: invalid message")}
 	backup := &endpointModel{name: "backup"}
 	w := NewFailoverChatModelWrapper(primary, []model.ToolCallingChatModel{backup})
 
 	_, err := w.Generate(context.Background(), nil)
-	if err == nil || !strings.Contains(err.Error(), "invalid_api_key") {
-		t.Fatalf("期望透传不可重试错误，got: %v", err)
+	if err == nil || !strings.Contains(err.Error(), "400 Bad Request") {
+		t.Fatalf("期望透传请求格式错误，got: %v", err)
 	}
 	if backup.genCalls != 0 {
-		t.Fatalf("不可重试错误不应切换，备用被调用 %d 次", backup.genCalls)
+		t.Fatalf("请求格式错误不应切换，备用被调用 %d 次", backup.genCalls)
+	}
+}
+
+// TestFailover_AuthErrorSwitchesToBackup 认证错误（401/invalid_api_key）→ 切换备用：
+// retry 重试同一模型对认证错误无意义（不重试），但 failover 切到不同 key/url 的备用端点值得一试。
+func TestFailover_AuthErrorSwitchesToBackup(t *testing.T) {
+	primary := &endpointModel{name: "primary", genErr: errors.New("401 Unauthorized: invalid_api_key")}
+	backup := &endpointModel{name: "backup", genResult: schema.AssistantMessage("OK", nil)}
+	w := NewFailoverChatModelWrapper(primary, []model.ToolCallingChatModel{backup})
+
+	msg, err := w.Generate(context.Background(), nil)
+	if err != nil {
+		t.Fatalf("认证错误应 failover 到备用成功，got err: %v", err)
+	}
+	if msg.Content != "OK" {
+		t.Fatalf("期望备用返回 OK，got %s", msg.Content)
+	}
+	if backup.genCalls != 1 {
+		t.Fatalf("认证错误应切换备用，备用被调用 %d 次", backup.genCalls)
 	}
 }
 
