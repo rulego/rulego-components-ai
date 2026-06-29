@@ -43,9 +43,10 @@ type LLMConfig struct {
 
 // FailoverEndpoint 故障转移备用端点
 type FailoverEndpoint struct {
-	Url   string `json:"url"`   // 备用请求地址
-	Key   string `json:"key"`   // 备用 API Key
-	Model string `json:"model"` // 备用模型名称，空则沿用主模型名
+	Url    string       `json:"url"`              // 备用请求地址
+	Key    string       `json:"key"`              // 备用 API Key
+	Model  string       `json:"model"`            // 备用模型名称，空则沿用主模型名
+	Params *ModelParams `json:"params,omitempty"` // 可选：覆盖主端点参数；nil=继承主端点 Params
 }
 
 // 流式 mid-stream 重试模式（LLMConfig.StreamRetryMode 取值）

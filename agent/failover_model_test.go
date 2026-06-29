@@ -2,6 +2,7 @@ package agent
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"io"
 	"strings"
@@ -10,6 +11,10 @@ import (
 
 	"github.com/cloudwego/eino/components/model"
 	"github.com/cloudwego/eino/schema"
+	"github.com/rulego/rulego-components-ai/config"
+	"github.com/rulego/rulego/api/types"
+	"github.com/rulego/rulego/utils/maps"
+	"github.com/stretchr/testify/require"
 )
 
 // endpointModel 可控的端点 mock，支持预设 Generate/Stream 行为，用于 failover 测试。
@@ -401,4 +406,107 @@ func TestCircuit_HalfOpenProbeReleasedOnFailure(t *testing.T) {
 	if !c.allowPrimary() {
 		t.Fatal("试探权释放后，冷却到期应能再次抢占试探")
 	}
+}
+
+// TestApplyFailoverEndpoint_ParamsOverride 验证备用端点参数覆盖逻辑：
+// ep.Params 为 nil 时继承主 Params；非 nil 时整组覆盖主 Params。
+func TestApplyFailoverEndpoint_ParamsOverride(t *testing.T) {
+	main := config.LLMConfig{
+		Params: config.ModelParams{Temperature: 0.7, TopP: 0.9, MaxTokens: 2048},
+	}
+	// 无 Params → 完全继承主
+	got := applyFailoverEndpoint(main, config.FailoverEndpoint{Url: "https://backup"})
+	require.InDelta(t, 0.7, got.Params.Temperature, 1e-6)
+	require.Equal(t, 2048, got.Params.MaxTokens)
+	require.Equal(t, "https://backup", got.Url)
+	// 有 Params → 整组覆盖
+	got = applyFailoverEndpoint(main, config.FailoverEndpoint{
+		Url:    "https://backup",
+		Params: &config.ModelParams{Temperature: 0.2, TopP: 0.5, MaxTokens: 512},
+	})
+	require.InDelta(t, 0.2, got.Params.Temperature, 1e-6)
+	require.Equal(t, 512, got.Params.MaxTokens)
+}
+
+// TestFailoverEndpoint_ParamsJSONRoundtrip 验证 FailoverEndpoint.Params 的 JSON 往返：
+// 确保前端 ep.params（camelCase）→ JSON → FailoverEndpoint.Params 链路字段对齐，
+// 且 omitempty（nil 时不输出 params 字段）。
+func TestFailoverEndpoint_ParamsJSONRoundtrip(t *testing.T) {
+	// 非 nil：序列化含 params，子字段 camelCase
+	ep := config.FailoverEndpoint{
+		Url:    "https://x",
+		Key:    "k",
+		Model:  "m",
+		Params: &config.ModelParams{Temperature: 0.3, TopP: 0.8, MaxTokens: 1024},
+	}
+	b, err := json.Marshal(ep)
+	require.NoError(t, err)
+	require.Contains(t, string(b), `"params"`)
+	require.Contains(t, string(b), `"topP":0.8`)
+	require.Contains(t, string(b), `"maxTokens":1024`)
+	// 反序列化往返
+	var out config.FailoverEndpoint
+	require.NoError(t, json.Unmarshal(b, &out))
+	require.NotNil(t, out.Params)
+	require.InDelta(t, 0.3, out.Params.Temperature, 1e-6)
+	require.Equal(t, 1024, out.Params.MaxTokens)
+
+	// nil：不输出 params 字段（omitempty）
+	noParams := config.FailoverEndpoint{Url: "https://x"}
+	b2, err := json.Marshal(noParams)
+	require.NoError(t, err)
+	require.NotContains(t, string(b2), `"params"`)
+}
+
+// TestMap2Struct_DecodesFailoverParams 验证 maps.Map2Struct 能把 node configuration 里的
+// failover[].params 解码到 config.FailoverEndpoint.Params（FailoverEndpoint 字段挂的是 json tag）。
+// 这是智能体 JSON 配置 → 组件 Init 的实际解码路径；覆盖它以防 tag 不匹配导致 params 静默丢失。
+func TestMap2Struct_DecodesFailoverParams(t *testing.T) {
+	configuration := types.Configuration{
+		"failover": []interface{}{
+			map[string]interface{}{
+				"url":    "https://backup.example.com/v1",
+				"params": map[string]interface{}{
+					"temperature": 0.2,
+					"topP":        0.5,
+					"maxTokens":   512,
+				},
+			},
+		},
+	}
+	var cfg config.LLMConfig
+	require.NoError(t, maps.Map2Struct(configuration, &cfg))
+	require.Len(t, cfg.Failover, 1)
+	require.NotNil(t, cfg.Failover[0].Params, "Map2Struct 应解码 failover[].params（json tag）")
+	require.InDelta(t, 0.2, cfg.Failover[0].Params.Temperature, 1e-6)
+	require.Equal(t, 512, cfg.Failover[0].Params.MaxTokens)
+}
+
+// TestFailoverEndpoint_ExtraFieldsJSON 验证 FailoverEndpoint.Params.ExtraFields 的 JSON 往返：
+// 扩展参数（reasoning_effort 等模型特定参数）能正确序列化/反序列化，且 applyFailoverEndpoint 整组覆盖时保留。
+func TestFailoverEndpoint_ExtraFieldsJSON(t *testing.T) {
+	ep := config.FailoverEndpoint{
+		Url:   "https://x",
+		Model: "m",
+		Params: &config.ModelParams{
+			Temperature: 0.3,
+			ExtraFields: map[string]any{"reasoning_effort": "high", "thinking.type": "enabled", "max_budget": 1024},
+		},
+	}
+	b, err := json.Marshal(ep)
+	require.NoError(t, err)
+	require.Contains(t, string(b), `"extraFields"`)
+	require.Contains(t, string(b), `"reasoning_effort":"high"`)
+	var out config.FailoverEndpoint
+	require.NoError(t, json.Unmarshal(b, &out))
+	require.NotNil(t, out.Params)
+	require.Equal(t, "high", out.Params.ExtraFields["reasoning_effort"])
+	// JSON 往返后 map[string]any 的数字变 float64（Go encoding/json 标准行为）
+	require.Equal(t, float64(1024), out.Params.ExtraFields["max_budget"])
+
+	// applyFailoverEndpoint 整组覆盖，ExtraFields 随 Params 保留
+	main := config.LLMConfig{Params: config.ModelParams{Temperature: 0.9}}
+	got := applyFailoverEndpoint(main, ep)
+	require.Equal(t, "high", got.Params.ExtraFields["reasoning_effort"])
+	require.InDelta(t, 0.3, got.Params.Temperature, 1e-6)
 }

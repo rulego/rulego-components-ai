@@ -142,16 +142,7 @@ func CreateChatModel(llmConfig config.LLMConfig, opts ...ModelOptions) (model.To
 	}
 	failovers := make([]model.ToolCallingChatModel, 0, len(llmConfig.Failover))
 	for i, ep := range llmConfig.Failover {
-		epCfg := llmConfig // 继承主配置（Params 等），覆盖端点信息
-		if ep.Url != "" {
-			epCfg.Url = ep.Url
-		}
-		if ep.Key != "" {
-			epCfg.Key = ep.Key
-		}
-		if ep.Model != "" {
-			epCfg.Model = ep.Model
-		}
+		epCfg := applyFailoverEndpoint(llmConfig, ep)
 		epModel, err := createEndpointModel(epCfg, opts)
 		if err != nil {
 			return nil, fmt.Errorf("failed to create failover model #%d (%s): %v", i+1, epCfg.Model, err)
@@ -170,6 +161,25 @@ func CreateChatModel(llmConfig config.LLMConfig, opts ...ModelOptions) (model.To
 		logger.Printf("[FailoverChatModel] streamRetryMode=off: failover covers only connect/early-stream errors; mid-stream breaks pass through. Set streamRetryMode=full for mid-stream failover.")
 	}
 	return fo, nil
+}
+
+// applyFailoverEndpoint 从主配置派生备用端点配置：整体继承主配置（含 Params），再用 ep 覆盖
+// url/key/model；ep.Params 非 nil 时整组覆盖主 Params（nil=继承主）。抽出为函数以便单元测试覆盖逻辑。
+func applyFailoverEndpoint(mainCfg config.LLMConfig, ep config.FailoverEndpoint) config.LLMConfig {
+	epCfg := mainCfg
+	if ep.Url != "" {
+		epCfg.Url = ep.Url
+	}
+	if ep.Key != "" {
+		epCfg.Key = ep.Key
+	}
+	if ep.Model != "" {
+		epCfg.Model = ep.Model
+	}
+	if ep.Params != nil {
+		epCfg.Params = *ep.Params
+	}
+	return epCfg
 }
 
 // createEndpointModel 为单个端点创建 ChatModel（裸 openai），按 opts.WrapRetry 决定是否包重试，
