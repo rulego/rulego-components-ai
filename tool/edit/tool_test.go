@@ -107,7 +107,10 @@ func TestEmptyPath(t *testing.T) {
 }
 
 func TestFileNotExist(t *testing.T) {
-	config := DefaultConfig()
+	// 用临时工作目录内的相对路径触发“文件不存在”分支。避免写死绝对路径：
+	// Linux 上绝对路径（/nonexistent/...）会被路径安全检查判为逃逸工作区而提前报错，
+	// 到不了文件存在性检查；Windows 上绝对路径无盘符不触发，导致本地通过、CI 失败。
+	config := Config{WorkDir: t.TempDir()}
 
 	tTool, err := NewTool(config)
 	require.NoError(t, err)
@@ -117,7 +120,10 @@ func TestFileNotExist(t *testing.T) {
 
 	ctx := context.Background()
 
-	result, err := invokable.InvokableRun(ctx, `{"operation": "line", "path": "/nonexistent/file.txt"}`)
+	result, err := invokable.InvokableRun(ctx, buildParams(map[string]interface{}{
+		"operation": "line",
+		"path":      "nonexistent_file.txt",
+	}))
 	require.NoError(t, err)
 	assert.Contains(t, result, "File not found")
 }
