@@ -400,7 +400,14 @@ func (x *ReactAgentNode) executeStream(ctx types.RuleContext, msg types.RuleMsg,
 	// "Error in input stream"）；缓冲满（前端失活）则 abort 上游流止损，不重新引入背压也不无限吃内存。
 	streamCtx, cancel := context.WithCancel(runCtx)
 	defer cancel()
-	tellQueue := NewStreamTellQueue(ctx, DefaultStreamTellQueueCap, cancel, x.logger)
+	// full 模式重放是突发流量（整条流缓冲后瞬间涌出）：缓冲满时阻塞反压（等前端消费，不丢数据），
+	// 超时才 abort；off 模式是平滑实时流：满则立即 abort，不反压 LLM（避免 "Error in input stream"）。
+	var tellQueue *StreamTellQueue
+	if x.Config.LLMConfig.StreamRetryMode == config.StreamRetryFull {
+		tellQueue = NewStreamTellQueueWithBlock(ctx, DefaultStreamTellQueueCap, cancel, DefaultStreamTellBlockTimeout, x.logger)
+	} else {
+		tellQueue = NewStreamTellQueue(ctx, DefaultStreamTellQueueCap, cancel, x.logger)
+	}
 	defer tellQueue.Close() // panic/异常兜底：防消费 goroutine 泄漏（正常路径由 Wait 关闭，幂等不冲突）
 	sseHandler.UseQueue(tellQueue)
 	streamCtx = WithSSECallback(streamCtx, sseHandler.Callback())

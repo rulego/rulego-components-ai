@@ -225,3 +225,61 @@ func TestStreamTellQueue_AbortedFlag(t *testing.T) {
 	}
 	q2.Wait()
 }
+
+// TestStreamTellQueue_FullMode_BlockOnFull full 模式（blockTimeout>0）：慢消费导致缓冲满时阻塞反压，
+// 不立即 abort；消费跟上后继续入队、全部送达。区别于 off 模式的"满则立即 abort"。
+// 这正是 full 模式重放突发流量不应误判前端失活的关键。
+func TestStreamTellQueue_FullMode_BlockOnFull(t *testing.T) {
+	var (
+		mu  sync.Mutex
+		got []string
+	)
+	ctx := recordingCtx(&got, &mu, 20*time.Millisecond) // 慢但持续消费
+	sctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	q := NewStreamTellQueueWithBlock(ctx, 4, cancel, 3*time.Second) // full：满则阻塞 3s 才 abort
+	// 快速入队 > 容量 4：会阻塞反压等消费，但消费持续（20ms/条），不会超时
+	for i := 0; i < 12; i++ {
+		q.Enqueue(sseMsg("m"))
+	}
+
+	// 入队期间不应 abort（阻塞反压，消费跟上）
+	select {
+	case <-sctx.Done():
+		t.Fatal("full 模式慢消费应阻塞反压，不应 abort")
+	default:
+	}
+	q.Wait()
+	require.Len(t, got, 12)
+	if q.Aborted() {
+		t.Error("full 模式消费跟上后不应标记 aborted")
+	}
+}
+
+// TestStreamTellQueue_FullMode_TimeoutAborts full 模式下前端持续不消费（真断开）→
+// 缓冲满后阻塞超时 → abort 止损。区别于 off 模式的"立即 abort"（full 给一个等待窗口）。
+func TestStreamTellQueue_FullMode_TimeoutAborts(t *testing.T) {
+	// TellNext 永久阻塞（模拟前端断开，消费完全停止）
+	blockCtx := rulegotest.NewRuleContext(types.NewConfig(), func(msg types.RuleMsg, relationType string, err error) {
+		select {}
+	})
+	sctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	q := NewStreamTellQueueWithBlock(blockCtx, 1, cancel, 100*time.Millisecond) // full：满则阻塞 100ms
+	q.Enqueue(sseMsg("a")) // 入队（consume 取走后阻塞在 TellNext）
+	q.Enqueue(sseMsg("b")) // 填满（consume 卡在 TellNext(a)，ch:[b]）
+	q.Enqueue(sseMsg("c")) // 满 → 阻塞 100ms → 超时 abort
+
+	select {
+	case <-sctx.Done():
+		// abort 触发 ✅
+	case <-time.After(1 * time.Second):
+		t.Fatal("full 模式持续不消费应超时 abort")
+	}
+	if !q.Aborted() {
+		t.Error("超时 abort 后 Aborted() 应为 true")
+	}
+	// 不调 q.Wait()：consume goroutine 永久阻塞在 TellNext，Wait 会卡死
+}
