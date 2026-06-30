@@ -142,6 +142,13 @@ func (a *SessionAspect) Before(ctx context.Context, point *aspect.AgentPoint, in
 		input.Metadata[aspect.MetaSessionModel] = sess.Metadata.Model
 		a.log("[SessionAspect] Before: injected session_model=%s into metadata", sess.Metadata.Model)
 	}
+	// 注入会话级扩展参数覆盖（思考强度等）到 metadata（JSON 字符串）
+	if len(sess.Metadata.ExtraFields) > 0 {
+		if raw, err := json.Marshal(sess.Metadata.ExtraFields); err == nil {
+			input.Metadata[aspect.MetaSessionExtraFields] = string(raw)
+			a.log("[SessionAspect] Before: injected session_extra_fields into metadata")
+		}
+	}
 
 	// 检查是否加载历史消息
 	if input.Metadata[aspect.MetaLoadHistory] != "true" {

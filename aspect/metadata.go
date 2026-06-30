@@ -74,4 +74,8 @@ const (
 	// MetaSessionModel 会话级模型
 	// 用于从会话中读取用户通过 /model set 命令切换的模型
 	MetaSessionModel = "session_model"
+
+	// MetaSessionExtraFields 会话级扩展参数覆盖（JSON 字符串）
+	// 用于传递思考强度等模型特定参数的会话级临时覆盖（如 thinking.type、reasoning_effort）
+	MetaSessionExtraFields = "session_extra_fields"
 )

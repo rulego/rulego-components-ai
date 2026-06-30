@@ -4,6 +4,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/rulego/rulego-components-ai/aspect"
 	"github.com/rulego/rulego-components-ai/config"
 	"github.com/rulego/rulego/test/assert"
 )
@@ -210,4 +211,44 @@ func TestReactAgentNode_New(t *testing.T) {
 	assert.Equal(t, float32(0.5), reactNode.Config.Params.FrequencyPenalty)
 	assert.Equal(t, float32(0.5), reactNode.Config.Params.PresencePenalty)
 	assert.Equal(t, 150, reactNode.Config.MaxStep)
+}
+
+// TestResolveResponseModel verifies session-level model overrides are reflected in response metadata.
+func TestResolveResponseModel(t *testing.T) {
+	tests := []struct {
+		name         string
+		defaultModel string
+		metadata     map[string]string
+		expected     string
+	}{
+		{
+			name:         "uses session override model when present",
+			defaultModel: "glm-5",
+			metadata: map[string]string{
+				aspect.MetaSessionModel: "glm-5.2",
+			},
+			expected: "glm-5.2",
+		},
+		{
+			name:         "falls back to default model when override missing",
+			defaultModel: "glm-5",
+			metadata:     map[string]string{},
+			expected:     "glm-5",
+		},
+		{
+			name:         "falls back to default model when override blank",
+			defaultModel: "glm-5",
+			metadata: map[string]string{
+				aspect.MetaSessionModel: "   ",
+			},
+			expected: "glm-5",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			result := resolveResponseModel(tt.defaultModel, tt.metadata)
+			assert.Equal(t, tt.expected, result)
+		})
+	}
 }

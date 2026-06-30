@@ -372,6 +372,7 @@ func (x *ReactAgentNode) executeSync(ctx types.RuleContext, msg types.RuleMsg, r
 	output, err := x.aspectExecutor.ExecuteSync(runCtx, opts, agentInput, adkInput.Messages, func(ctx context.Context, msgs []*schema.Message) (*schema.Message, error) {
 		// 注入 session_model 到 context（用于动态模型切换）
 		ctx = InjectSessionModelToContext(ctx, agentInput.Metadata)
+		ctx = InjectSessionExtraFieldsToContext(ctx, agentInput.Metadata)
 		return x.agent.Generate(ctx, msgs)
 	})
 
@@ -383,7 +384,10 @@ func (x *ReactAgentNode) executeSync(ctx types.RuleContext, msg types.RuleMsg, r
 	// 处理输出
 	msg.SetData(output.Content)
 	msg.DataType = types.TEXT
-	BuildTokenMetadata(msg, output.TokenUsage, x.Config.Model)
+	// session_aspect.Before 已在 ExecuteSync 内注入 session_model 到 agentInput.Metadata，
+	// 此处（注入后）解析响应模型，确保回显会话级切换后的模型而非节点默认模型
+	responseModel := resolveResponseModel(x.Config.Model, agentInput.Metadata)
+	BuildTokenMetadata(msg, output.TokenUsage, responseModel)
 	// 如果 Around 切面拦截了请求（如 CommandAspect），传递切面输出的元数据
 	if output.SkippedAI {
 		transferOutputMetadata(msg, output)
@@ -393,6 +397,12 @@ func (x *ReactAgentNode) executeSync(ctx types.RuleContext, msg types.RuleMsg, r
 
 // executeStream 流式执行
 func (x *ReactAgentNode) executeStream(ctx types.RuleContext, msg types.RuleMsg, runCtx context.Context, opts ExecuteOptions, agentInput *aspect.AgentInput, adkInput *adk.AgentInput) {
+	// 会话级模型需在 session_aspect 注入 session_model 后才能解析（注入发生在下方 ExecuteStream
+	// 内部的 Before 阶段）。用闭包延迟解析，每次取值读最新的 agentInput.Metadata，
+	// 确保 SSE 回显会话级切换后的模型而非节点默认模型。
+	getResponseModel := func() string {
+		return resolveResponseModel(x.Config.Model, agentInput.Metadata)
+	}
 	// 创建 SSE 处理器
 	sseHandler := NewSSEHandler(ctx, msg)
 	// 统一流式 TellNext 队列：chunk（onChunk）和工具事件（sendEvent）都入队，
@@ -416,6 +426,7 @@ func (x *ReactAgentNode) executeStream(ctx types.RuleContext, msg types.RuleMsg,
 		func(ctx context.Context, msgs []*schema.Message) (*schema.StreamReader[*schema.Message], error) {
 			// 注入 session_model 到 context（用于动态模型切换）
 			ctx = InjectSessionModelToContext(ctx, agentInput.Metadata)
+			ctx = InjectSessionExtraFieldsToContext(ctx, agentInput.Metadata)
 			return x.agent.Stream(ctx, msgs)
 		},
 		func(content, reasoning string, isFirst bool) {
@@ -425,7 +436,7 @@ func (x *ReactAgentNode) executeStream(ctx types.RuleContext, msg types.RuleMsg,
 				chunkMsg.Metadata.PutValue(config.KeyReasoningContent, reasoning)
 			}
 			chunkMsg.DataType = types.TEXT
-			BuildStreamChunkMetadataWithModel(chunkMsg, isFirst, x.Config.Model)
+			BuildStreamChunkMetadataWithModel(chunkMsg, isFirst, getResponseModel())
 			tellQueue.Enqueue(chunkMsg)
 		},
 	)
@@ -460,7 +471,7 @@ func (x *ReactAgentNode) executeStream(ctx types.RuleContext, msg types.RuleMsg,
 		endMsg.SetData(output.Content)
 		endMsg.DataType = types.TEXT
 		BuildStreamEndMetadata(endMsg)
-		BuildTokenMetadata(endMsg, output.TokenUsage, x.Config.Model)
+		BuildTokenMetadata(endMsg, output.TokenUsage, getResponseModel())
 		// 传递切面输出的元数据（如 CommandAspect 设置的 _isCommandResponse）
 		transferOutputMetadata(endMsg, output)
 		ctx.TellSuccess(endMsg)
@@ -473,7 +484,7 @@ func (x *ReactAgentNode) executeStream(ctx types.RuleContext, msg types.RuleMsg,
 	endMsg.SetData("")
 	endMsg.DataType = types.TEXT
 	BuildStreamEndMetadata(endMsg)
-	BuildTokenMetadata(endMsg, output.TokenUsage, x.Config.Model)
+	BuildTokenMetadata(endMsg, output.TokenUsage, getResponseModel())
 	ctx.TellNext(endMsg, types.Stream)
 
 	// 发送最终完成消息（用于下游处理，如日志）
@@ -482,7 +493,7 @@ func (x *ReactAgentNode) executeStream(ctx types.RuleContext, msg types.RuleMsg,
 	finalMsg.DataType = types.TEXT
 	BuildStreamEndMetadata(finalMsg)
 	finalMsg.Metadata.PutValue(config.KeyFullContent, config.ValueTrue)
-	BuildTokenMetadata(finalMsg, output.TokenUsage, x.Config.Model)
+	BuildTokenMetadata(finalMsg, output.TokenUsage, getResponseModel())
 	ctx.TellNext(finalMsg, types.Success)
 }
 
@@ -543,6 +554,17 @@ func ExtractOriginalSystemContent(content string) string {
 		return content[:idx]
 	}
 	return content
+}
+
+// resolveResponseModel returns the effective model name used for response metadata.
+func resolveResponseModel(defaultModel string, metadata map[string]string) string {
+	if metadata == nil {
+		return defaultModel
+	}
+	if sessionModel := strings.TrimSpace(metadata[aspect.MetaSessionModel]); sessionModel != "" {
+		return sessionModel
+	}
+	return defaultModel
 }
 
 // transferOutputMetadata 将切面输出的元数据传递到消息元数据

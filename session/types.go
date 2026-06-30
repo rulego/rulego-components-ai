@@ -72,8 +72,9 @@ type ToolCall struct {
 
 // SessionMetadata 会话元数据
 type SessionMetadata struct {
-	Title           string `json:"title"`
-	Model           string `json:"model,omitempty"` // 当前使用的模型
-	TotalTokenCount int    `json:"totalTokenCount"`
-	MessageCount    int    `json:"messageCount"`
+	Title           string         `json:"title"`
+	Model           string         `json:"model,omitempty"`       // 当前使用的模型
+	ExtraFields     map[string]any `json:"extraFields,omitempty"` // 会话级扩展参数覆盖（思考强度等，如 thinking.type/reasoning_effort）
+	TotalTokenCount int            `json:"totalTokenCount"`
+	MessageCount    int            `json:"messageCount"`
 }
