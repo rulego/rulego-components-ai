@@ -21,6 +21,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"os"
 	"strings"
 	"time"
 
@@ -128,6 +129,13 @@ type ModelOptions struct {
 //     （StreamRetry=StreamRetryFull 时启用完整 mid-stream 重试）。
 //   - 配置了 Failover 时，用 FailoverChatModelWrapper 包装，形成"同模型重试 → 切备用端点"链路。
 func CreateChatModel(llmConfig config.LLMConfig, opts ...ModelOptions) (model.ToolCallingChatModel, error) {
+	// 检测代理环境变量：go http.DefaultClient 会读 HTTP_PROXY/HTTPS_PROXY，LLM 请求若走代理，
+	// 代理对 SSE 长连接处理差（缓冲/超时/掐断），是 "Error in input stream" 的常见环境根因。
+	if os.Getenv("HTTPS_PROXY") != "" || os.Getenv("HTTP_PROXY") != "" || os.Getenv("https_proxy") != "" || os.Getenv("http_proxy") != "" {
+		if len(opts) > 0 && opts[0].Logger != nil {
+			opts[0].Logger.Warnf("[CreateChatModel] 检测到 HTTP_PROXY/HTTPS_PROXY 环境变量，LLM 请求会走代理，可能导致 SSE 流被中断（Error in input stream）。如非必要请清除代理")
+		}
+	}
 	primary, err := createEndpointModel(llmConfig, opts)
 	if err != nil {
 		return nil, err
@@ -253,7 +261,15 @@ func createEndpointModel(llmConfig config.LLMConfig, opts []ModelOptions) (model
 	// StreamRetryMode=full 时启用完整 mid-stream 重试（缓冲重放，牺牲实时）。
 	if len(opts) > 0 && opts[0].WrapRetry {
 		rw := NewRetryChatModelWrapper(chatModel, opts[0].MaxRetries, opts[0].Logger)
-		rw.SetStreamFull(llmConfig.StreamRetryMode == config.StreamRetryFull)
+		streamFull := llmConfig.StreamRetryMode == config.StreamRetryFull
+		rw.SetStreamFull(streamFull)
+		if opts[0].Logger != nil {
+			modeDesc := "off（仅探测窗口内重试，窗口外断流透传）"
+			if streamFull {
+				modeDesc = "full（完整缓冲+重试+重放）"
+			}
+			opts[0].Logger.Debugf("[CreateChatModel] model=%s streamRetryMode=%q → %s", llmConfig.Model, llmConfig.StreamRetryMode, modeDesc)
+		}
 		chatModel = rw
 	}
 

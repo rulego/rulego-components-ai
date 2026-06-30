@@ -173,6 +173,7 @@ func (e *AgentAspectExecutor) ExecuteStream(
 
 		var fullContent strings.Builder
 		var lastChunk *schema.Message
+		var streamErr error // 流中途错误（非 EOF），不再静默吞掉
 		chunkCount := 0
 
 		// onChunk 由上层（react_agent）负责入 StreamTellQueue，非阻塞，这里直接同步调用即可。
@@ -183,6 +184,7 @@ func (e *AgentAspectExecutor) ExecuteStream(
 					if e.logger != nil {
 						e.logger.Warnf("[ExecuteStream] Stream ended with error: %v, total chunks: %d, content length: %d", err, chunkCount, fullContent.Len())
 					}
+					streamErr = err
 				}
 				break
 			}
@@ -214,11 +216,21 @@ func (e *AgentAspectExecutor) ExecuteStream(
 			}
 		}
 
-		// 6. 构建输出
-		return e.buildStreamOutput(ctx, fullContent.String(), lastChunk, input, startTime), nil
+		// 6. 构建输出。流中途出错时把错误带进 output.Error 并返回 error，让上层感知"被截断"而非静默成功。
+		output := e.buildStreamOutput(ctx, fullContent.String(), lastChunk, input, startTime)
+		if streamErr != nil {
+			output.Error = streamErr
+		}
+		return output, streamErr
 	})
 
 	if err != nil {
+		// 截断/出错：output 可能含部分内容（已通过 chunk 发给前端），带上 error 让上层区分"截断"与"成功"。
+		if output != nil {
+			output.Error = err
+			e.manager.ExecuteCompleted(ctx, point, output)
+			return output, err
+		}
 		e.manager.ExecuteCompleted(ctx, point, &aspect.AgentOutput{Error: err, IsSuccess: false})
 		return nil, err
 	}

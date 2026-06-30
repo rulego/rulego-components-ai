@@ -67,10 +67,17 @@ func (w *RetryChatModelWrapper) SetStreamFull(full bool) {
 	w.streamFull = full
 }
 
-// logf 日志输出，如果 logger 存在则使用 logger，否则不输出
-func (w *RetryChatModelWrapper) logf(format string, v ...interface{}) {
+// logWarnf 警告日志（出错/断流/重试耗尽，排查关键，总输出）
+func (w *RetryChatModelWrapper) logWarnf(format string, v ...interface{}) {
 	if w.logger != nil {
-		w.logger.Printf(format, v...)
+		w.logger.Warnf(format, v...)
+	}
+}
+
+// logInfof 重试进行中的日志。用 Debug 级别：重试是异常路径，生产 info 不打扰，排查 debug 可见。
+func (w *RetryChatModelWrapper) logInfof(format string, v ...interface{}) {
+	if w.logger != nil {
+		w.logger.Debugf(format, v...)
 	}
 }
 
@@ -224,7 +231,7 @@ func (w *RetryChatModelWrapper) Generate(ctx context.Context, input []*schema.Me
 		// 如果还有重试机会，等待后重试
 		if attempt < maxAttempts {
 			delay := w.calculateDelay(attempt)
-			w.logf("[RetryChatModel] Generate attempt %d failed: %v, retrying in %v...", attempt, err, delay)
+			w.logInfof("[RetryChatModel] Generate attempt %d failed: %v, retrying in %v...", attempt, err, delay)
 
 			select {
 			case <-ctx.Done():
@@ -268,6 +275,7 @@ func (w *RetryChatModelWrapper) Stream(ctx context.Context, input []*schema.Mess
 	for attempt := 1; attempt <= maxAttempts; attempt++ {
 		stream, err := w.ToolCallingChatModel.Stream(ctx, input, opts...)
 		if err != nil {
+			w.logWarnf("[RetryChatModel] Stream attempt %d open error: %v", attempt, err)
 			// 建立流失败：不可重试直接透传，可重试则记录后等待重试
 			if !w.isRetryableError(err) {
 				return nil, err
@@ -276,7 +284,7 @@ func (w *RetryChatModelWrapper) Stream(ctx context.Context, input []*schema.Mess
 			if attempt >= maxAttempts {
 				break
 			}
-			w.logf("[RetryChatModel] Stream open attempt %d failed: %v, retrying...", attempt, err)
+			w.logInfof("[RetryChatModel] Stream open attempt %d failed: %v, retrying...", attempt, err)
 			if !w.sleep(ctx, w.calculateDelay(attempt)) {
 				return nil, ctx.Err()
 			}
@@ -290,6 +298,9 @@ func (w *RetryChatModelWrapper) Stream(ctx context.Context, input []*schema.Mess
 		probeCopy, passCopy := copies[0], copies[1]
 		probeErr := probeStream(probeCopy, w.probeChunks)
 		probeCopy.Close()
+		if probeErr != nil && !errors.Is(probeErr, io.EOF) {
+			w.logWarnf("[RetryChatModel] Stream attempt %d probe error (probeChunks=%d): %v", attempt, w.probeChunks, probeErr)
+		}
 
 		// 探测窗口内未发现错误（已收到足够 chunk，或短流正常 EOF），交给调用方
 		if probeErr == nil || errors.Is(probeErr, io.EOF) {
@@ -305,7 +316,7 @@ func (w *RetryChatModelWrapper) Stream(ctx context.Context, input []*schema.Mess
 		if attempt >= maxAttempts {
 			break
 		}
-		w.logf("[RetryChatModel] Stream probe attempt %d failed (in window): %v, retrying...", attempt, probeErr)
+		w.logInfof("[RetryChatModel] Stream probe attempt %d failed (in window): %v, retrying...", attempt, probeErr)
 		if !w.sleep(ctx, w.calculateDelay(attempt)) {
 			return nil, ctx.Err()
 		}
@@ -325,14 +336,16 @@ func (w *RetryChatModelWrapper) streamFullRetry(ctx context.Context, input []*sc
 	for attempt := 1; attempt <= maxAttempts; attempt++ {
 		stream, err := w.ToolCallingChatModel.Stream(ctx, input, opts...)
 		if err != nil {
+			w.logWarnf("[RetryChatModel] streamFull attempt %d/%d open error: %v", attempt, maxAttempts, err)
 			if !IsRetryableError(err) {
+				w.logWarnf("[RetryChatModel] streamFull attempt %d NOT retryable, return", attempt)
 				return nil, err
 			}
 			lastErr = err
 			if attempt >= maxAttempts {
 				break
 			}
-			w.logf("[RetryChatModel] streamFull open attempt %d failed: %v, retrying...", attempt, err)
+			w.logInfof("[RetryChatModel] streamFull attempt %d retryable, retrying...", attempt)
 			if !w.sleep(ctx, w.calculateDelay(attempt)) {
 				return nil, ctx.Err()
 			}
@@ -341,20 +354,23 @@ func (w *RetryChatModelWrapper) streamFullRetry(ctx context.Context, input []*sc
 		// 完整缓冲整条流，探测是否中途断流
 		chunks, streamErr := drainAndBufferStream(stream)
 		if streamErr == nil {
-			return streamReaderFromMessages(chunks), nil // 成功，重放
+			return streamReaderFromMessages(chunks), nil
 		}
+		w.logWarnf("[RetryChatModel] streamFull attempt %d/%d mid-stream error (chunks=%d): %v", attempt, maxAttempts, len(chunks), streamErr)
 		if !IsRetryableError(streamErr) {
+			w.logWarnf("[RetryChatModel] streamFull attempt %d NOT retryable, return", attempt)
 			return nil, streamErr
 		}
 		lastErr = streamErr
 		if attempt >= maxAttempts {
 			break
 		}
-		w.logf("[RetryChatModel] streamFull attempt %d failed: %v, retrying...", attempt, streamErr)
+		w.logInfof("[RetryChatModel] streamFull attempt %d retryable, retrying...", attempt)
 		if !w.sleep(ctx, w.calculateDelay(attempt)) {
 			return nil, ctx.Err()
 		}
 	}
+	w.logWarnf("[RetryChatModel] streamFull EXHAUSTED after %d attempts, lastErr=%v", maxAttempts, lastErr)
 	if lastErr == nil {
 		lastErr = errors.New("stream failed")
 	}

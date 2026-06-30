@@ -227,10 +227,10 @@ func TestNewRetryChatModelWrapper(t *testing.T) {
 
 // TestRetryChatModelWrapper_Logf 测试日志输出
 func TestRetryChatModelWrapper_Logf(t *testing.T) {
-	// 测试带 logger
+	// 测试带 logger（logWarnf → Warnf）
 	logger := &mockLogger{}
 	wrapper := &RetryChatModelWrapper{logger: logger}
-	wrapper.logf("test message: %s", "hello")
+	wrapper.logWarnf("test message: %s", "hello")
 
 	if len(logger.messages) != 1 {
 		t.Errorf("Expected 1 log message, got %d", len(logger.messages))
@@ -241,7 +241,8 @@ func TestRetryChatModelWrapper_Logf(t *testing.T) {
 
 	// 测试不带 logger
 	wrapper = &RetryChatModelWrapper{}
-	wrapper.logf("test message") // 不应该 panic
+	wrapper.logWarnf("test message") // 不应该 panic
+	wrapper.logInfof("test message") // 不应该 panic
 }
 
 // TestRetryChatModelWrapper_Interface 测试接口实现
