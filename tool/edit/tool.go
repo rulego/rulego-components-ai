@@ -347,16 +347,16 @@ func (t *editTool) InvokableRun(ctx context.Context, arguments string, opts ...t
 	switch params.Operation {
 	case "line":
 		rr, e := t.editLine(path, params, sessionKey, backup)
-		return t.withDiagnostics(path, rr, e, effWd)
+		return t.withDiagnostics(path, rr, e)
 	case "search":
 		rr, e := t.editSearch(path, params, sessionKey, backup)
-		return t.withDiagnostics(path, rr, e, effWd)
+		return t.withDiagnostics(path, rr, e)
 	case "insert":
 		rr, e := t.editInsert(path, params, sessionKey, backup)
-		return t.withDiagnostics(path, rr, e, effWd)
+		return t.withDiagnostics(path, rr, e)
 	case "delete":
 		rr, e := t.editDelete(path, params, sessionKey, backup)
-		return t.withDiagnostics(path, rr, e, effWd)
+		return t.withDiagnostics(path, rr, e)
 	default:
 		return common.ErrOperationNotSupported(params.Operation).Error(), nil
 	}
@@ -561,22 +561,21 @@ func normalizeLineEndings(text, target string) string {
 	return strings.ReplaceAll(unified, "\n", "\r\n")
 }
 
-// withDiagnostics 包装写操作结果，附加 LSP 诊断（仅 .go 文件；对标 MiMo edit→diagnostics 自修复）。
-func (t *editTool) withDiagnostics(path string, result string, err error, effWd string) (string, error) {
+// withDiagnostics 包装写操作结果，附加诊断（按注册的 provider；未注册=默认关闭）。
+func (t *editTool) withDiagnostics(path string, result string, err error) (string, error) {
 	if err != nil {
 		return result, err
 	}
-	return result + t.reportDiagnostics(path, effWd), nil
+	return result + t.reportDiagnostics(path), nil
 }
 
-// reportDiagnostics 对编辑后的文件跑诊断（仅 .go），返回回灌文本（非 .go 或无 ERROR 返回空串）。
-// 按本次有效 workDir 构造 provider，确保覆盖 workDir 时 vet 也在正确目录跑。
-func (t *editTool) reportDiagnostics(path, effWd string) string {
-	diag := common.GoVetProvider{WorkDir: effWd}
-	if !diag.Supports(path) {
+// reportDiagnostics 编辑后跑诊断：按注册的 DiagnosticProvider（未注册返回空=默认关闭）。
+func (t *editTool) reportDiagnostics(path string) string {
+	p := common.LookupDiagnosticProvider(path)
+	if p == nil {
 		return ""
 	}
-	diags, err := diag.Report(path)
+	diags, err := p.Report(path)
 	if err != nil || len(diags) == 0 {
 		return ""
 	}

@@ -207,7 +207,24 @@ func (t *writeTool) writeFile(params OperationParams, r *common.SecurePathResolv
 		return "", fmt.Errorf("write file: %w", err)
 	}
 
-	return common.Success(message), nil
+	return common.Success(message) + t.reportDiagnostics(path), nil
+}
+
+// reportDiagnostics 写后跑诊断：按注册的 DiagnosticProvider（未注册返回空=默认关闭）。
+func (t *writeTool) reportDiagnostics(path string) string {
+	p := common.LookupDiagnosticProvider(path)
+	if p == nil {
+		return ""
+	}
+	diags, err := p.Report(path)
+	if err != nil || len(diags) == 0 {
+		return ""
+	}
+	report := common.DiagnosticReport(path, diags, 10)
+	if report == "" {
+		return ""
+	}
+	return "\n\nLSP errors detected in this file, please fix:\n" + report
 }
 
 // atomicWriteFile writes data to a file atomically using temp file + rename pattern.
