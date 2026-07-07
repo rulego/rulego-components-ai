@@ -30,6 +30,7 @@ import (
 	"github.com/rulego/rulego-components-ai/aspect"
 	"github.com/rulego/rulego-components-ai/config"
 	aitool "github.com/rulego/rulego-components-ai/tool"
+	"github.com/rulego/rulego-components-ai/tool/common"
 	"github.com/rulego/rulego-components-ai/utils/token"
 	"github.com/rulego/rulego/api/types"
 	"github.com/rulego/rulego/components/base"
@@ -295,9 +296,25 @@ func (x *ReactAgentNode) buildRunContext(ctx types.RuleContext, msg types.RuleMs
 	runCtx := context.WithValue(ctx.GetContext(), config.ShareRuleContextKey, ctx)
 	runCtx = context.WithValue(runCtx, config.KeyRuleConfig, ctx.Config())
 
+	// workDir 不在 agent 节点声明：统一由业务层经 common.WithWorkDir 按需注入 ctx（如
+	// triggerGenerate 按项目注入外部/内部 workDir、主 agent 派子 agent 注入父目录），工具按
+	// common.WorkDirFromCtx 解析；未注入时工具回退自身 config.workDir（NewResolverCache 默认根）。
+
+	// 文件安全策略由全局注入；per-agent 不再单独配置。
+	allowDirs := common.GetDefaultAllowDirs()
+	if len(allowDirs) > 0 {
+		runCtx = common.WithAllowDirs(runCtx, allowDirs)
+	}
+	if common.GetDefaultAllowCrossDir() {
+		runCtx = common.WithAllowCrossDir(runCtx, true)
+	}
+
 	// 注入步数计数器
 	stepCounter := int32(0)
 	runCtx = WithStepCounter(runCtx, &stepCounter)
+
+	// 注入 doom-loop 检测器（agent 级共享，跨工具抓死循环）
+	runCtx = WithDoomLoopDetector(runCtx, NewDoomLoopDetector())
 
 	// 获取规则链 ID
 	chainId := ""

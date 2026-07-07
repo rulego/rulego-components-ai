@@ -20,6 +20,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -222,7 +223,18 @@ func (w *VisualToolWrapper) Info(ctx context.Context) (*schema.ToolInfo, error) 
 }
 
 // InvokableRun 执行工具并发送 AG-UI 可视化事件和 SSE 流事件
-func (w *VisualToolWrapper) InvokableRun(ctx context.Context, argumentsInJSON string, opts ...tool.Option) (string, error) {
+func (w *VisualToolWrapper) InvokableRun(ctx context.Context, argumentsInJSON string, opts ...tool.Option) (result string, err error) {
+	// 工具执行 panic 不杀整个 server：捕获后作为 error result 返回给 agent（agent 可见错误，决定重试/换法）。
+	// 治 agent 并行工具偶发的 concurrent map 等致命错误导致进程崩溃（server 反复 exit 2 根因之一）。
+	defer func() {
+		if r := recover(); r != nil {
+			if w.logger != nil {
+				w.logger.Errorf("[ToolCall] PANIC recovered tool=%s: %v", w.name, r)
+			}
+			result = fmt.Sprintf("Error: tool %s panicked: %v", w.name, r)
+			err = nil
+		}
+	}()
 	if !session.IsExecutableToolCallArgs(w.name, argumentsInJSON) {
 		if w.logger != nil {
 			w.logger.Warnf("[ToolCall] SKIP tool=%s, reason=blocked_invalid_arguments, args=%s", w.name, argumentsInJSON)
@@ -231,6 +243,7 @@ func (w *VisualToolWrapper) InvokableRun(ctx context.Context, argumentsInJSON st
 	}
 
 	var toolIndex int
+	var stepWarn string
 	if stepCounter := getOrCreateStepCounter(ctx); stepCounter != nil {
 		step := atomic.AddInt32(stepCounter, 1)
 		toolIndex = int(step)
@@ -242,6 +255,10 @@ func (w *VisualToolWrapper) InvokableRun(ctx context.Context, argumentsInJSON st
 			if w.logger != nil {
 				w.logger.Infof("react_agent: step %d/%d approaching max step limit", step, w.maxStep)
 			}
+			// L1-1 软提醒：接近步数上限（还剩 ≤3 步），本步工具 result 前缀收尾提醒。
+			// agent 此时仍有轮次可写 run，比 maxStep 硬截断更有效（硬截断时 agent 已无下一轮看不到引导）。
+			// 治"步数耗尽没写 run"——配合 AGENTS.md「产出主体即写 run 首版」双保险。
+			stepWarn = fmt.Sprintf("⚠️步数将尽（%d/%d）：若主体产出已完成，请尽快写 run 记录 + 追加 MEMORY，避免步数耗尽丢失。\n", step, w.maxStep)
 		}
 	}
 
@@ -286,10 +303,7 @@ func (w *VisualToolWrapper) InvokableRun(ctx context.Context, argumentsInJSON st
 		}
 	}
 
-	if emitter != nil {
-		emitter.EmitToolCallStart(toolCallId, w.name, w.toolType, w.targetId, "")
-	}
-
+	// TOOL_CALL_START 已由 VizAspect.BeforeToolCall 统一发（同一 ctx emitter），此处不再重复 emit（修双发：原 START/RESULT 被 emit 两次）
 	if sendToSSE != nil {
 		eventData := map[string]interface{}{
 			"toolCallId":   toolCallId,
@@ -306,7 +320,36 @@ func (w *VisualToolWrapper) InvokableRun(ctx context.Context, argumentsInJSON st
 
 	inputTokens := token.EstimateTokens(argumentsInJSON)
 
-	result, err := w.base.InvokableRun(ctx, argumentsInJSON, opts...)
+	// doom-loop 检测（执行前：连续相同调用）
+	var doomWarn string
+	if detector := GetDoomLoopDetector(ctx); detector != nil {
+		if warn := detector.BeforeCall(w.name, argumentsInJSON); warn != "" {
+			doomWarn = warn
+			if w.logger != nil {
+				w.logger.Warnf("[DoomLoop] %s", warn)
+			}
+		}
+	}
+
+	result, err = w.base.InvokableRun(ctx, argumentsInJSON, opts...)
+
+	// doom-loop 检测（执行后：记录本次调用 + 连续失败）
+	if detector := GetDoomLoopDetector(ctx); detector != nil {
+		if warn := detector.AfterCall(w.name, argumentsInJSON, err != nil || isFailureResult(result)); warn != "" {
+			if doomWarn != "" {
+				doomWarn += "\n"
+			}
+			doomWarn += warn
+			if w.logger != nil {
+				w.logger.Warnf("[DoomLoop] %s", warn)
+			}
+		}
+	}
+
+	// L1-1：把接近 maxStep 的收尾提醒合并进 doomWarn，随工具 result 前缀返回给 agent
+	if stepWarn != "" {
+		doomWarn = stepWarn + doomWarn
+	}
 
 	duration := time.Since(startTime).Milliseconds()
 	outputTokens := token.EstimateTokens(result)
@@ -345,7 +388,7 @@ func (w *VisualToolWrapper) InvokableRun(ctx context.Context, argumentsInJSON st
 		}
 
 		if emitter != nil {
-			emitter.EmitToolCallResult(toolCallId, callResult.Result, "")
+			// RESULT 已由 VizAspect.AfterToolCall 统一发（同一 ctx emitter），此处只发 END
 			emitter.EmitToolCallEnd(toolCallId)
 		}
 
@@ -354,7 +397,7 @@ func (w *VisualToolWrapper) InvokableRun(ctx context.Context, argumentsInJSON st
 			sendToSSE(toolCallId, w.name, string(SSEEventToolResult), callResult.Result, toolIndex)
 		}
 		// 不返回错误中断流程，而是将错误信息作为结果返回，让 agent 继续运行
-		return callResult.Result, nil
+		return prefixDoomWarn(doomWarn, callResult.Result), nil
 	}
 
 	if w.aspectManager != nil {
@@ -364,7 +407,7 @@ func (w *VisualToolWrapper) InvokableRun(ctx context.Context, argumentsInJSON st
 	aspect.AddToolCallResultToContext(ctx, callResult)
 
 	if emitter != nil {
-		emitter.EmitToolCallResult(toolCallId, result, "")
+		// RESULT 已由 VizAspect.AfterToolCall 统一发（同一 ctx emitter），此处只发 END
 		emitter.EmitToolCallEnd(toolCallId)
 	}
 
@@ -372,7 +415,22 @@ func (w *VisualToolWrapper) InvokableRun(ctx context.Context, argumentsInJSON st
 		sendToSSE(toolCallId, w.name, string(SSEEventToolResult), result, toolIndex)
 	}
 
-	return truncateResult(result, w.maxToolOutputLength), nil
+	return prefixDoomWarn(doomWarn, truncateResult(result, w.maxToolOutputLength)), nil
+}
+
+// prefixDoomWarn 若有 doom-loop 警告则拼到结果前缀，让 agent 看到。
+func prefixDoomWarn(warn, result string) string {
+	if warn == "" {
+		return result
+	}
+	return warn + "\n\n" + result
+}
+
+// isFailureResult 判断工具结果是否表示失败。工具失败时返回 (string, nil)——err 永远 nil，
+// 错误塞进 result（"Error: ..." 来自 common.ErrXxx，"Tool execution failed" 来自本包装器），
+// 故 doom-loop 的连续失败检测必须看 result 内容（审查 C2）。
+func isFailureResult(result string) bool {
+	return strings.HasPrefix(result, "Error:") || strings.HasPrefix(result, "Tool execution failed")
 }
 
 // ============================================

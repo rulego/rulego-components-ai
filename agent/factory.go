@@ -523,8 +523,11 @@ func fillAgentToolInfo(toolConfig config.Tool, ruleEnginePool types.RuleEnginePo
 
 	targetEngine, ok := ruleEnginePool.Get(toolConfig.TargetId)
 	if !ok || targetEngine == nil {
+		// 目标 agent 尚未注册：常见于按文件名字母序加载时（main 先于 researcher），
+		// 调用方（如 LoadAllAgents）会在全部注册后第二遍 reload 补全，故降级 debug 避免启动噪音。
+		// 真正的配置错误（targetId 拼错）会在该工具被实际调用时由 pool.Get 失败硬报错，不会静默。
 		if logger != nil {
-			logger.Warnf("fillAgentToolInfo: target agent not found: %s", toolConfig.TargetId)
+			logger.Debugf("fillAgentToolInfo: target agent not yet registered: %s (will be filled on reload)", toolConfig.TargetId)
 		}
 		return toolConfig
 	}
