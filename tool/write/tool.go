@@ -35,28 +35,36 @@ func DefaultConfig() Config {
 }
 
 type writeTool struct {
-	config   Config
-	resolver *common.SecurePathResolver
+	config Config
+	cache  *common.ResolverCache
 }
 
-// writePathSecurity 写入操作的路径安全策略：禁止隐藏文件、排除版本库元数据目录
+// writePathSecurity 写入操作的路径安全策略：隐藏文件 + 排除目录均读全局默认（tpclaw config.yaml fileAccess）。
+// AllowHiddenFiles = !denyHidden（默认 false→允许写隐藏，不限制 agent）；ExcludeDirs 默认版本库元数据。
 func writePathSecurity() common.PathSecurityConfig {
 	cfg := common.DefaultPathSecurityConfig()
-	cfg.ExcludeDirs = []string{".git", ".svn", ".hg"}
+	cfg.AllowHiddenFiles = !common.GetDefaultDenyHidden()
+	cfg.ExcludeDirs = common.GetDefaultExcludeDirs() // 读全局；未设返回 nil（不排除），默认值由 config.yaml fileAccess 给
 	return cfg
 }
 
 // NewTool creates a new write tool.
 func NewTool(config Config) (tool.BaseTool, error) {
-	resolver, err := common.NewSecurePathResolver(config.WorkDir, writePathSecurity())
+	sec := writePathSecurity()
+	resolver, err := common.NewSecurePathResolver(config.WorkDir, sec)
 	if err != nil {
 		return nil, err
 	}
 	config.WorkDir = resolver.Workspace()
 
+	cache, err := common.NewResolverCache(config.WorkDir, sec)
+	if err != nil {
+		return nil, err
+	}
+
 	return &writeTool{
-		config:   config,
-		resolver: resolver,
+		config: config,
+		cache:  cache,
 	}, nil
 }
 
@@ -125,17 +133,24 @@ func (t *writeTool) InvokableRun(ctx context.Context, arguments string, opts ...
 		return common.ErrFileTooLarge(int64(len(params.Content)), t.config.MaxFileSize).Error(), nil
 	}
 
+	// 取本次调用的有效 resolver + workDir（ctx 注入优先，否则 config 默认）。
+	r, err := t.cache.GetWithAllowDirs(common.WorkDirFromCtx(ctx), common.AllowDirsFromCtx(ctx), common.AllowCrossDirFromCtx(ctx))
+	if err != nil {
+		return common.ErrPathInvalid(err.Error()).Error(), nil
+	}
+	effWd := r.Workspace()
+
 	// Ensure workspace exists
-	if err := common.EnsureDir(t.config.WorkDir); err != nil {
+	if err := common.EnsureDir(effWd); err != nil {
 		return "", fmt.Errorf("create workspace: %w", err)
 	}
 
-	return t.writeFile(params)
+	return t.writeFile(params, r)
 }
 
 // writeFile writes to a file.
-func (t *writeTool) writeFile(params OperationParams) (string, error) {
-	path, err := t.resolver.Resolve(params.Path)
+func (t *writeTool) writeFile(params OperationParams, r *common.SecurePathResolver) (string, error) {
+	path, err := r.Resolve(params.Path)
 	if err != nil {
 		return "", err
 	}

@@ -255,8 +255,8 @@ func TestEditSearch(t *testing.T) {
 			content: "hello world\nhello universe",
 			params: map[string]interface{}{
 				"operation": "search",
-				"search":    "hello",
-				"replace":   "hi",
+				"search":    "hello world",
+				"replace":   "hi world",
 				"global":    false,
 			},
 			checkResult: func(result string) {
@@ -305,8 +305,8 @@ func TestEditSearch(t *testing.T) {
 			content: "hello123 world456",
 			params: map[string]interface{}{
 				"operation": "search",
-				"search":    `[0-9]+`,
-				"replace":   "NUM",
+				"search":    `world[0-9]+`,
+				"replace":   "worldNUM",
 				"use_regex": true,
 				"global":    false,
 			},

@@ -39,6 +39,7 @@ const (
 	// Edit errors
 	ErrCodeSearchEmpty        ErrorCode = "SEARCH_EMPTY"
 	ErrCodeSearchNotFound     ErrorCode = "SEARCH_NOT_FOUND"
+	ErrCodeSearchNotUnique    ErrorCode = "SEARCH_NOT_UNIQUE"
 	ErrCodeInsertPosEmpty     ErrorCode = "INSERT_POS_EMPTY"
 	ErrCodeInsertPosNotFound  ErrorCode = "INSERT_POS_NOT_FOUND"
 	ErrCodeDeleteLinesEmpty   ErrorCode = "DELETE_LINES_EMPTY"
@@ -92,6 +93,7 @@ var ErrorMessages = map[ErrorCode]string{
 	// Edit
 	ErrCodeSearchEmpty:        "Search content cannot be empty",
 	ErrCodeSearchNotFound:     "No matches found",
+	ErrCodeSearchNotUnique:    "Multiple matches found; provide longer context to uniquely locate or use global replace",
 	ErrCodeInsertPosEmpty:     "Must specify insert_after or insert_before",
 	ErrCodeInsertPosNotFound:  "Insert position not found",
 	ErrCodeDeleteLinesEmpty:   "Delete line numbers cannot be empty",
@@ -185,12 +187,17 @@ func ErrDirCreateFailed(path string) *ToolError   { return NewErrorf(ErrCodeDirC
 func ErrContentEmpty() *ToolError                          { return NewError(ErrCodeContentEmpty, "") }
 func ErrContentRequired() *ToolError                       { return NewError(ErrCodeContentRequired, "") }
 func ErrFileTooLarge(size, limit int64) *ToolError         { return NewErrorf(ErrCodeFileTooLarge, "%d bytes (limit: %d)", size, limit) }
-func ErrLineOutOfRange(line, total int) *ToolError         { return NewErrorf(ErrCodeLineOutOfRange, "line %d exceeds file length (%d lines)", line, total) }
+func ErrLineOutOfRange(line, total int) *ToolError {
+	return NewErrorf(ErrCodeLineOutOfRange, "line %d exceeds file length (%d lines); re-read the file to verify current content/line count (the file may have changed since you last read it), or use the search operation to locate by content instead of by line number", line, total)
+}
 func ErrLineNumberInvalid() *ToolError                     { return NewError(ErrCodeLineOutOfRange, "line number must be >= 1") }
 
 // Edit errors
 func ErrSearchEmpty() *ToolError                  { return NewError(ErrCodeSearchEmpty, "") }
 func ErrSearchNotFound(search string) *ToolError  { return NewErrorf(ErrCodeSearchNotFound, "%s", search) }
+func ErrSearchNotUnique(matchCount int) *ToolError {
+	return NewErrorf(ErrCodeSearchNotUnique, "found %d matches; provide a longer search string to uniquely locate, or set global=true to replace all", matchCount)
+}
 func ErrInsertPosEmpty() *ToolError               { return NewError(ErrCodeInsertPosEmpty, "") }
 func ErrInsertPosNotFound() *ToolError            { return NewError(ErrCodeInsertPosNotFound, "") }
 func ErrDeleteLinesEmpty() *ToolError             { return NewError(ErrCodeDeleteLinesEmpty, "") }

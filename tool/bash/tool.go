@@ -289,8 +289,13 @@ func (t *bashTool) executeShell(ctx context.Context, params OperationParams) (st
 		cmd = exec.CommandContext(ctx, t.platform.ShellCommand, shellArgs...)
 	}
 
-	// Set working directory
+	// Set working directory（解析顺序：LLM 参数 → ctx 注入 → 配置写死）
 	workDir := params.WorkDir
+	if workDir == "" {
+		// 通用 workDir 注入：调用方（如主 agent 派子 agent）通过 ctx 指定工作目录，
+		// 不依赖配置写死（业务层把 projectId 等转成路径后注入，基础库不认业务字段）
+		workDir = common.WorkDirFromCtx(ctx)
+	}
 	if workDir == "" {
 		workDir = t.config.WorkDir
 	}
@@ -345,9 +350,36 @@ func (t *bashTool) executeShell(ctx context.Context, params OperationParams) (st
 	err := cmd.Wait()
 	executionTime := time.Since(startTime).Milliseconds()
 
-	// Convert encoding and truncate output if needed
-	stdoutStr := truncateOutput(convertToUTF8(stdout.Bytes()), t.config.MaxOutputSize)
-	stderrStr := truncateOutput(convertToUTF8(stderr.Bytes()), t.config.MaxOutputSize)
+	// 输出处理三步：
+	//   1) UTF-8 转换（已有逻辑）
+	//   2) L1 token 清洗链（progress/ansi/redact/longline + never-worse 守卫，opt-out via # nofilter/# raw）
+	//   3) 错误感知 head+tail 截断（超限时落盘到 workDir/.tool-output，output 给路径）
+	rawStdout := convertToUTF8(stdout.Bytes())
+	rawStderr := convertToUTF8(stderr.Bytes())
+
+	filteredStdout := rawStdout
+	filteredStderr := rawStderr
+	if shouldFilter(fullCommand) {
+		pipe := newTokenPipeline()
+		filteredStdout = pipe.run(rawStdout)
+		filteredStderr = pipe.run(rawStderr)
+	}
+
+	// 落盘目录：workDir/.tool-output（workDir 优先 cmd.Dir，回退 config.WorkDir）
+	outDir := ""
+	if cmd.Dir != "" {
+		outDir = cmd.Dir
+	} else if t.config.WorkDir != "" {
+		outDir = t.config.WorkDir
+	}
+	if outDir != "" {
+		outDir = filepath.Join(outDir, ".tool-output")
+	}
+
+	stdoutStr, stdoutDropped := truncateWithDump(filteredStdout, t.config.MaxOutputSize, outDir)
+	stderrStr, stderrDropped := truncateWithDump(filteredStderr, t.config.MaxOutputSize, outDir)
+	stdoutRawSize := len(filteredStdout)
+	stderrRawSize := len(filteredStderr)
 
 	// Determine error message
 	errorMsg := ""
@@ -389,9 +421,9 @@ func (t *bashTool) executeShell(ctx context.Context, params OperationParams) (st
 		result.WriteString(fmt.Sprintf("Error: %s\n", errorMsg))
 	}
 
-	// Truncation warning
-	stdoutTruncated := len(stdout.String()) > t.config.MaxOutputSize
-	stderrTruncated := len(stderr.String()) > t.config.MaxOutputSize
+	// Truncation warning：基于清洗后的实际字节判断
+	stdoutTruncated := stdoutDropped != ""
+	stderrTruncated := stderrDropped != ""
 
 	// Separator
 	result.WriteString("---\n")
@@ -401,7 +433,7 @@ func (t *bashTool) executeShell(ctx context.Context, params OperationParams) (st
 		result.WriteString("stdout:\n")
 		result.WriteString(stdoutStr)
 		if stdoutTruncated {
-			result.WriteString(fmt.Sprintf("\n[truncated, original size: %d bytes]", len(stdout.String())))
+			result.WriteString(fmt.Sprintf("\n[truncated, original size: %d bytes, full output dumped to: %s]", stdoutRawSize, stdoutDropped))
 		}
 		if !strings.HasSuffix(stdoutStr, "\n") {
 			result.WriteString("\n")
@@ -413,7 +445,7 @@ func (t *bashTool) executeShell(ctx context.Context, params OperationParams) (st
 		result.WriteString("stderr:\n")
 		result.WriteString(stderrStr)
 		if stderrTruncated {
-			result.WriteString(fmt.Sprintf("\n[truncated, original size: %d bytes]", len(stderr.String())))
+			result.WriteString(fmt.Sprintf("\n[truncated, original size: %d bytes, full output dumped to: %s]", stderrRawSize, stderrDropped))
 		}
 		if !strings.HasSuffix(stderrStr, "\n") {
 			result.WriteString("\n")
@@ -423,14 +455,30 @@ func (t *bashTool) executeShell(ctx context.Context, params OperationParams) (st
 	return result.String(), nil
 }
 
-// truncateOutput 截断输出到指定大小
-func truncateOutput(output string, maxSize int) string {
-	if len(output) <= maxSize {
-		return output
+// truncateWithDump 用统一截断服务（错误感知 head+tail）截断输出；
+// 若发生截断且 outDir 非空，则把完整原文落盘并返回落盘路径，供 agent 取回。
+// 返回 (截断后的内容, 落盘路径/空)。
+func truncateWithDump(text string, maxSize int, outDir string) (string, string) {
+	if len(text) <= maxSize {
+		return text, ""
 	}
-	// 截断并添加提示
-	truncateMsg := fmt.Sprintf("\n... [输出已截断，原始大小: %d 字节]", len(output))
-	return output[:maxSize-len(truncateMsg)] + truncateMsg
+	maxLines := 0 // 0 表示用默认（2000）
+	maxBytes := maxSize
+	tr := common.Truncate(text, common.TruncateOptions{
+		MaxLines:  &maxLines,
+		MaxBytes:  &maxBytes,
+		Direction: common.TruncHeadTail,
+	})
+	if !tr.Truncated {
+		return text, ""
+	}
+	dumped := ""
+	if outDir != "" {
+		if p, err := common.WriteToTruncationDir(text, outDir); err == nil {
+			dumped = p
+		}
+	}
+	return tr.Content, dumped
 }
 
 // convertToUTF8 检测并转换输出编码为 UTF-8
