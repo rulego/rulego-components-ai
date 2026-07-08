@@ -3,6 +3,7 @@ package common
 import (
 	"strings"
 	"testing"
+	"time"
 )
 
 func TestParseGoDiagnostics_ErrorWithCol(t *testing.T) {
@@ -94,5 +95,138 @@ func TestGoVetProvider_Supports(t *testing.T) {
 	}
 	if p.Supports("a.ts") || p.Supports("a.py") || p.Supports("Makefile") {
 		t.Fatal("should not support non-go")
+	}
+}
+
+// ---- CommandDiagnosticProvider ----
+
+func TestCommandProvider_Supports(t *testing.T) {
+	p := NewCommandDiagnosticProvider(CommandProviderConfig{Ext: ".py", Command: "ruff"})
+	if !p.Supports("a.py") || !p.Supports("pkg/b.PY") {
+		t.Fatal("should support .py (case-insensitive)")
+	}
+	if p.Supports("a.go") || p.Supports("a.ts") || p.Supports("Makefile") {
+		t.Fatal("should not support other ext")
+	}
+}
+
+func TestCommandProvider_DefaultTimeout(t *testing.T) {
+	p := NewCommandDiagnosticProvider(CommandProviderConfig{Ext: ".py", Command: "ruff"})
+	if p.cfg.Timeout != 10*time.Second {
+		t.Fatalf("expected default 10s, got %v", p.cfg.Timeout)
+	}
+}
+
+func TestCommandProvider_FilePlaceholder(t *testing.T) {
+	p := NewCommandDiagnosticProvider(CommandProviderConfig{
+		Ext: ".py", Command: "ruff",
+		Args: []string{"check", "--output-format=concise", "{file}"},
+	})
+	args := p.buildArgs("/abs/main.py")
+	want := []string{"check", "--output-format=concise", "/abs/main.py"}
+	if len(args) != len(want) {
+		t.Fatalf("len mismatch: %v", args)
+	}
+	for i := range want {
+		if args[i] != want[i] {
+			t.Fatalf("arg %d: got %s want %s", i, args[i], want[i])
+		}
+	}
+}
+
+// 命令不在 PATH 时应静默跳过（不 error、不执行），与 go vet 不可用语义一致。
+func TestCommandProvider_CommandMissingSkips(t *testing.T) {
+	p := NewCommandDiagnosticProvider(CommandProviderConfig{
+		Ext: ".txt", Command: "definitely-not-a-real-tool-xyz-123",
+	})
+	diags, err := p.Report(t.TempDir() + "/x.txt")
+	if err != nil {
+		t.Fatalf("should not error on missing command: %v", err)
+	}
+	if diags != nil {
+		t.Fatalf("should return nil on missing command, got %v", diags)
+	}
+}
+
+func TestParseCommandDiagnostics_DefaultPattern(t *testing.T) {
+	out := "src/a.py:10:5: undefined name 'foo'\nsrc/b.ts:20: some error\nrandom noise line\n"
+	diags := parseCommandDiagnostics(out)
+	if len(diags) != 2 {
+		t.Fatalf("expected 2 diags, got %d: %+v", len(diags), diags)
+	}
+	if diags[0].Line != 10 || diags[0].Col != 5 || diags[0].Message != "undefined name 'foo'" {
+		t.Fatalf("wrong first diag: %+v", diags[0])
+	}
+	if diags[1].Line != 20 || diags[1].Col != 0 || diags[1].Message != "some error" {
+		t.Fatalf("wrong second diag: %+v", diags[1])
+	}
+}
+
+func TestParseCommandDiagnostics_WarningDowngraded(t *testing.T) {
+	diags := parseCommandDiagnostics("a.py:3:1: warning: unused variable\n")
+	if len(diags) != 1 || diags[0].Severity != SeverityWarning {
+		t.Fatalf("expected warning severity: %+v", diags)
+	}
+}
+
+func TestParseCommandDiagnostics_Empty(t *testing.T) {
+	if diags := parseCommandDiagnostics(""); len(diags) != 0 {
+		t.Fatalf("expected empty, got %+v", diags)
+	}
+}
+
+// ---- 预置常量 ----
+
+func TestPresetConfigs_Fields(t *testing.T) {
+	cases := []struct {
+		name string
+		cfg  CommandProviderConfig
+		ext  string
+		cmd  string
+	}{
+		{"ruff", RuffDiagnosticConfig, ".py", "ruff"},
+		{"tsc", TscDiagnosticConfig, ".ts", "tsc"},
+		{"eslint", EslintDiagnosticConfig, ".js", "eslint"},
+		{"shellcheck", ShellcheckDiagnosticConfig, ".sh", "shellcheck"},
+	}
+	for _, c := range cases {
+		if c.cfg.Ext != c.ext || c.cfg.Command != c.cmd {
+			t.Errorf("%s: want ext=%s cmd=%s, got ext=%s cmd=%s", c.name, c.ext, c.cmd, c.cfg.Ext, c.cfg.Command)
+		}
+		if !strings.Contains(strings.Join(c.cfg.Args, " "), "{file}") {
+			t.Errorf("%s: Args missing {{file}} placeholder: %v", c.name, c.cfg.Args)
+		}
+	}
+}
+
+// tsc 自带 ParseFunc；其余走默认 colon 正则。各自典型输出必须能解析。
+func TestPresetConfigs_OutputParseable(t *testing.T) {
+	type tc struct {
+		name    string
+		sample  string
+		parseFn func(string) []Diagnostic
+	}
+	cases := []tc{
+		{"ruff", "a.py:10:5: F401 'os' imported but unused\n", parseCommandDiagnostics},
+		{"eslint", "a.js:1:2: Unexpected token [semi]\n", parseCommandDiagnostics},
+		{"shellcheck", "a.sh:3:1: warning: Double quote to prevent globbing [SC2086]\n", parseCommandDiagnostics},
+		{"tsc-paren", "a.ts(3,5): error TS2322: Type 'string' is not assignable to type 'number'.\n", parseTscDiagnostics},
+		{"tsc-colon", "a.ts:3:5 - error TS2322: Type 'string' is not assignable to type 'number'.\n", parseTscDiagnostics},
+		{"tsc-warning", "a.ts:1:1 - warning TS6133: 'x' is declared but never read.\n", parseTscDiagnostics},
+	}
+	for _, c := range cases {
+		diags := c.parseFn(c.sample)
+		if len(diags) != 1 {
+			t.Errorf("%s: expected 1 diag, got %d: %+v\nsample: %q", c.name, len(diags), diags, c.sample)
+			continue
+		}
+		if diags[0].Line == 0 {
+			t.Errorf("%s: line not parsed: %+v", c.name, diags[0])
+		}
+	}
+	// tsc warning 应降级为 SeverityWarning
+	warnDiags := parseTscDiagnostics("a.ts:1:1 - warning TS6133: unused\n")
+	if len(warnDiags) != 1 || warnDiags[0].Severity != SeverityWarning {
+		t.Fatalf("tsc warning should downgrade: %+v", warnDiags)
 	}
 }
