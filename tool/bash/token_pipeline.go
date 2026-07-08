@@ -1,4 +1,4 @@
-// Package bash 的 token_pipeline.go：命令输出 token 清洗链。
+// 命令输出 token 清洗链。
 //
 // 处理顺序：
 //

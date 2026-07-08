@@ -1,5 +1,4 @@
-// Package glob 提供文件名匹配工具（对标 rg --files / fd），ripgrep --files 优先 + Go 兜底。
-// 设计依据：docs/plans/工具层优化方案.md §3.2。
+// Package glob 提供文件名匹配工具，ripgrep --files 优先 + Go 兜底。
 package glob
 
 import (

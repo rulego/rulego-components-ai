@@ -8,7 +8,7 @@ import (
 )
 
 // GitignoreMatcher 解析 .gitignore，判断路径是否被忽略。
-// 参考 git ignore 规则（http://git-scm.com/docs/gitignore）自实现，不引入外部依赖。
+// 遵循 git 官方 ignore 规则（http://git-scm.com/docs/gitignore）自实现。
 // 支持：# 注释、空行、! 取反、目录尾 /（仅目录）、* (不跨/)、** (跨/)、? (单字符)、锚定（含 / 从根）。
 // 语义：last-match-wins（后定义的 ! 可取消前者的忽略）。
 type GitignoreMatcher struct {
@@ -45,7 +45,7 @@ func CompileIgnoreLines(lines ...string) *GitignoreMatcher {
 	return m
 }
 
-// gitignoreLineToPattern 把一行 gitignore 转 regexp（参考 sabhiram/go-gitignore 的转换思路）。
+// gitignoreLineToPattern 把一行 gitignore 转 regexp。
 func gitignoreLineToPattern(line string) (gitignorePattern, bool) {
 	line = strings.TrimRight(line, "\r")
 	line = strings.Trim(line, " ")

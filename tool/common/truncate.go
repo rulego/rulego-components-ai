@@ -1,6 +1,3 @@
-// Package common 的 truncate.go：统一截断服务（错误感知 head+tail）。
-// 对标 MiMo-Code / OpenCode 的输出截断策略，供 read/bash/grep/glob/agent 复用。
-// 设计依据：docs/plans/工具层优化方案.md §3.5。
 package common
 
 import (
@@ -15,7 +12,7 @@ import (
 	"unicode/utf8"
 )
 
-// 截断默认常量（对标 mimo MAX_LINES=2000 / MAX_BYTES=50KB / TAIL_SCAN=2048）。
+// 截断默认常量。
 const (
 	TruncateDefaultMaxLines = 2000
 	TruncateDefaultMaxBytes = 50 * 1024 // 50KB

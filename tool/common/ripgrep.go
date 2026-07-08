@@ -1,5 +1,4 @@
-// Package common 的 ripgrep.go：ripgrep 探测与共享调用，供 grep/glob 工具复用。
-// 设计依据：docs/plans/工具层优化方案.md §3.1 / §3.2。
+// ripgrep 探测与共享调用，供 grep/glob 工具复用。
 // 仅探测系统 rg，不引入 bundled 二进制；缺失时由调用方走 Go 兜底实现。
 package common
 

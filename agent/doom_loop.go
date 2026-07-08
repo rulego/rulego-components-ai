@@ -10,7 +10,7 @@ import (
 	"sync"
 )
 
-// doom-loop 检测阈值（对标 MiMo-Code doom_loop：同 tool+input 连续 3 次熔断）。
+// doom-loop 检测阈值：同 tool+input 连续 3 次熔断。
 // MVP 仅做"日志告警 + 结果前缀警告"，不做硬熔断（后置）。
 const (
 	doomHistorySize     = 20 // 保留最近 N 次工具调用快照
