@@ -362,3 +362,105 @@ func TestGrep_RipgrepPath(t *testing.T) {
 	assert.Contains(t, out, "b.go")
 	assert.Contains(t, out, "sub/d.go")
 }
+
+// ---- 正则语法边界（Go 兜底，regexp/RE2）----
+
+func TestGrep_RegexAnchors_Fallback(t *testing.T) {
+	forceFallback(t)
+	root := t.TempDir()
+	require.NoError(t, os.WriteFile(filepath.Join(root, "a.txt"), []byte("hello world\nworld hello\n"), 0644))
+	// ^world 只匹配行首的 world（第 2 行），第 1 行的 world 在行尾不匹配
+	out := runGrep(t, root, map[string]interface{}{"pattern": "^world"})
+	assert.Contains(t, out, "world hello")
+	assert.NotContains(t, out, "hello world")
+}
+
+func TestGrep_RegexAlternation_Fallback(t *testing.T) {
+	forceFallback(t)
+	root := makeTempFixture(t)
+	// hello|second：a.go 含 hello，b.go 含 second，sub/d.go 都不含
+	out := runGrep(t, root, map[string]interface{}{"pattern": "hello|second"})
+	assert.Contains(t, out, "a.go")
+	assert.Contains(t, out, "b.go")
+	assert.NotContains(t, out, "sub/d.go")
+}
+
+func TestGrep_CaseSensitive_Fallback(t *testing.T) {
+	forceFallback(t)
+	root := t.TempDir()
+	require.NoError(t, os.WriteFile(filepath.Join(root, "a.txt"), []byte("Foo\nfoo\n"), 0644))
+	// 默认大小写敏感：Foo 只匹配第 1 行
+	out := runGrep(t, root, map[string]interface{}{"pattern": "Foo"})
+	assert.Contains(t, out, "> Line 1: Foo")
+	assert.NotContains(t, out, "> Line 2")
+	// (?i) 不敏感：两行都匹配
+	out2 := runGrep(t, root, map[string]interface{}{"pattern": "(?i)foo"})
+	assert.Contains(t, out2, "> Line 1: Foo")
+	assert.Contains(t, out2, "> Line 2: foo")
+}
+
+func TestGrep_RegexCharClass_Fallback(t *testing.T) {
+	forceFallback(t)
+	root := t.TempDir()
+	require.NoError(t, os.WriteFile(filepath.Join(root, "a.txt"), []byte("cat\ncot\ncut\ndog\n"), 0644))
+	// c[aou]t 匹配 cat/cot/cut，不匹配 dog
+	out := runGrep(t, root, map[string]interface{}{"pattern": "c[aou]t"})
+	assert.Contains(t, out, "cat")
+	assert.Contains(t, out, "cot")
+	assert.Contains(t, out, "cut")
+	assert.NotContains(t, out, "dog")
+}
+
+// ---- gitignore + 二进制（对齐 rg）----
+
+func TestGrep_Gitignore_Fallback(t *testing.T) {
+	forceFallback(t)
+	root := t.TempDir()
+	require.NoError(t, os.WriteFile(filepath.Join(root, "keep.go"), []byte("needle\n"), 0644))
+	require.NoError(t, os.WriteFile(filepath.Join(root, "ignored.log"), []byte("needle\n"), 0644))
+	require.NoError(t, os.WriteFile(filepath.Join(root, ".gitignore"), []byte("*.log\n"), 0644))
+
+	out := runGrep(t, root, map[string]interface{}{"pattern": "needle"})
+	assert.Contains(t, out, "keep.go")
+	assert.NotContains(t, out, "ignored.log") // 被 .gitignore 跳过
+}
+
+func TestGrep_BinaryFile_Fallback(t *testing.T) {
+	forceFallback(t)
+	root := t.TempDir()
+	// text.go 正常；bin.bin 含 NUL（二进制），都含 "nee"
+	require.NoError(t, os.WriteFile(filepath.Join(root, "text.go"), []byte("needle\n"), 0644))
+	require.NoError(t, os.WriteFile(filepath.Join(root, "bin.bin"), []byte("nee\x00dle\n"), 0644))
+
+	out := runGrep(t, root, map[string]interface{}{"pattern": "nee"})
+	assert.Contains(t, out, "text.go")
+	assert.NotContains(t, out, "bin.bin") // 二进制跳过
+}
+
+// ---- 其他边界：Unicode/空文件/count 多匹配 ----
+
+func TestGrep_Unicode_Fallback(t *testing.T) {
+	forceFallback(t)
+	root := t.TempDir()
+	require.NoError(t, os.WriteFile(filepath.Join(root, "cn.go"), []byte("你好世界\n函数 main\n"), 0644))
+	out := runGrep(t, root, map[string]interface{}{"pattern": "函数"})
+	assert.Contains(t, out, "函数 main")
+}
+
+func TestGrep_EmptyFile_Fallback(t *testing.T) {
+	forceFallback(t)
+	root := t.TempDir()
+	require.NoError(t, os.WriteFile(filepath.Join(root, "empty.go"), []byte(""), 0644))
+	require.NoError(t, os.WriteFile(filepath.Join(root, "has.go"), []byte("needle\n"), 0644))
+	out := runGrep(t, root, map[string]interface{}{"pattern": "needle"})
+	assert.Contains(t, out, "has.go")
+	assert.NotContains(t, out, "empty.go") // 空文件不匹配
+}
+
+func TestGrep_CountMultiple_Fallback(t *testing.T) {
+	forceFallback(t)
+	root := t.TempDir()
+	require.NoError(t, os.WriteFile(filepath.Join(root, "a.go"), []byte("foo\nfoo\nbar\nfoo\n"), 0644))
+	out := runGrep(t, root, map[string]interface{}{"pattern": "foo", "output_mode": "count"})
+	assert.Contains(t, out, "a.go: 3") // 一文件多 hit，count=3
+}

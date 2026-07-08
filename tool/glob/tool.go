@@ -246,6 +246,7 @@ func execRipgrepFiles(ctx context.Context, searchPath, pattern string) ([]fileEn
 // relPath 相对 searchPath（本次搜索根）渲染，与 rg --files 兜底路径输出一致。
 func goGlob(ctx context.Context, searchPath, pattern string) ([]fileEntry, error) {
 	hasDoubleStar := strings.Contains(pattern, "**")
+	gitignore := common.LoadGitignore(searchPath)
 	var entries []fileEntry
 
 	err := filepath.WalkDir(searchPath, func(path string, d os.DirEntry, err error) error {
@@ -257,14 +258,21 @@ func goGlob(ctx context.Context, searchPath, pattern string) ([]fileEntry, error
 		if err != nil {
 			return nil
 		}
-		if d.IsDir() {
-			return nil
-		}
 		rel, rerr := filepath.Rel(searchPath, path)
 		if rerr != nil {
 			return nil
 		}
 		relSlash := filepath.ToSlash(rel)
+		// .gitignore：目录 SkipDir，文件跳过
+		if gitignore != nil && gitignore.Ignored(relSlash, d.IsDir()) {
+			if d.IsDir() {
+				return filepath.SkipDir
+			}
+			return nil
+		}
+		if d.IsDir() {
+			return nil
+		}
 		if !matchGlob(pattern, relSlash, hasDoubleStar) {
 			return nil
 		}

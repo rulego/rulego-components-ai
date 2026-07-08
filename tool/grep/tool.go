@@ -4,6 +4,7 @@ package grep
 
 import (
 	"bufio"
+	"bytes"
 	"context"
 	"encoding/json"
 	"fmt"
@@ -387,6 +388,8 @@ func goGrep(ctx context.Context, searchPath string, re *regexp.Regexp, include, 
 	hasExclude := exclude != ""
 	hasDoubleStarInc := strings.Contains(include, "**")
 	hasDoubleStarExc := strings.Contains(exclude, "**")
+	// .gitignore（仅目录有效；单文件路径读取失败返回 nil）
+	gitignore := common.LoadGitignore(searchPath)
 
 	// 判断 searchPath 是文件还是目录
 	info, err := os.Stat(searchPath)
@@ -405,15 +408,22 @@ func goGrep(ctx context.Context, searchPath string, re *regexp.Regexp, include, 
 		if err != nil {
 			return nil
 		}
-		if d.IsDir() {
-			return nil
-		}
-		// 相对 searchPath 根的路径用于 glob 匹配
+		// 相对 searchPath 根的路径用于 gitignore + glob 匹配
 		rel, rerr := filepath.Rel(searchPath, path)
 		if rerr != nil {
 			return nil
 		}
 		relSlash := filepath.ToSlash(rel)
+		// .gitignore：目录整个跳过（SkipDir），文件跳过
+		if gitignore != nil && gitignore.Ignored(relSlash, d.IsDir()) {
+			if d.IsDir() {
+				return filepath.SkipDir
+			}
+			return nil
+		}
+		if d.IsDir() {
+			return nil
+		}
 
 		// include/exclude 匹配（对完整 rel 路径）
 		if hasInclude && !matchGlob(include, relSlash, hasDoubleStarInc) {
@@ -429,6 +439,10 @@ func goGrep(ctx context.Context, searchPath string, re *regexp.Regexp, include, 
 			return nil
 		}
 		defer f.Close()
+		// 二进制检测：前 1024 字节含 NUL 视为二进制，跳过（对齐 rg，避免乱码）
+		if isBinaryFile(f) {
+			return nil
+		}
 		scanner := bufio.NewScanner(f)
 		scanner.Buffer(make([]byte, 0, 64*1024), 1024*1024)
 		var lines []string
@@ -471,6 +485,14 @@ func goGrep(ctx context.Context, searchPath string, re *regexp.Regexp, include, 
 		// 忽略遍历过程中的单文件错误，继续返回已收集结果
 	}
 	return result, nil
+}
+
+// isBinaryFile 读前 1024 字节检测 NUL（二进制标志），Seek 回 0。
+func isBinaryFile(f *os.File) bool {
+	buf := make([]byte, 1024)
+	n, _ := f.Read(buf)
+	_, _ = f.Seek(0, 0)
+	return bytes.IndexByte(buf[:n], 0) >= 0
 }
 
 // format 渲染最终输出，按 output_mode 分支，head_limit 截断，统一截断兜底。

@@ -244,3 +244,50 @@ func TestGlob_RipgrepPath(t *testing.T) {
 	assert.Contains(t, out, "a.go")
 	assert.Contains(t, out, "sub/d.go")
 }
+
+// ---- glob 模式语法边界（Go 兜底，filepath.Match + 自实现 **）----
+
+func TestGlob_QuestionMark_Fallback(t *testing.T) {
+	forceFallback(t)
+	root := makeTempFixture(t)
+	// ?.go：单字符名 + .go，匹配 a.go/b.go；纯文件名模式不含 /，不匹配 sub/d.go
+	out := runGlob(t, root, map[string]interface{}{"pattern": "?.go"})
+	assert.Contains(t, out, "a.go")
+	assert.Contains(t, out, "b.go")
+	assert.NotContains(t, out, "sub/d.go")
+	assert.NotContains(t, out, "c.txt")
+}
+
+func TestGlob_CharClass_Fallback(t *testing.T) {
+	forceFallback(t)
+	root := makeTempFixture(t)
+	// [ab].go：匹配 a.go/b.go，不匹配 c.txt
+	out := runGlob(t, root, map[string]interface{}{"pattern": "[ab].go"})
+	assert.Contains(t, out, "a.go")
+	assert.Contains(t, out, "b.go")
+	assert.NotContains(t, out, "c.txt")
+}
+
+func TestGlob_ExactPath_Fallback(t *testing.T) {
+	forceFallback(t)
+	root := makeTempFixture(t)
+	// 精确路径 sub/d.go（含 /，无通配符，filepath.Match 精确匹配）
+	out := runGlob(t, root, map[string]interface{}{"pattern": "sub/d.go"})
+	assert.Contains(t, out, "sub/d.go")
+	assert.NotContains(t, out, "a.go")
+	assert.NotContains(t, out, "sub/e.txt")
+}
+
+// ---- gitignore（对齐 rg）----
+
+func TestGlob_Gitignore_Fallback(t *testing.T) {
+	forceFallback(t)
+	root := t.TempDir()
+	require.NoError(t, os.WriteFile(filepath.Join(root, "keep.go"), []byte("x"), 0644))
+	require.NoError(t, os.WriteFile(filepath.Join(root, "skip.log"), []byte("x"), 0644))
+	require.NoError(t, os.WriteFile(filepath.Join(root, ".gitignore"), []byte("*.log\n"), 0644))
+
+	out := runGlob(t, root, map[string]interface{}{"pattern": "**/*"})
+	assert.Contains(t, out, "keep.go")
+	assert.NotContains(t, out, "skip.log") // 被 .gitignore 跳过
+}
