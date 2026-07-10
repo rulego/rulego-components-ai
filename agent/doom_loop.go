@@ -14,8 +14,9 @@ import (
 // MVP 仅做"日志告警 + 结果前缀警告"，不做硬熔断（后置）。
 const (
 	doomHistorySize     = 20 // 保留最近 N 次工具调用快照
-	doomRepeatThreshold = 3  // 连续相同 (tool, args) 达到此次数 → doom 警告
-	doomFailThreshold   = 5  // 连续失败达到此次数 → doom 警告
+	doomRepeatThreshold = 3  // 同名同参达此次数 → MILD 提示
+	doomStrongThreshold = 5  // 同名同参达此次数 → STRONG 提示（放弃计划/求助，再重复任务失败）
+	doomFailThreshold   = 5  // 连续失败达此次数 → doom 警告
 )
 
 // DoomLoopDetector 检测 agent 陷入死循环（重复相同调用 / 连续失败）。
@@ -60,25 +61,34 @@ func normalizeArgsKeyOrder(args string) string {
 	return string(b)
 }
 
-// BeforeCall 工具执行前调用：基于历史检测"连续相同调用"，返回警告文案（空串=无警告）。不修改状态。
+// BeforeCall 工具执行前调用：在最近 doomHistorySize 次的滑动窗口内统计同名同参调用次数
+// （不含本次），返回分级警告文案（空串=无警告）。不修改状态。
+//
+// 滑动窗口而非"末尾严格连续"：agent 常并行触发多个 tool_call，并发交错会让末尾连续检测
+// 漏报（实测：连续 6 次相同 write 因交错未告警，撑爆 provider 护栏）。窗口计数对交错鲁棒。
+//
+// 两级提示（温和→强硬递进）：
+//   - count ∈ [doomRepeatThreshold, doomStrongThreshold)：MILD，提醒换方法/参数
+//   - count >= doomStrongThreshold：STRONG，要求放弃当前计划/求助，再重复将任务失败
 func (d *DoomLoopDetector) BeforeCall(tool, args string) string {
 	d.mu.Lock()
 	defer d.mu.Unlock()
 
 	hash := hashArgs(args)
 	repeat := 0
-	for i := len(d.history) - 1; i >= 0; i-- {
-		s := d.history[i]
-		if s.tool == tool && s.argsHash == hash {
+	for i := len(d.history) - 1; i >= 0 && i >= len(d.history)-doomHistorySize; i-- {
+		if d.history[i].tool == tool && d.history[i].argsHash == hash {
 			repeat++
-		} else {
-			break
 		}
 	}
-	if repeat+1 >= doomRepeatThreshold {
-		return fmt.Sprintf("⚠️ Doom-loop: %s 已用相同参数连续调用 %d 次。文件可能已变化或当前方法无效——重新读取文件(read op=file)或换思路后再试，不要重复无效调用。", tool, repeat+1)
+	count := repeat + 1 // 含本次
+	if count < doomRepeatThreshold {
+		return ""
 	}
-	return ""
+	if count >= doomStrongThreshold {
+		return fmt.Sprintf("工具 %s 已用相同参数调用 %d 次，之前的温和提醒未奏效。请立即：1) 放弃当前思路；2) 简述你在做什么、为什么失败；3) 换完全不同的方法或参数，或向用户求助。继续重复相同调用将导致任务失败结束。", tool, count)
+	}
+	return fmt.Sprintf("工具 %s 已用相同参数调用 %d 次（可能文件已变化或方法无效）。请重新读取相关文件确认当前状态，或换用其他方法/参数，不要重复无效调用。", tool, count)
 }
 
 // AfterCall 工具执行后调用：记录本次调用并检测"连续失败"，返回警告文案（空串=无警告）。

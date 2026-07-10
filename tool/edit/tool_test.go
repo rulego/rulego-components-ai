@@ -289,6 +289,18 @@ func TestEditSearch(t *testing.T) {
 			},
 		},
 		{
+			name:    "搜索替换相同(无意义)",
+			content: "hello world",
+			params: map[string]interface{}{
+				"operation": "search",
+				"search":    "hello",
+				"replace":   "hello",
+			},
+			checkResult: func(result string) {
+				assert.Contains(t, result, "NO_CHANGE")
+			},
+		},
+		{
 			name:    "未找到匹配",
 			content: "test content",
 			params: map[string]interface{}{

@@ -592,6 +592,13 @@ func (t *editTool) editSearch(path string, params OperationParams, sessionId str
 		return common.ErrSearchEmpty().Error(), nil
 	}
 
+	// 无意义替换防呆：search==replace 时不执行，避免空转浪费一轮。
+	// 仅 literal 模式判 no-op：regex 模式下 search 是 pattern、replace 是模板，二者字符串相等
+	// 不代表无改动（如 search="(foo)" replace="(foo)" 会把 foo 改成 (foo)）。
+	if !params.UseRegex && params.Search == params.Replace {
+		return "Error: NO_CHANGE - search and replace are identical, nothing to change. 若无需修改请直接结束，不要做无意义替换。", nil
+	}
+
 	// Validate regex length for security
 	if params.UseRegex && len(params.Search) > MaxRegexLength {
 		return common.ErrRegexTooLong().Error(), nil

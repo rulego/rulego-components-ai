@@ -320,15 +320,66 @@ func (w *VisualToolWrapper) InvokableRun(ctx context.Context, argumentsInJSON st
 
 	inputTokens := token.EstimateTokens(argumentsInJSON)
 
-	// doom-loop 检测（执行前：连续相同调用）
+	// doom-loop 检测（执行前：滑动窗口内同名同参重复）
 	var doomWarn string
 	if detector := GetDoomLoopDetector(ctx); detector != nil {
 		if warn := detector.BeforeCall(w.name, argumentsInJSON); warn != "" {
 			doomWarn = warn
 			if w.logger != nil {
-				w.logger.Warnf("[DoomLoop] %s", warn)
+				w.logger.Warnf("[DoomLoop] BLOCK tool=%s: %s", w.name, warn)
 			}
 		}
+	} else if w.logger != nil {
+		// detector 未注入到 ctx：doom 防呆完全失效（工具层拦不住重复调用）。
+		// 每次调用打印，便于从日志直接确认 doom 是否生效：
+		//   看到此行刷屏 = doom 失效（dedup 仍兜底 provider 层）；看到 BLOCK = 命中拒绝；两者都无 = 正常未触发。
+		w.logger.Warnf("[DoomLoop] detector NOT in ctx, doom disabled (tool=%s)", w.name)
+	}
+
+	// doom 命中：拒绝执行（不真正调用工具，避免重复副作用），返回强错误 result 软提示 LLM 换方法。
+	// 不返回 Go error（err=nil），让 agent 循环继续而非中断——配合 MessageRewriter 的历史折叠
+	// (dedupRepetitiveToolCalls)，既提示 LLM、又保证发往 provider 的历史不连续重复、不触发
+	// "Repetitive tool calls" 400。maxStep 兜底最终停止。
+	if doomWarn != "" {
+		// 合并 stepWarn（步数将尽提醒，与正常路径一致）：doom 拒绝若恰好发生在最后几步，
+		// agent 仍能看到「尽快写 run 收尾」的提醒，而非只看到 doom 拒绝。
+		msg := doomWarn
+		if stepWarn != "" {
+			msg = stepWarn + msg
+		}
+		blockedResult := fmt.Sprintf("Error: doom_loop_repeated - 工具 %s 本次调用被拒绝执行。%s", w.name, msg)
+		// 仍记录到 doom history（让后续轮次持续计数）
+		if detector := GetDoomLoopDetector(ctx); detector != nil {
+			detector.AfterCall(w.name, argumentsInJSON, true)
+		}
+		duration := time.Since(startTime).Milliseconds()
+		if w.metricsCollector != nil {
+			w.metricsCollector.Record(w.name, duration, inputTokens, token.EstimateTokens(blockedResult), true)
+		}
+		callResult := &aspect.ToolCallResult{
+			CallId:    toolCallId,
+			Name:      w.name,
+			Arguments: argumentsInJSON,
+			Result:    blockedResult,
+			Error:     fmt.Errorf("doom_loop_repeated"),
+			Duration:  duration,
+			EndTime:   time.Now(),
+		}
+		if w.aspectManager != nil {
+			w.aspectManager.ExecuteToolCallAfter(ctx, point, callInfo, callResult)
+		}
+		aspect.AddToolCallResultToContext(ctx, callResult)
+		if emitter != nil {
+			emitter.EmitToolCallEnd(toolCallId)
+		}
+		if sendToSSE != nil {
+			sendToSSE(toolCallId, w.name, string(SSEEventToolError), "doom_loop_repeated", toolIndex)
+			sendToSSE(toolCallId, w.name, string(SSEEventToolResult), blockedResult, toolIndex)
+		}
+		if w.logger != nil {
+			w.logger.Warnf("[ToolCall] BLOCKED tool=%s, reason=doom_loop_repeated", w.name)
+		}
+		return blockedResult, nil
 	}
 
 	result, err = w.base.InvokableRun(ctx, argumentsInJSON, opts...)
@@ -336,10 +387,8 @@ func (w *VisualToolWrapper) InvokableRun(ctx context.Context, argumentsInJSON st
 	// doom-loop 检测（执行后：记录本次调用 + 连续失败）
 	if detector := GetDoomLoopDetector(ctx); detector != nil {
 		if warn := detector.AfterCall(w.name, argumentsInJSON, err != nil || isFailureResult(result)); warn != "" {
-			if doomWarn != "" {
-				doomWarn += "\n"
-			}
-			doomWarn += warn
+			// 走到这里 doomWarn 必为空（doom 命中已在上方 early return），直接赋值即可
+			doomWarn = warn
 			if w.logger != nil {
 				w.logger.Warnf("[DoomLoop] %s", warn)
 			}

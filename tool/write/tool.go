@@ -72,12 +72,6 @@ func NewTool(config Config) (tool.BaseTool, error) {
 func (t *writeTool) Info(ctx context.Context) (*schema.ToolInfo, error) {
 	props := orderedmap.New[string, *jsonschema.Schema]()
 
-	props.Set("operation", &jsonschema.Schema{
-		Type:        "string",
-		Description: "Operation type: file (write to file)",
-		Enum:        []any{"file"},
-	})
-
 	props.Set("path", &jsonschema.Schema{
 		Type:        "string",
 		Description: "File path",
@@ -90,17 +84,19 @@ func (t *writeTool) Info(ctx context.Context) (*schema.ToolInfo, error) {
 
 	props.Set("mode", &jsonschema.Schema{
 		Type:        "string",
-		Description: "Write mode: create (new file), overwrite (replace), append (add to end)",
+		Description: "Write mode: create (new file, fails if file already exists), overwrite (replace existing file), append (add to end). If unsure or the file may already exist, use overwrite.",
 		Enum:        []any{"create", "overwrite", "append"},
 	})
 
 	return &schema.ToolInfo{
 		Name: ToolName,
 		Desc: "Write content to files. Supports create, overwrite, and append modes.",
+		// 不再暴露 operation 字段：它 enum 只有 "file" 一个值、逻辑里也从不使用，纯冗余。
+		// 保留它反而误导模型把 mode 的值（如 overwrite）塞进 operation（实测诱因，见 2026-07-10 死循环日志）。
 		ParamsOneOf: schema.NewParamsOneOfByJSONSchema(&jsonschema.Schema{
 			Type:       "object",
 			Properties: props,
-			Required:   []string{"operation", "path", "content"},
+			Required:   []string{"path", "content"},
 		}),
 	}, nil
 }

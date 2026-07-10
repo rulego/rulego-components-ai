@@ -606,9 +606,15 @@ func CreateReactAgent(ctx context.Context, chatModel model.ToolCallingChatModel,
 		MaxStep:          maxStep,
 		// 提供自定义的 StreamToolCallChecker，用于处理先输出内容再输出工具调用的模型
 		StreamToolCallChecker: createStreamToolCallChecker(opts.Logger),
-		// 在每次模型调用前清洗 tool_calls 的 Arguments 字段，
-		// 避免空字符串因 omitempty 被省略导致部分 API（如 DashScope）返回 400 错误
-		MessageRewriter: sanitizeToolCallArguments,
+		// 在每次模型调用前清洗历史（eino react.go modelPreHandle 阶段对 state.Messages 执行，每次模型调用前必跑）：
+		// 1) sanitizeToolCallArguments：补全空 Arguments，避免 omitempty 省略导致部分 API（如 DashScope）400；
+		// 2) dedupRepetitiveToolCalls：折叠连续同名同参 tool_call，避免触发 provider 死循环护栏
+		//    （智谱 GLM / DashScope qwen 等的 "Repetitive tool calls detected" 400）。
+		MessageRewriter: func(ctx context.Context, msgs []*schema.Message) []*schema.Message {
+			msgs = sanitizeToolCallArguments(ctx, msgs)
+			msgs = dedupRepetitiveToolCalls(ctx, msgs)
+			return msgs
+		},
 		// 动态注入技能列表等运行时内容到 system prompt
 		MessageModifier: opts.MessageModifier,
 	}
@@ -636,6 +642,106 @@ func sanitizeToolCallArguments(_ context.Context, msgs []*schema.Message) []*sch
 			}
 		}
 		result[i] = &newMsg
+	}
+	return result
+}
+
+// dedupRepetitiveToolCalls 折叠历史中连续重复的 (assistant tool_call + tool result) 对，
+// 避免触发 provider 的 "Repetitive tool calls detected" 护栏（连续同名同参 tool_call 即 400）。
+// 由 MessageRewriter 在每次模型调用前执行，保留最后 dedupKeepLast 对，更早的整对删除，
+// 并在保留对的 tool result 前加"已折叠 N 次"提示反馈给 LLM。多 ToolCall（并行）保守不去重。幂等。
+func dedupRepetitiveToolCalls(_ context.Context, msgs []*schema.Message) []*schema.Message {
+	// 连续重复时保留最后几对。须 < provider 护栏阈值；实测案例 provider 在连续 6 次才触发，
+	// "multiple consecutive rounds" 语义 ≥3，保留 2 充分安全。如遇更严 provider 改为 1。
+	const dedupKeepLast = 2
+
+	type round struct {
+		asstIdx int   // 该轮 assistant 消息下标
+		tools   []int // 紧随其后的 tool result 消息下标
+		sig     string
+	}
+
+	// 1) 切轮：每个带 ToolCalls 的 assistant + 紧随的 tool result
+	rounds := make([]round, 0)
+	for i := 0; i < len(msgs); i++ {
+		m := msgs[i]
+		if m.Role != schema.Assistant || len(m.ToolCalls) == 0 {
+			continue
+		}
+		r := round{asstIdx: i}
+		if len(m.ToolCalls) == 1 { // 仅单 call 计算签名，多并行保守跳过
+			tc := m.ToolCalls[0]
+			r.sig = tc.Function.Name + "\x00" + normalizeArgsKeyOrder(tc.Function.Arguments)
+		}
+		for j := i + 1; j < len(msgs) && msgs[j].Role == schema.Tool; j++ {
+			r.tools = append(r.tools, j)
+		}
+		rounds = append(rounds, r)
+	}
+	if len(rounds) == 0 {
+		return msgs
+	}
+
+	remove := make(map[int]bool)       // 待删除的消息下标
+	toolNotice := make(map[int]string) // 保留轮首个 tool result 下标 -> 前缀提示
+
+	// 2) 扫描"同签名且在原序列中紧邻"的连续段，超额部分删除
+	for i := 0; i < len(rounds); {
+		if rounds[i].sig == "" {
+			i++
+			continue
+		}
+		end := i + 1
+		for end < len(rounds) && rounds[end].sig == rounds[i].sig {
+			// 紧邻判定：上一轮最后一个消息（assistant 或其 tool result）紧接本轮 assistant
+			prev := rounds[end-1]
+			prevEnd := prev.asstIdx
+			if len(prev.tools) > 0 {
+				prevEnd = prev.tools[len(prev.tools)-1]
+			}
+			if prevEnd+1 != rounds[end].asstIdx {
+				break // 中间有其他消息（如 user/纯文本 assistant）打断，不再连续
+			}
+			end++
+		}
+		segLen := end - i
+		if segLen > dedupKeepLast {
+			removeCnt := segLen - dedupKeepLast
+			// 删除段内前 removeCnt 轮，保留最后 dedupKeepLast 轮
+			for k := i; k < end-dedupKeepLast; k++ {
+				remove[rounds[k].asstIdx] = true
+				for _, ti := range rounds[k].tools {
+					remove[ti] = true
+				}
+			}
+			keep := rounds[end-dedupKeepLast]
+			toolName := ""
+			if len(msgs[keep.asstIdx].ToolCalls) > 0 {
+				toolName = msgs[keep.asstIdx].ToolCalls[0].Function.Name
+			}
+			notice := fmt.Sprintf("⚠️ 已折叠 %d 次对工具「%s」的连续重复调用（同名同参）。请勿再重复相同调用，重新读取相关文件确认当前状态或换用其他方法。\n\n", removeCnt, toolName)
+			if len(keep.tools) > 0 {
+				toolNotice[keep.tools[0]] = notice
+			}
+		}
+		i = end
+	}
+
+	if len(remove) == 0 && len(toolNotice) == 0 {
+		return msgs
+	}
+
+	// 3) 构建结果（浅拷贝；写提示的 tool result 单独拷贝，避免改原始）
+	result := make([]*schema.Message, 0, len(msgs)-len(remove))
+	for idx, m := range msgs {
+		if remove[idx] {
+			continue
+		}
+		nm := *m
+		if notice, ok := toolNotice[idx]; ok {
+			nm.Content = notice + nm.Content
+		}
+		result = append(result, &nm)
 	}
 	return result
 }
