@@ -155,7 +155,9 @@ func CreateChatModel(llmConfig config.LLMConfig, opts ...ModelOptions) (model.To
 		if err != nil {
 			return nil, fmt.Errorf("failed to create failover model #%d (%s): %v", i+1, epCfg.Model, err)
 		}
-		failovers = append(failovers, epModel)
+		// 备用端点用 fixedModelWrapper 固定其配置 model 名，不继承会话级 session_model（针对主 provider），
+		// 避免备用 provider 收到不支持的模型名触发 "Model does not exist"。
+		failovers = append(failovers, &fixedModelWrapper{base: epModel, fixedModel: epCfg.Model})
 	}
 	fo := NewFailoverChatModelWrapper(primary, failovers, logger)
 	// 启用主端点熔断器：主 retry 耗尽即熔断，冷却期内跳过主直接用备用，

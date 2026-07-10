@@ -328,3 +328,32 @@ func (w *FailoverChatModelWrapper) WithTools(tools []*schema.ToolInfo) (model.To
 
 // Ensure FailoverChatModelWrapper implements model.ToolCallingChatModel
 var _ model.ToolCallingChatModel = (*FailoverChatModelWrapper)(nil)
+
+// fixedModelWrapper 固定模型名包装器：强制用配置的 model 名，忽略上层传入的 WithModel 覆盖
+// （如会话级 session_model）。用于 failover 备用端点——会话级模型是用户针对主 provider 选的，
+// 备用 provider 未必支持同一个模型名，强行带过去会触发 "Model does not exist"。
+// 备用固定用自己的配置 model 名，保证 failover 可用。
+type fixedModelWrapper struct {
+	base       model.ToolCallingChatModel
+	fixedModel string
+}
+
+// append WithModel(fixedModel) 到末尾：apply 按顺序执行，后写的 WithModel 覆盖先写的
+// （即覆盖上层注入的 session_model），使底层用 fixedModel。
+func (w *fixedModelWrapper) Generate(ctx context.Context, input []*schema.Message, opts ...model.Option) (*schema.Message, error) {
+	return w.base.Generate(ctx, input, append(opts, model.WithModel(w.fixedModel))...)
+}
+
+func (w *fixedModelWrapper) Stream(ctx context.Context, input []*schema.Message, opts ...model.Option) (*schema.StreamReader[*schema.Message], error) {
+	return w.base.Stream(ctx, input, append(opts, model.WithModel(w.fixedModel))...)
+}
+
+func (w *fixedModelWrapper) WithTools(tools []*schema.ToolInfo) (model.ToolCallingChatModel, error) {
+	nb, err := w.base.WithTools(tools)
+	if err != nil {
+		return nil, err
+	}
+	return &fixedModelWrapper{base: nb, fixedModel: w.fixedModel}, nil
+}
+
+var _ model.ToolCallingChatModel = (*fixedModelWrapper)(nil)
