@@ -6,10 +6,10 @@ import (
 	"time"
 )
 
-// defaultMaxMessages 单会话在内存中保留的最大消息数，超过后裁剪最旧消息
+// defaultMaxMessages is the maximum number of messages a single session can retain in memory, and after exceeding it, the oldest message is trimmed
 const defaultMaxMessages = 2000
 
-// MemoryStorage 内存存储实现
+// MemoryStorage implementation
 type MemoryStorage struct {
 	mu          sync.RWMutex
 	sessions    map[string]*Session
@@ -17,12 +17,12 @@ type MemoryStorage struct {
 	maxMessages int
 }
 
-// NewMemoryStorage 创建新的内存存储，默认单会话保留 2000 条消息
+// NewMemoryStorage creates new memory storage, with a default retention of 2,000 messages per session
 func NewMemoryStorage() *MemoryStorage {
 	return NewMemoryStorageWithLimit(defaultMaxMessages)
 }
 
-// NewMemoryStorageWithLimit 创建带消息上限的内存存储，超过上限裁剪最旧消息防止 OOM
+// NewMemoryStorageWithLimit creates memory storage with message limits; if the limit is exceeded, the oldest message is clipped to prevent OOM
 func NewMemoryStorageWithLimit(maxMessages int) *MemoryStorage {
 	if maxMessages <= 0 {
 		maxMessages = defaultMaxMessages
@@ -34,7 +34,7 @@ func NewMemoryStorageWithLimit(maxMessages int) *MemoryStorage {
 	}
 }
 
-// cloneMessage 深拷贝消息，隔离调用方与存储内部的切片
+// cloneMessage deeply copies messages to isolate the caller from the internal slices of storage
 func cloneMessage(msg *SessionMessage) *SessionMessage {
 	if msg == nil {
 		return nil
@@ -49,7 +49,7 @@ func cloneMessage(msg *SessionMessage) *SessionMessage {
 	return &cp
 }
 
-// Create 创建会话
+// Create creates a session
 func (m *MemoryStorage) Create(ctx context.Context, session *Session) error {
 	m.mu.Lock()
 	defer m.mu.Unlock()
@@ -58,7 +58,7 @@ func (m *MemoryStorage) Create(ctx context.Context, session *Session) error {
 		return ErrSessionAlreadyExists
 	}
 
-	// 深拷贝会话
+	// Deep copy sessions
 	sessionCopy := *session
 	sessionCopy.Messages = make([]*SessionMessage, 0, len(session.Messages))
 
@@ -68,7 +68,7 @@ func (m *MemoryStorage) Create(ctx context.Context, session *Session) error {
 	return nil
 }
 
-// Get 获取会话
+// Get the session
 func (m *MemoryStorage) Get(ctx context.Context, key string) (*Session, error) {
 	m.mu.RLock()
 	defer m.mu.RUnlock()
@@ -78,7 +78,7 @@ func (m *MemoryStorage) Get(ctx context.Context, key string) (*Session, error) {
 		return nil, ErrSessionNotFound
 	}
 
-	// 深拷贝返回
+	// Deep copy returns
 	sessionCopy := *session
 	sessionCopy.Messages = make([]*SessionMessage, 0, len(m.messages[key]))
 	for _, msg := range m.messages[key] {
@@ -88,7 +88,7 @@ func (m *MemoryStorage) Get(ctx context.Context, key string) (*Session, error) {
 	return &sessionCopy, nil
 }
 
-// Update 更新会话
+// Update the session
 func (m *MemoryStorage) Update(ctx context.Context, session *Session) error {
 	m.mu.Lock()
 	defer m.mu.Unlock()
@@ -97,7 +97,7 @@ func (m *MemoryStorage) Update(ctx context.Context, session *Session) error {
 		return ErrSessionNotFound
 	}
 
-	// 深拷贝会话
+	// Deep copy sessions
 	sessionCopy := *session
 	sessionCopy.Messages = make([]*SessionMessage, 0, len(session.Messages))
 
@@ -111,7 +111,7 @@ func (m *MemoryStorage) Update(ctx context.Context, session *Session) error {
 	return nil
 }
 
-// Delete 删除会话
+// Delete: Delete the session
 func (m *MemoryStorage) Delete(ctx context.Context, key string) error {
 	m.mu.Lock()
 	defer m.mu.Unlock()
@@ -126,7 +126,7 @@ func (m *MemoryStorage) Delete(ctx context.Context, key string) error {
 	return nil
 }
 
-// AddMessage 添加消息到会话
+// AddMessage Adds a message to a session
 func (m *MemoryStorage) AddMessage(ctx context.Context, sessionKey string, msg *SessionMessage) error {
 	m.mu.Lock()
 	defer m.mu.Unlock()
@@ -137,7 +137,7 @@ func (m *MemoryStorage) AddMessage(ctx context.Context, sessionKey string, msg *
 
 	m.messages[sessionKey] = append(m.messages[sessionKey], cloneMessage(msg))
 
-	// 超过上限裁剪最旧消息，防止内存无限增长
+	// Clip the oldest messages beyond the limit to prevent unlimited memory growth
 	session := m.sessions[sessionKey]
 	droppedTokens := 0
 	if m.maxMessages > 0 && len(m.messages[sessionKey]) > m.maxMessages {
@@ -155,7 +155,7 @@ func (m *MemoryStorage) AddMessage(ctx context.Context, sessionKey string, msg *
 	return nil
 }
 
-// GetHistory 获取会话历史消息
+// GetHistory to get session history messages
 func (m *MemoryStorage) GetHistory(ctx context.Context, sessionKey string, limit int) ([]*SessionMessage, error) {
 	m.mu.RLock()
 	defer m.mu.RUnlock()
@@ -169,7 +169,7 @@ func (m *MemoryStorage) GetHistory(ctx context.Context, sessionKey string, limit
 		limit = len(messages)
 	}
 
-	// 返回最近的limit条消息
+	// Returns the most recent limit bar message
 	start := len(messages) - limit
 	if start < 0 {
 		start = 0
@@ -183,7 +183,7 @@ func (m *MemoryStorage) GetHistory(ctx context.Context, sessionKey string, limit
 	return result, nil
 }
 
-// List 列出会话
+// List Sessions
 func (m *MemoryStorage) List(ctx context.Context, query *SessionQuery) ([]*Session, error) {
 	m.mu.RLock()
 	defer m.mu.RUnlock()
@@ -218,7 +218,7 @@ func (m *MemoryStorage) List(ctx context.Context, query *SessionQuery) ([]*Sessi
 		result = append(result, &sessionCopy)
 	}
 
-	// 应用limit和offset
+	// Apply limit and offset
 	if query != nil {
 		if query.Offset > 0 {
 			if query.Offset >= len(result) {

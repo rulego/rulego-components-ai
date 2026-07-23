@@ -1,4 +1,4 @@
-// Package glob 提供文件名匹配工具，ripgrep --files 优先 + Go 兜底。
+// Package glob provides a file name matching tool; ripgrep -- files priority + Go is the backup.
 package glob
 
 import (
@@ -48,7 +48,7 @@ type globTool struct {
 	cache  *common.ResolverCache
 }
 
-// globPathSecurity 与 read/grep 一致：允许隐藏文件，排除目录读全局默认（未设则不排除）。仅 Resolve 层生效。
+// globPathSecurity is the same as read/grep: allows file hiding and excludes global read from directories (not excluded if not set). Effective only on the Resolve layer.
 func globPathSecurity() common.PathSecurityConfig {
 	cfg := common.DefaultPathSecurityConfig()
 	cfg.AllowHiddenFiles = true
@@ -125,7 +125,7 @@ type Params struct {
 	SortByMtime *bool  `json:"sort_by_mtime"`
 }
 
-// fileEntry 单个匹配文件。
+// fileEntry Matches a single file.
 type fileEntry struct {
 	relPath string
 	mtime   int64
@@ -142,14 +142,14 @@ func (t *globTool) InvokableRun(ctx context.Context, arguments string, opts ...t
 		return common.ErrQueryEmpty().Error(), nil
 	}
 
-	// 取本次调用的有效 resolver（ctx 注入的 workDir/allowDirs/cross 优先，仿 read）。
+	// Take the valid resolver used this time (ctx injection workDir/allowDirs/cross preferred, simulating read).
 	r, err := t.cache.GetWithAllowDirs(common.WorkDirFromCtx(ctx), common.AllowDirsFromCtx(ctx), common.AllowCrossDirFromCtx(ctx))
 	if err != nil {
 		return common.ErrPathInvalid(err.Error()).Error(), nil
 	}
 	ws := r.Workspace()
 
-	// 解析搜索根（必须目录）
+	// Parsing search roots (must be directory)
 	searchPath := ws
 	if params.Path != "" {
 		resolved, err := r.Resolve(params.Path)
@@ -169,7 +169,7 @@ func (t *globTool) InvokableRun(ctx context.Context, arguments string, opts ...t
 		return common.ErrPathIsDirectory(params.Path).Error(), nil
 	}
 
-	// head_limit 解析与硬上限
+	// head_limit Analysis and hard upper limits
 	headLimit := params.HeadLimit
 	if headLimit <= 0 {
 		headLimit = t.config.MaxResults
@@ -178,9 +178,9 @@ func (t *globTool) InvokableRun(ctx context.Context, arguments string, opts ...t
 		headLimit = t.config.HardMaxLimit
 	}
 
-	// 优先 ripgrep --files，缺失走 Go 兜底
-	// displayBase 用 searchPath（非 ws）：结果路径相对"本次搜索根"而非固定 workspace，
-	// 避免 cross/allowDirs 搜索工作区外目录时出现 ../../ 丑陋相对路径；与 rg --files 默认行为一致。
+	// Prioritize ripgrep --files; if missing, use Go as a backup
+	// displayBase uses searchPath (not ws): the result path is relative to the "current search root" rather than a fixed workspace,
+	// Prevents cross/allowDirs from appearing when searching directories outside the workspace: /.. / Ugly relative path; Consistent with the default behavior of rg --files.
 	var entries []fileEntry
 	if common.HasRipgrep() {
 		entries, err = execRipgrepFiles(ctx, searchPath, params.Pattern)
@@ -191,7 +191,7 @@ func (t *globTool) InvokableRun(ctx context.Context, arguments string, opts ...t
 		return common.NewErrorf(common.ErrCodeSearchFailed, "%v", err).Error(), nil
 	}
 
-	// mtime 排序（默认 true）
+	// mtime sort (default true by default)
 	sortByMtime := true
 	if params.SortByMtime != nil {
 		sortByMtime = *params.SortByMtime
@@ -205,8 +205,8 @@ func (t *globTool) InvokableRun(ctx context.Context, arguments string, opts ...t
 	return t.format(entries, headLimit), nil
 }
 
-// execRipgrepFiles 调用 rg --files -g <pattern>，逐行收集。
-// relPath 相对 searchPath（本次搜索根）渲染，与 rg 默认行为一致。
+// execRipgrepFiles calls rg --files <pattern>-g to collect line by line.
+// relPath renders relative to searchPath (the root of this search), consistent with the default behavior of rg.
 func execRipgrepFiles(ctx context.Context, searchPath, pattern string) ([]fileEntry, error) {
 	args := []string{"--files", "--color=never"}
 	args = append(args, "-g", pattern)
@@ -241,8 +241,8 @@ func execRipgrepFiles(ctx context.Context, searchPath, pattern string) ([]fileEn
 	return entries, nil
 }
 
-// goGlob 纯 Go 实现：WalkDir + 自实现 ** glob 匹配。
-// relPath 相对 searchPath（本次搜索根）渲染，与 rg --files 兜底路径输出一致。
+// goGlob pure Go implementation: WalkDir + self-implementing ** glob matching.
+// relPath is rendered relative to searchPath (the root of this search), and the output is consistent with the backup path output of rg --files.
 func goGlob(ctx context.Context, searchPath, pattern string) ([]fileEntry, error) {
 	hasDoubleStar := strings.Contains(pattern, "**")
 	gitignore := common.LoadGitignore(searchPath)
@@ -262,7 +262,7 @@ func goGlob(ctx context.Context, searchPath, pattern string) ([]fileEntry, error
 			return nil
 		}
 		relSlash := filepath.ToSlash(rel)
-		// .gitignore：目录 SkipDir，文件跳过
+		// .gitignore: SkipDir directory, skips files
 		if gitignore != nil && gitignore.Ignored(relSlash, d.IsDir()) {
 			if d.IsDir() {
 				return filepath.SkipDir
@@ -285,12 +285,12 @@ func goGlob(ctx context.Context, searchPath, pattern string) ([]fileEntry, error
 		return nil
 	})
 	if err != nil && err != context.Canceled && err != context.DeadlineExceeded {
-		// 忽略遍历过程中的单文件错误
+		// Single-file errors during traversal are ignored
 	}
 	return entries, nil
 }
 
-// format 渲染输出，head_limit 截断，统一截断兜底。
+// format rendering output, head_limit truncation, uniformly truncating as a backup.
 func (t *globTool) format(entries []fileEntry, headLimit int) string {
 	var b strings.Builder
 	truncated := false
@@ -316,9 +316,9 @@ func (t *globTool) format(entries []fileEntry, headLimit int) string {
 	return tr.Content
 }
 
-// matchGlob 自实现 glob 匹配（支持 **），与 read/grep 工具语义一致。
-// 约定：pattern 不含 / 且不含 ** 时（如 "*.go"），仅匹配顶层文件（relPath 不含 /）。
-// pattern 含 / 时按完整 rel 路径匹配；含 ** 时走递归匹配。
+// matchGlob self-implements glob matching (supports **), semantic consistency with read/grep tools.
+// Convention: When pattern does not include / and does not ** (e.g., "*.go"), only matches top-level files (relPath does not include /).
+// pattern contains
 func matchGlob(pattern, relPath string, hasDoubleStar bool) bool {
 	if pattern == "" || pattern == "*" {
 		return true
@@ -330,7 +330,7 @@ func matchGlob(pattern, relPath string, hasDoubleStar bool) bool {
 		matched, _ := filepath.Match(pattern, relPath)
 		return matched
 	}
-	// 纯文件名模式：仅匹配顶层
+	// Pure filename mode: matches only the top layer
 	if strings.Contains(relPath, "/") {
 		return false
 	}

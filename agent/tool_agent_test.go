@@ -12,7 +12,7 @@ import (
 	"github.com/rulego/rulego/test/assert"
 )
 
-// mockInvokableTool 用于测试的模拟工具
+// mockInvokableTool is a simulation tool used for testing
 type mockInvokableTool struct {
 	infoFunc func(ctx context.Context) (*schema.ToolInfo, error)
 	runFunc  func(ctx context.Context, argumentsInJSON string, opts ...tool.Option) (string, error)
@@ -35,7 +35,7 @@ func (m *mockInvokableTool) InvokableRun(ctx context.Context, argumentsInJSON st
 	return "mock result", nil
 }
 
-// TestNewToolAgent 测试 NewToolAgent 函数
+// TestNewToolAgent Test the NewToolAgent function
 func TestNewToolAgent(t *testing.T) {
 	mockTool := &mockInvokableTool{}
 	agent := NewToolAgent("test_agent", "A test agent", mockTool)
@@ -46,7 +46,7 @@ func TestNewToolAgent(t *testing.T) {
 	assert.NotNil(t, agent.tool)
 }
 
-// TestNewToolAgent_EmptyName 测试空名称
+// TestNewToolAgent_EmptyName Test the empty name
 func TestNewToolAgent_EmptyName(t *testing.T) {
 	mockTool := &mockInvokableTool{}
 	agent := NewToolAgent("", "A test agent", mockTool)
@@ -55,7 +55,7 @@ func TestNewToolAgent_EmptyName(t *testing.T) {
 	assert.Equal(t, "", agent.name)
 }
 
-// TestNewToolAgent_EmptyDescription 测试空描述
+// TestNewToolAgent_EmptyDescription Testspace description
 func TestNewToolAgent_EmptyDescription(t *testing.T) {
 	mockTool := &mockInvokableTool{}
 	agent := NewToolAgent("test_agent", "", mockTool)
@@ -64,7 +64,7 @@ func TestNewToolAgent_EmptyDescription(t *testing.T) {
 	assert.Equal(t, "", agent.description)
 }
 
-// TestNewToolAgent_NilTool 测试 nil 工具
+// TestNewToolAgent_NilTool Test the NIL tool
 func TestNewToolAgent_NilTool(t *testing.T) {
 	agent := NewToolAgent("test_agent", "A test agent", nil)
 
@@ -72,7 +72,7 @@ func TestNewToolAgent_NilTool(t *testing.T) {
 	assert.Nil(t, agent.tool)
 }
 
-// TestToolAgent_Name 测试 Name 方法
+// TestToolAgent_Name Test the Name method
 func TestToolAgent_Name(t *testing.T) {
 	mockTool := &mockInvokableTool{}
 	agent := NewToolAgent("my_agent", "My agent description", mockTool)
@@ -83,7 +83,7 @@ func TestToolAgent_Name(t *testing.T) {
 	assert.Equal(t, "my_agent", name)
 }
 
-// TestToolAgent_Description 测试 Description 方法
+// TestToolAgent_Description Test Description methods
 func TestToolAgent_Description(t *testing.T) {
 	mockTool := &mockInvokableTool{}
 	agent := NewToolAgent("my_agent", "This is my agent", mockTool)
@@ -94,7 +94,7 @@ func TestToolAgent_Description(t *testing.T) {
 	assert.Equal(t, "This is my agent", desc)
 }
 
-// TestToolAgent_Run_Success 测试 Run 方法成功情况
+// TestToolAgent_Run_Success Test the success of the Run method
 func TestToolAgent_Run_Success(t *testing.T) {
 	mockTool := &mockInvokableTool{
 		runFunc: func(ctx context.Context, argumentsInJSON string, opts ...tool.Option) (string, error) {
@@ -113,10 +113,10 @@ func TestToolAgent_Run_Success(t *testing.T) {
 	iterator := agent.Run(ctx, input)
 	assert.NotNil(t, iterator)
 
-	// 等待结果
+	// Wait for the results
 	time.Sleep(100 * time.Millisecond)
 
-	// 获取结果
+	// Get results
 	event, ok := iterator.Next()
 	assert.True(t, ok)
 	assert.NotNil(t, event)
@@ -125,13 +125,13 @@ func TestToolAgent_Run_Success(t *testing.T) {
 	assert.NotNil(t, event.Output.MessageOutput)
 	assert.NotNil(t, event.Output.MessageOutput.Message)
 	assert.Equal(t, schema.Assistant, event.Output.MessageOutput.Message.Role)
-	// 验证内容包含 success
+	// Verification includes success
 	if event.Output.MessageOutput.Message.Content != "" {
-		// 内容应该包含 success
+		// The content should include success
 	}
 }
 
-// TestToolAgent_Run_ToolError 测试 Run 方法工具错误情况
+// TestToolAgent_Run_ToolError Error situations in the Run method tool
 func TestToolAgent_Run_ToolError(t *testing.T) {
 	mockTool := &mockInvokableTool{
 		runFunc: func(ctx context.Context, argumentsInJSON string, opts ...tool.Option) (string, error) {
@@ -150,21 +150,21 @@ func TestToolAgent_Run_ToolError(t *testing.T) {
 	iterator := agent.Run(ctx, input)
 	assert.NotNil(t, iterator)
 
-	// 等待结果
+	// Wait for the results
 	time.Sleep(100 * time.Millisecond)
 
-	// 获取结果
+	// Get results
 	event, ok := iterator.Next()
 	assert.True(t, ok)
 	assert.NotNil(t, event)
 	assert.NotNil(t, event.Err)
-	// 验证错误信息包含 tool execution failed
+	// The validation error message contains tool execution failed
 	if event.Err != nil && event.Err.Error() != "" {
-		// 错误应该包含 tool execution failed
+		// The error should include tool execution failed
 	}
 }
 
-// TestToolAgent_Run_EmptyMessages 测试 Run 方法空消息列表
+// TestToolAgent_Run_EmptyMessages Test the Run method for an empty message list
 func TestToolAgent_Run_EmptyMessages(t *testing.T) {
 	mockTool := &mockInvokableTool{}
 	agent := NewToolAgent("test_agent", "A test agent", mockTool)
@@ -177,16 +177,16 @@ func TestToolAgent_Run_EmptyMessages(t *testing.T) {
 	iterator := agent.Run(ctx, input)
 	assert.NotNil(t, iterator)
 
-	// 等待结果
+	// Wait for the results
 	time.Sleep(100 * time.Millisecond)
 
-	// 空消息列表应该正常处理
+	// Empty message lists should be handled properly
 	event, ok := iterator.Next()
 	assert.True(t, ok)
 	assert.NotNil(t, event)
 }
 
-// TestToolAgent_Run_MultipleMessages 测试 Run 方法多条消息
+// TestToolAgent_Run_MultipleMessages Test multiple messages in the Run method
 func TestToolAgent_Run_MultipleMessages(t *testing.T) {
 	var receivedInput string
 	mockTool := &mockInvokableTool{
@@ -203,14 +203,14 @@ func TestToolAgent_Run_MultipleMessages(t *testing.T) {
 			schema.SystemMessage("System prompt"),
 			schema.UserMessage("First message"),
 			schema.AssistantMessage("Assistant response", nil),
-			schema.UserMessage("Last user message"), // 应该使用这条
+			schema.UserMessage("Last user message"), // This should be used
 		},
 	}
 
 	iterator := agent.Run(ctx, input)
 	assert.NotNil(t, iterator)
 
-	// 等待结果
+	// Wait for the results
 	time.Sleep(100 * time.Millisecond)
 
 	event, ok := iterator.Next()
@@ -218,11 +218,11 @@ func TestToolAgent_Run_MultipleMessages(t *testing.T) {
 	assert.NotNil(t, event)
 	assert.Nil(t, event.Err)
 
-	// 应该使用最后一条用户消息
+	// The last user message should be used
 	assert.Equal(t, "Last user message", receivedInput)
 }
 
-// TestToolAgent_Run_NoUserMessage 测试 Run 方法没有用户消息
+// TestToolAgent_Run_NoUserMessage Test the Run method has no user messages
 func TestToolAgent_Run_NoUserMessage(t *testing.T) {
 	var receivedInput string
 	mockTool := &mockInvokableTool{
@@ -244,18 +244,18 @@ func TestToolAgent_Run_NoUserMessage(t *testing.T) {
 	iterator := agent.Run(ctx, input)
 	assert.NotNil(t, iterator)
 
-	// 等待结果
+	// Wait for the results
 	time.Sleep(100 * time.Millisecond)
 
 	event, ok := iterator.Next()
 	assert.True(t, ok)
 	assert.NotNil(t, event)
 
-	// 没有用户消息时，应该使用最后一条消息
+	// If there is no user message, the last message should be used
 	assert.Equal(t, "Assistant response", receivedInput)
 }
 
-// TestToolAgent_Stream 测试 Stream 方法
+// TestToolAgent_Stream Test the Stream method
 func TestToolAgent_Stream(t *testing.T) {
 	mockTool := &mockInvokableTool{}
 	agent := NewToolAgent("test_agent", "A test agent", mockTool)
@@ -269,25 +269,25 @@ func TestToolAgent_Stream(t *testing.T) {
 
 	reader, err := agent.Stream(ctx, input)
 
-	// Stream 方法未实现，应该返回错误
+	// The Stream method is not implemented and should return an error
 	assert.NotNil(t, err)
 	assert.Nil(t, reader)
 }
 
-// TestToolAgent_Interface 测试接口实现
+// TestToolAgent_Interface Test interface implementation
 func TestToolAgent_Interface(t *testing.T) {
-	// 确保 ToolAgent 实现了 adk.Agent 接口
+	// Make sure ToolAgent implements adk.Agent interface
 	mockTool := &mockInvokableTool{}
 	agent := NewToolAgent("test", "test", mockTool)
 
-	// 编译时检查
+	// Compile time check
 	_ = agent.Name
 	_ = agent.Description
 	_ = agent.Run
 	_ = agent.Stream
 }
 
-// BenchmarkToolAgent_Name 基准测试 Name 方法
+// BenchmarkToolAgent_Name Benchmark Name method
 func BenchmarkToolAgent_Name(b *testing.B) {
 	mockTool := &mockInvokableTool{}
 	agent := NewToolAgent("test_agent", "test", mockTool)
@@ -299,7 +299,7 @@ func BenchmarkToolAgent_Name(b *testing.B) {
 	}
 }
 
-// BenchmarkToolAgent_Description 基准测试 Description 方法
+// BenchmarkToolAgent_Description Benchmark Description method
 func BenchmarkToolAgent_Description(b *testing.B) {
 	mockTool := &mockInvokableTool{}
 	agent := NewToolAgent("test", "A test agent description", mockTool)
@@ -311,7 +311,7 @@ func BenchmarkToolAgent_Description(b *testing.B) {
 	}
 }
 
-// BenchmarkToolAgent_Run 基准测试 Run 方法
+// BenchmarkToolAgent_Run Benchmark Run method
 func BenchmarkToolAgent_Run(b *testing.B) {
 	mockTool := &mockInvokableTool{
 		runFunc: func(ctx context.Context, argumentsInJSON string, opts ...tool.Option) (string, error) {
@@ -329,13 +329,13 @@ func BenchmarkToolAgent_Run(b *testing.B) {
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
 		iterator := agent.Run(ctx, input)
-		// 等待完成
+		// Waiting for completion
 		time.Sleep(10 * time.Millisecond)
 		_, _ = iterator.Next()
 	}
 }
 
-// BenchmarkNewToolAgent 基准测试 NewToolAgent
+// BenchmarkNewToolAgent Benchmarking NewToolAgent
 func BenchmarkNewToolAgent(b *testing.B) {
 	mockTool := &mockInvokableTool{}
 

@@ -30,7 +30,7 @@ type Config struct {
 func DefaultConfig() Config {
 	return Config{
 		WorkDir:     ".",
-		MaxFileSize: 10 * 1024 * 1024, // 默认 10MB 上限
+		MaxFileSize: 10 * 1024 * 1024, // The default limit is 10MB
 	}
 }
 
@@ -39,12 +39,12 @@ type writeTool struct {
 	cache  *common.ResolverCache
 }
 
-// writePathSecurity 写入操作的路径安全策略：隐藏文件 + 排除目录均读全局默认（tpclaw config.yaml fileAccess）。
-// AllowHiddenFiles = !denyHidden（默认 false→允许写隐藏，不限制 agent）；ExcludeDirs 默认版本库元数据。
+// writePathSecurity: Path security policy for write operations: hide files + exclude directories by universal read, global default (tpclaw config.yaml fileAccess).
+// AllowHiddenFiles =!denyHidden (default false→ allows hidden, does not restrict agent); ExcludeDirs: Default version repository metadata.
 func writePathSecurity() common.PathSecurityConfig {
 	cfg := common.DefaultPathSecurityConfig()
 	cfg.AllowHiddenFiles = !common.GetDefaultDenyHidden()
-	cfg.ExcludeDirs = common.GetDefaultExcludeDirs() // 读全局；未设返回 nil（不排除），默认值由 config.yaml fileAccess 给
+	cfg.ExcludeDirs = common.GetDefaultExcludeDirs() // Read the big picture; No return nil is set (not excluded); the default value is provided by config.yaml fileAccess
 	return cfg
 }
 
@@ -91,8 +91,8 @@ func (t *writeTool) Info(ctx context.Context) (*schema.ToolInfo, error) {
 	return &schema.ToolInfo{
 		Name: ToolName,
 		Desc: "Write content to files. Supports create, overwrite, and append modes.",
-		// 不再暴露 operation 字段：它 enum 只有 "file" 一个值、逻辑里也从不使用，纯冗余。
-		// 保留它反而误导模型把 mode 的值（如 overwrite）塞进 operation（实测诱因，见 2026-07-10 死循环日志）。
+		// No longer exposes the operation field: it has only the value "file" in the enum and is never used in the logic, purely redundant.
+		// Retaining it misleads the model into cramming mode values (such as overwrite) into the operation (test trigger, see 2026-07-10 Dead Loop Log).
 		ParamsOneOf: schema.NewParamsOneOfByJSONSchema(&jsonschema.Schema{
 			Type:       "object",
 			Properties: props,
@@ -129,7 +129,7 @@ func (t *writeTool) InvokableRun(ctx context.Context, arguments string, opts ...
 		return common.ErrFileTooLarge(int64(len(params.Content)), t.config.MaxFileSize).Error(), nil
 	}
 
-	// 取本次调用的有效 resolver + workDir（ctx 注入优先，否则 config 默认）。
+	// Take the valid resolver + workDir used this time (ctx injection first, otherwise config defaults).
 	r, err := t.cache.GetWithAllowDirs(common.WorkDirFromCtx(ctx), common.AllowDirsFromCtx(ctx), common.AllowCrossDirFromCtx(ctx))
 	if err != nil {
 		return common.ErrPathInvalid(err.Error()).Error(), nil
@@ -206,7 +206,7 @@ func (t *writeTool) writeFile(params OperationParams, r *common.SecurePathResolv
 	return common.Success(message) + t.reportDiagnostics(path), nil
 }
 
-// reportDiagnostics 写后跑诊断：按注册的 DiagnosticProvider（未注册返回空=默认关闭）。
+// Write reportDiagnostics and run diagnostics: According to the registered DiagnosticProvider (unregistered returns empty = closed by default).
 func (t *writeTool) reportDiagnostics(path string) string {
 	p := common.LookupDiagnosticProvider(path)
 	if p == nil {

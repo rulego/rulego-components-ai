@@ -6,7 +6,7 @@ import (
 	"time"
 )
 
-// globalTimeoutConfig 全局超时配置
+// globalTimeoutConfig Global timeout configuration
 var globalTimeoutConfig = DefaultTimeoutConfig()
 var globalTimeoutMu sync.RWMutex
 
@@ -52,21 +52,21 @@ func DefaultTimeoutConfig() TimeoutConfig {
 	}
 }
 
-// GetTimeoutConfig 获取全局超时配置
+// GetTimeoutConfig obtains the global timeout configuration
 func GetTimeoutConfig() TimeoutConfig {
 	globalTimeoutMu.RLock()
 	defer globalTimeoutMu.RUnlock()
 	return globalTimeoutConfig
 }
 
-// SetTimeoutConfig 设置全局超时配置
+// SetTimeoutConfig sets the global timeout configuration
 func SetTimeoutConfig(cfg TimeoutConfig) {
 	globalTimeoutMu.Lock()
 	defer globalTimeoutMu.Unlock()
 	globalTimeoutConfig = cfg
 }
 
-// SetTimeout 设置指定类别的超时时间
+// SetTimeout sets the timeout for a specified category
 func SetTimeout(category string, timeout time.Duration) {
 	globalTimeoutMu.Lock()
 	defer globalTimeoutMu.Unlock()
@@ -115,7 +115,7 @@ func (c TimeoutConfig) GetTimeout(category string) time.Duration {
 	return timeout
 }
 
-// GetGlobalTimeout 获取指定类别的全局超时时间
+// GetGlobalTimeout obtains the global timeout for the specified category
 func GetGlobalTimeout(category string) time.Duration {
 	return GetTimeoutConfig().GetTimeout(category)
 }

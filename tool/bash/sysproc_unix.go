@@ -7,13 +7,13 @@ import (
 	"syscall"
 )
 
-// setSysProcAttr 设置进程组属性，用于在超时时 kill 整个进程组
+// setSysProcAttr sets the process group properties to kill the entire process group during timeout
 func setSysProcAttr(cmd *exec.Cmd) {
 	cmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
 }
 
-// killProcessGroup kill 整个进程组（发送 SIGKILL 给 -pgid）
+// killProcessGroup kill the entire process group (send SIGKILL to -pgid)
 func killProcessGroup(pid int) {
-	// pid 为负数表示进程组
+	// pid is a negative number representing a process group
 	_ = syscall.Kill(-pid, syscall.SIGKILL)
 }

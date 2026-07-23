@@ -232,7 +232,7 @@ func getUnixConfig() PlatformConfig {
 			"dd", "mkfs", "fdisk", "shutdown", "reboot",
 		},
 		DefaultDenyArgs: []string{
-			// 危险路径（禁止删除/操作系统关键目录）
+			// Dangerous paths (deletion prohibited/critical operating system directories)
 			"-rf /",
 			"-rf /*",
 			"--no-preserve-root",

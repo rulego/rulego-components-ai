@@ -14,9 +14,9 @@ import (
 
 func TestBashTool_Cancel(t *testing.T) {
 	config := DefaultConfig()
-	config.Timeout = 5 // 设置足够长的超时时间
+	config.Timeout = 5 // Set a sufficiently long timeout
 
-	// 根据平台选择耗时命令
+	// Select time-consuming commands based on the platform
 	var cmdName string
 	var cmdArgs []string
 	if runtime.GOOS == "windows" {
@@ -27,7 +27,7 @@ func TestBashTool_Cancel(t *testing.T) {
 		cmdArgs = []string{"10"}
 	}
 
-	// 添加到允许列表，确保可以执行
+	// Add to the allowlist to ensure it can be executed
 	config.Allow = append(config.Allow, cmdName)
 
 	bTool, err := NewTool(config)
@@ -37,16 +37,16 @@ func TestBashTool_Cancel(t *testing.T) {
 		InvokableRun(ctx context.Context, arguments string, opts ...tool.Option) (string, error)
 	})
 
-	// 创建一个可以取消的上下文
+	// Create a context that can be canceled
 	ctx, cancel := context.WithCancel(context.Background())
 
-	// 在另一个 goroutine 中取消上下文
+	// Remove context in another goroutine
 	go func() {
-		time.Sleep(1 * time.Second) // 等待 1 秒后取消
+		time.Sleep(1 * time.Second) // Wait 1 second and then cancel
 		cancel()
 	}()
 
-	// 执行耗时命令
+	// Execute time-consuming commands
 	startTime := time.Now()
 
 	paramsMap := map[string]interface{}{
@@ -59,14 +59,14 @@ func TestBashTool_Cancel(t *testing.T) {
 	resultStr, err := toolInstance.InvokableRun(ctx, params)
 	duration := time.Since(startTime)
 
-	assert.NoError(t, err) // InvokableRun 本身不返回 error，而是返回 JSON 结果
+	assert.NoError(t, err) // InvokableRun itself does not return an error but returns a JSON result
 
-	// 检查结果是否包含错误信息（新格式）
+	// Check whether the results contain error messages (new format)
 	assert.Contains(t, resultStr, "被中断")
-	// Exit Code 应该是非零（因为被取消）
+	// The exit code should be non-zero (because it was canceled).
 	assert.Contains(t, resultStr, "Exit Code:")
 
-	// 确保执行时间小于命令原本需要的时间 (10秒)
+	// Ensure execution time is less than the command originally requires (10 seconds)
 	assert.Less(t, duration.Seconds(), 9.0)
 
 	t.Logf("Result: %s", resultStr)
@@ -81,8 +81,8 @@ func TestBashTool_InvalidCommand(t *testing.T) {
 		InvokableRun(ctx context.Context, arguments string, opts ...tool.Option) (string, error)
 	})
 
-	// 测试无效路径，验证 PowerShell 错误信息不乱码
-	// 使用完整命令字符串模式，触发 PowerShell 执行
+	// Test for invalid paths and verify that PowerShell error messages are not garbled
+	// Use the full command string mode to trigger PowerShell execution
 	paramsMap := map[string]interface{}{
 		"command": "dir non_existent_path_123",
 	}
@@ -91,9 +91,9 @@ func TestBashTool_InvalidCommand(t *testing.T) {
 	resultStr, err := toolInstance.InvokableRun(context.Background(), string(paramsBytes))
 	assert.NoError(t, err)
 
-	// 验证包含错误信息
-	// PowerShell 错误通常包含 "CategoryInfo" 或 "FullyQualifiedErrorId"
-	// 或者简单的 "Cannot find path" / "找不到路径"
+	// Verification contains error information
+	// PowerShell errors usually include "CategoryInfo" or "FullyQualifiedErrorId"
+	// Or simply say "Cannot find path" / "Can't find path"
 
 	t.Logf("Result: %s", resultStr)
 }
@@ -107,7 +107,7 @@ func TestBashTool_BlockedArgsNotFalsePositive(t *testing.T) {
 		InvokableRun(ctx context.Context, arguments string, opts ...tool.Option) (string, error)
 	})
 
-	// 测试不应该被误判为包含禁止模式的命令
+	// Testing should not be mistaken for commands containing prohibited modes
 	testCases := []struct {
 		name    string
 		command string
@@ -128,7 +128,7 @@ func TestBashTool_BlockedArgsNotFalsePositive(t *testing.T) {
 			resultStr, err := toolInstance.InvokableRun(context.Background(), string(paramsBytes))
 			assert.NoError(t, err)
 
-			// 不应该包含"禁止模式"错误
+			// The "Disabled Mode" error should not be included
 			assert.NotContains(t, resultStr, "禁止模式", "命令 '%s' 不应该被误判为包含禁止模式", tc.command)
 
 			t.Logf("Command: %s, Result: %s", tc.command, resultStr)
@@ -138,7 +138,7 @@ func TestBashTool_BlockedArgsNotFalsePositive(t *testing.T) {
 
 func TestBashTool_BlockedArgsTruePositive(t *testing.T) {
 	config := DefaultConfig()
-	// 使用拒绝模式以便测试
+	// Use a denial mode for testing
 	config.Mode = ModeDeny
 	bTool, err := NewTool(config)
 	assert.NoError(t, err)
@@ -147,8 +147,8 @@ func TestBashTool_BlockedArgsTruePositive(t *testing.T) {
 		InvokableRun(ctx context.Context, arguments string, opts ...tool.Option) (string, error)
 	})
 
-	// 测试应该被阻止的命令（黑名单模式下）
-	// 根据平台选择不同的命令，因为 del 是 Windows 命令
+	// Test commands that should be blocked (in blacklist mode)
+	// Choose different commands depending on the platform, since del is a Windows command
 	var testCases []struct {
 		name    string
 		command string
@@ -183,7 +183,7 @@ func TestBashTool_BlockedArgsTruePositive(t *testing.T) {
 			resultStr, err := toolInstance.InvokableRun(context.Background(), string(paramsBytes))
 			assert.NoError(t, err)
 
-			// 应该包含"denied pattern"错误
+			// It should contain the "denied pattern" error
 			assert.Contains(t, resultStr, "denied pattern", "命令 '%s' 应该被阻止", tc.command)
 			assert.Contains(t, resultStr, tc.blocked, "命令 '%s' 应该被阻止，因为包含 '%s'", tc.command, tc.blocked)
 
@@ -201,9 +201,9 @@ func TestBashTool_AndOperator(t *testing.T) {
 		InvokableRun(ctx context.Context, arguments string, opts ...tool.Option) (string, error)
 	})
 
-	// 测试 && 操作符
-	// 在 Windows PowerShell 中会被替换为 ;
-	// 在 Bash 中原生支持
+	// Test & Operator
+	// In Windows PowerShell, it is replaced with;
+	// Native support from Bash
 	paramsMap := map[string]interface{}{
 		"command": "echo hello && echo world",
 	}
@@ -212,7 +212,7 @@ func TestBashTool_AndOperator(t *testing.T) {
 	resultStr, err := toolInstance.InvokableRun(context.Background(), string(paramsBytes))
 	assert.NoError(t, err)
 
-	// 验证输出包含 hello 和 world
+	// The validation output contains hello and world
 	assert.Contains(t, resultStr, "hello")
 	assert.Contains(t, resultStr, "world")
 
@@ -228,8 +228,8 @@ func TestBashTool_GrepWithRegex(t *testing.T) {
 		InvokableRun(ctx context.Context, arguments string, opts ...tool.Option) (string, error)
 	})
 
-	// 测试包含正则表达式的 grep 命令
-	// 这个命令格式类似用户提供的: grep -n "agentId\|getSessionsByAgent" file1 file2
+	// Test grep commands containing regular expressions
+	// This command format is similar to the user's provided format: grep -n "agentId\|getSessionsByAgent" file1 file2
 	paramsMap := map[string]interface{}{
 		"command": `grep -n "agentId\|getSessionsByAgent" tool.go tool_test.go`,
 	}
@@ -238,8 +238,8 @@ func TestBashTool_GrepWithRegex(t *testing.T) {
 	resultStr, err := toolInstance.InvokableRun(context.Background(), string(paramsBytes))
 	assert.NoError(t, err)
 
-	// 验证命令执行成功（grep 在白名单中）
-	// 新格式检查 Exit Code: 0 表示成功
+	// Verify command execution successfully (grep is on the whitelist)
+	// New format check: Exit Code: 0 indicates success
 	assert.Contains(t, resultStr, "Exit Code: 0")
 	t.Logf("Result: %s", resultStr)
 }
@@ -253,11 +253,11 @@ func TestBashTool_GrepWithRelativePath(t *testing.T) {
 		InvokableRun(ctx context.Context, arguments string, opts ...tool.Option) (string, error)
 	})
 
-	// 使用当前工作目录替代硬编码路径
+	// Use the current working directory instead of the hardcoded path
 	wd, err := os.Getwd()
 	assert.NoError(t, err)
 
-	// 测试包含相对路径的 grep 命令
+	// Test grep commands containing relative paths
 	paramsMap := map[string]interface{}{
 		"command":  `grep -n "extractAllCommands\|InvokableRun" tool.go tool_test.go`,
 		"work_dir": wd,
@@ -267,7 +267,7 @@ func TestBashTool_GrepWithRelativePath(t *testing.T) {
 	resultStr, err := toolInstance.InvokableRun(context.Background(), string(paramsBytes))
 	assert.NoError(t, err)
 
-	// 验证命令执行成功
+	// Verify that the command execution was successful
 	assert.Contains(t, resultStr, "Exit Code: 0")
 	t.Logf("Result: %s", resultStr)
 }
@@ -281,11 +281,11 @@ func TestBashTool_CatWithGitBashPath(t *testing.T) {
 		InvokableRun(ctx context.Context, arguments string, opts ...tool.Option) (string, error)
 	})
 
-	// 使用当前工作目录替代硬编码路径
+	// Use the current working directory instead of the hardcoded path
 	wd, err := os.Getwd()
 	assert.NoError(t, err)
 
-	// 测试 cat 命令读取当前目录下的文件
+	// Test the cat command to read files in the current directory
 	paramsMap := map[string]interface{}{
 		"command":  `cat tool.go`,
 		"work_dir": wd,
@@ -295,7 +295,7 @@ func TestBashTool_CatWithGitBashPath(t *testing.T) {
 	resultStr, err := toolInstance.InvokableRun(context.Background(), string(paramsBytes))
 	assert.NoError(t, err)
 
-	// 验证命令执行成功
+	// Verify that the command execution was successful
 	assert.Contains(t, resultStr, "Exit Code: 0")
 	t.Logf("Result: %s", resultStr)
 }
@@ -320,7 +320,7 @@ func TestExtractAllCommands_Redirection(t *testing.T) {
 		{"redirect from file", "cat < input.txt", []string{"cat"}},
 		{"append redirect", "echo hello >> file.txt", []string{"echo"}},
 		{"bash &> redirect", "cmd &> file", []string{"cmd"}},
-		// 边缘情况测试
+		// Edge case testing
 		{"here string", "cat <<< 'hello'", []string{"cat"}},
 		{"here document", "cat << EOF", []string{"cat"}},
 		{"command substitution", "echo $(date)", []string{"echo"}},
@@ -332,18 +332,18 @@ func TestExtractAllCommands_Redirection(t *testing.T) {
 		{"redirect with space", "cmd 2> /dev/null", []string{"cmd"}},
 		{"noclobber redirect", "echo test >| file", []string{"echo"}},
 		{"here string with pipe", "cat <<< 'hello' | grep h", []string{"cat", "grep"}},
-		// find -exec 测试 (\\; 不应该被当作分隔符)
+		// find -exec test (\\; should not be used as a separator)
 		{"find exec simple", "find . -name '*.go' -exec grep pattern {} \\;", []string{"find"}},
 		{"find exec with redirect", "find . -type f -exec grep -l pattern {} \\; 2>/dev/null | head -10", []string{"find", "head"}},
 		{"find exec complex", "find /path -type f \\( -name '*.vue' -o -name '*.ts' \\) -exec grep -l 'pattern' {} \\; 2>/dev/null", []string{"find"}},
-		// 多行 curl 命令测试（包含换行符的命令，-H 参数不应该被当作命令）
+		// Multi-line curl command test (commands containing newlines; the -H parameter should not be treated as a command)
 		{"multiline curl with -H flags", "curl -X POST https://example.com/api \\\n  -H 'Content-Type: application/json' \\\n  -H 'Authorization: Bearer TOKEN' \\\n  -d '{\"test\": \"value\"}'", []string{"curl"}},
-		// 单行 curl 命令测试
+		// Single-line curl command test
 		{"single line curl", "curl -X POST https://example.com/api -H 'Content-Type: application/json' -H 'Authorization: Bearer TOKEN'", []string{"curl"}},
-		// 以 - 开头的文件路径（带路径分隔符）应该被正确提取
+		// File paths starting with - (with path separators) should be correctly extracted
 		{"path with leading dash", "/path/to/-script.sh arg1", []string{"-script.sh"}},
 		{"relative path with leading dash", "./-script.sh arg1", []string{"-script.sh"}},
-		// 纯选项应该被过滤（返回 nil 而不是空切片）
+		// Pure options should be filtered (return nil instead of empty slices)
 		{"pure option -H", "-H 'Content-Type'", nil},
 		{"pure option --help", "--help", nil},
 	}

@@ -18,22 +18,22 @@ import (
 	"github.com/rulego/rulego/api/types"
 )
 
-// DefaultStreamProbeChunks 流式探测窗口默认大小（chunk 数）。
-// Stream 建立后会预读这么多 chunk 以捕获早期断流（如 "Error in input stream"）：
-// 窗口内断流会重试；越过窗口后中途断流则直接透传，不再重试。
-// 值越大对早期断流的覆盖率越高，但首字延迟也越大。
+// DefaultStreamProbeChunks The default size of the streaming probe window (number of chunks).
+// After the stream is created, it prefetchs as many chunks to catch early interruptions (such as "Error in input stream"):
+// If the flow is cut off within the window, it will be retested; If the flow is cut off after passing the window, it will be transmitted directly without retrying.
+// The larger the value, the greater the coverage of early interruptions, but the greater the initial latency.
 const DefaultStreamProbeChunks = 3
 
-// RetryChatModelWrapper 包装 ChatModel 以提供重试功能
+// RetryChatModelWrapper wraps ChatModel to provide retry functionality
 type RetryChatModelWrapper struct {
 	model.ToolCallingChatModel
 	maxRetries  int
-	probeChunks int  // 流式探测窗口大小，<=0 时取默认值（off 模式用）
-	streamFull  bool // 完整 mid-stream 重试：true 时完整缓冲+重试+重放（牺牲实时）
+	probeChunks int  // Flow detection window size, set to default value when <=0 (used in off mode)
+	streamFull  bool // Full mid-stream retry: Full buffer + retry + replay when true (sacrificing real-time)
 	logger      types.Logger
 }
 
-// NewRetryChatModelWrapper 创建带重试功能的 ChatModel 包装器
+// NewRetryChatModelWrapper creates a ChatModel wrapper with retry functionality
 func NewRetryChatModelWrapper(baseModel model.ToolCallingChatModel, maxRetries int, logger ...types.Logger) *RetryChatModelWrapper {
 	if maxRetries <= 0 {
 		maxRetries = config.DefaultMaxRetries
@@ -50,9 +50,9 @@ func NewRetryChatModelWrapper(baseModel model.ToolCallingChatModel, maxRetries i
 	}
 }
 
-// SetProbeChunks 设置流式探测窗口大小（chunk 数）。
-// n<=0 时恢复默认值；设为 1 时退化为"仅探测首 chunk"的旧行为。
-// 用于在不改动构造参数的情况下调整早期断流的探测力度。
+// SetProbeChunks sets the size of the stream probe window (number of chunks).
+// When n<=0, the default value is restored; When set to 1, it regresses to the old behavior of "only detecting the first chunk."
+// Used to adjust the detection intensity of early current interruption without altering structural parameters.
 func (w *RetryChatModelWrapper) SetProbeChunks(n int) {
 	if n > 0 {
 		w.probeChunks = n
@@ -61,38 +61,38 @@ func (w *RetryChatModelWrapper) SetProbeChunks(n int) {
 	}
 }
 
-// SetStreamFull 切换流式重试模式：true=完整 mid-stream 重试（缓冲重放，牺牲实时），
-// false=仅探测窗口内重试（off，保留实时）。由 CreateChatModel 按 config.StreamRetryMode 设置。
+// SetStreamFull Switches streaming retry mode: true=full mid-stream retry (buffered replay, sacrificing real-time),
+// false = retry only within the detection window (off, keep real-time). From CreateChatModel, click config.StreamRetryMode settings.
 func (w *RetryChatModelWrapper) SetStreamFull(full bool) {
 	w.streamFull = full
 }
 
-// logWarnf 警告日志（出错/断流/重试耗尽，排查关键，总输出）
+// logWarnf warning logs (error/disconnection/retry exhaustion, key troubleshooting, total output)
 func (w *RetryChatModelWrapper) logWarnf(format string, v ...interface{}) {
 	if w.logger != nil {
 		w.logger.Warnf(format, v...)
 	}
 }
 
-// logInfof 重试进行中的日志。用 Debug 级别：重试是异常路径，生产 info 不打扰，排查 debug 可见。
+// logInfof retries ongoing logs. Use Debug level: Retry is an exception path, production info does not disturb, and debug troubleshooting is visible.
 func (w *RetryChatModelWrapper) logInfof(format string, v ...interface{}) {
 	if w.logger != nil {
 		w.logger.Debugf(format, v...)
 	}
 }
 
-// IsRetryableError 判断错误是否可重试（包级，供 retry/failover 的 ShouldRetry/ShouldFailover 共用）。
+// IsRetryableError checks whether the error can be retried (package level, shared by retry/failover ShouldRetry/ShouldFailover).
 func IsRetryableError(err error) bool {
 	if err == nil {
 		return false
 	}
 
-	// 首先检查是否是 AgentError 类型
+	// First, check if it is of the AgentError type
 	if aierrors.IsRetryable(err) {
 		return true
 	}
 
-	// 检查是否是 AgentError 的特定错误码
+	// Check if it is a specific AgentError error code
 	if aierrors.IsCode(err, aierrors.CodeLLMRateLimit) ||
 		aierrors.IsCode(err, aierrors.CodeLLMTimeout) ||
 		aierrors.IsCode(err, aierrors.CodeServiceUnavailable) {
@@ -101,14 +101,14 @@ func IsRetryableError(err error) bool {
 
 	errStr := err.Error()
 
-	// 429 速率限制错误（containsHTTPStatus 避免时间戳/UUID 等数字串里的 429 误判）
+	// 429 rate limiting error (containsHTTPStatus to prevent misjudgments of 429 in strings like timestamps/UUIDs)
 	if containsHTTPStatus(errStr, "429") ||
 		strings.Contains(errStr, "rate limit") ||
 		strings.Contains(errStr, "Too Many Requests") {
 		return true
 	}
 
-	// 5xx 服务器错误（containsHTTPStatus 避免端口/计数等数字里的 500/502/503/504 误判）
+	// 5xx Server Error (containsHTTPStatus to avoid misjudgments of 500/502/503/504 in port/count numbers)
 	if containsHTTPStatus(errStr, "500") ||
 		containsHTTPStatus(errStr, "502") ||
 		containsHTTPStatus(errStr, "503") ||
@@ -116,18 +116,18 @@ func IsRetryableError(err error) bool {
 		return true
 	}
 
-	// 网络错误
+	// Network errors
 	if isNetworkError(err) {
 		return true
 	}
 
-	// 流式响应中断错误（如 "Error in input stream"、unexpected EOF）
+	// Stream response interrupt errors (such as "Error in input stream", unexpected EOF)
 	if strings.Contains(errStr, "input stream") ||
 		strings.Contains(errStr, "unexpected EOF") {
 		return true
 	}
 
-	// 超时错误
+	// Timeout error
 	if strings.Contains(errStr, "timeout") ||
 		strings.Contains(errStr, "deadline exceeded") {
 		return true
@@ -136,25 +136,25 @@ func IsRetryableError(err error) bool {
 	return false
 }
 
-// isRetryableError 保留方法（委托包级 IsRetryableError），向后兼容现有调用与测试。
+// isRetryableError reserved method (delegate package level IsRetryableError), backward compatible with existing calls and tests.
 func (w *RetryChatModelWrapper) isRetryableError(err error) bool {
 	return IsRetryableError(err)
 }
 
-// containsHTTPStatus 检查错误字符串中是否包含指定的 HTTP 状态码。
-// 要求状态码前后不是数字字符，避免 UUID 等字符串中的误判。
+// containsHTTPStatus checks whether the error string contains the specified HTTP status code.
+// The status code must not be a numeric character before or after to avoid misjudgments in UUID and other strings.
 func containsHTTPStatus(errStr string, code string) bool {
 	for {
 		idx := strings.Index(errStr, code)
 		if idx < 0 {
 			return false
 		}
-		// 检查前一个字符不是数字
+		// Check that the previous character is not a number
 		if idx > 0 && errStr[idx-1] >= '0' && errStr[idx-1] <= '9' {
 			errStr = errStr[idx+len(code):]
 			continue
 		}
-		// 检查后一个字符不是数字
+		// After checking, the character is not a number
 		afterIdx := idx + len(code)
 		if afterIdx < len(errStr) && errStr[afterIdx] >= '0' && errStr[afterIdx] <= '9' {
 			errStr = errStr[afterIdx:]
@@ -164,7 +164,7 @@ func containsHTTPStatus(errStr string, code string) bool {
 	}
 }
 
-// isNetworkError 判断是否为网络错误
+// isNetworkError checks whether it is a network error
 func isNetworkError(err error) bool {
 	if err == nil {
 		return false
@@ -186,10 +186,10 @@ func isNetworkError(err error) bool {
 	return false
 }
 
-// calculateDelay 计算重试延迟（指数退避 + 随机抖动）
-// 第1次重试: ~1s, 第2次: ~2s, 第3次: ~4s, 第4次: ~8s ...
+// calculateDelay calculates retry delay (exponential retreat + random jitter)
+// First retry: ~1s, Second time: ~2s, Third time: ~4s, Fourth time: ~8s...
 func (w *RetryChatModelWrapper) calculateDelay(attempt int) time.Duration {
-	// 初始延迟 1s，退避因子 2
+	// Initial delay 1s, retreat factor 2
 	const initialDelay = 1000 // ms
 	const backoffFactor = 2
 	const maxDelay = 30000 // ms
@@ -198,11 +198,11 @@ func (w *RetryChatModelWrapper) calculateDelay(attempt int) time.Duration {
 	for i := 1; i < attempt; i++ {
 		delay *= float64(backoffFactor)
 	}
-	// 添加随机抖动（0.5x - 1.5x）
+	// Added random jitter (0.5x - 1.5x)
 	jitter := 0.5 + rand.Float64()
 	delay = delay * jitter
 
-	// 不超过最大延迟 30s
+	// Maximum delay not exceeding 30 seconds
 	if delay > float64(maxDelay) {
 		delay = float64(maxDelay)
 	}
@@ -210,10 +210,10 @@ func (w *RetryChatModelWrapper) calculateDelay(attempt int) time.Duration {
 	return time.Duration(delay) * time.Millisecond
 }
 
-// Generate 带重试的生成方法
+// Generate is a method for generating with retrys
 func (w *RetryChatModelWrapper) Generate(ctx context.Context, input []*schema.Message, opts ...model.Option) (*schema.Message, error) {
 	var lastErr error
-	maxAttempts := w.maxRetries + 1 // +1 是因为第一次不算重试
+	maxAttempts := w.maxRetries + 1 // +1 is because the first attempt doesn't count as a retry
 
 	for attempt := 1; attempt <= maxAttempts; attempt++ {
 		result, err := w.ToolCallingChatModel.Generate(ctx, input, opts...)
@@ -223,12 +223,12 @@ func (w *RetryChatModelWrapper) Generate(ctx context.Context, input []*schema.Me
 
 		lastErr = err
 
-		// 如果不是可重试错误，直接返回
+		// If it is not a retry error, it returns directly
 		if !w.isRetryableError(err) {
 			return nil, err
 		}
 
-		// 如果还有重试机会，等待后重试
+		// If there is still a chance to retry, wait and then try again
 		if attempt < maxAttempts {
 			delay := w.calculateDelay(attempt)
 			w.logInfof("[RetryChatModel] Generate attempt %d failed: %v, retrying in %v...", attempt, err, delay)
@@ -245,10 +245,10 @@ func (w *RetryChatModelWrapper) Generate(ctx context.Context, input []*schema.Me
 	return nil, fmt.Errorf("Generate failed after %d attempts: %w", maxAttempts, lastErr)
 }
 
-// probeStream 预读流的前 n 个 chunk，用于捕获建立后的早期断流。
-// 返回 nil：已成功接收 n 个 chunk（流健康），应透传。
-// 返回 io.EOF：短流在 n 个 chunk 内正常结束，应透传。
-// 返回其它错误：窗口内断流，由调用方按可重试性决定是否重试。
+// probeStream: The first n chunks of the prefetch stream, used to capture early disconnection after setup.
+// Return nil: n chunks (stream health) successfully received, should be passed.
+// Return io.EOF: Short current ends normally within n chunks and should be transparent.
+// Returns other errors: Interruption in window, and the caller decides whether to retry based on retryability.
 func probeStream(sr *schema.StreamReader[*schema.Message], n int) error {
 	if n < 1 {
 		n = 1
@@ -261,11 +261,11 @@ func probeStream(sr *schema.StreamReader[*schema.Message], n int) error {
 	return nil
 }
 
-// Stream 带重试的流式生成。在建立阶段及"探测窗口"（前 probeChunks 个 chunk）内重试；
-// 一旦流越过探测窗口开始向调用方输出，中途断流不再重试（避免重复内容），直接透传。
-// Copy(2) 共享缓存：probe 预读窗口内 chunk 探测，passCopy 从首节点完整重放整条流（广播缓冲，不丢数据）。
+// Stream generates streams with retrys. Retry during the establishment phase and within the "detection window" (the first probeChunks chunks);
+// Once the stream passes the detection window and begins output to the caller, interruptions in the stream do not retry (to avoid repetition), and the transmission is transmitted directly.
+// Copy(2) Shared cache: probe chunk detection inside the prefetch window, passCopy fully replays the entire stream from the first node (broadcast buffer, no data loss).
 func (w *RetryChatModelWrapper) Stream(ctx context.Context, input []*schema.Message, opts ...model.Option) (*schema.StreamReader[*schema.Message], error) {
-	// full 模式：完整缓冲整条流→出错重试→成功重放（牺牲实时，换 mid-stream 完整可重试性）
+	// Full mode: fully buffers the entire stream→ retries → successful retries (sacrificing real-time, replacing mid-stream with full retryability).
 	if w.streamFull {
 		return w.streamFullRetry(ctx, input, opts...)
 	}
@@ -276,7 +276,7 @@ func (w *RetryChatModelWrapper) Stream(ctx context.Context, input []*schema.Mess
 		stream, err := w.ToolCallingChatModel.Stream(ctx, input, opts...)
 		if err != nil {
 			w.logWarnf("[RetryChatModel] Stream attempt %d open error: %v", attempt, err)
-			// 建立流失败：不可重试直接透传，可重试则记录后等待重试
+			// Stream establishment failure: No retry allowed direct transmission; retry records and waits for retry
 			if !w.isRetryableError(err) {
 				return nil, err
 			}
@@ -291,9 +291,9 @@ func (w *RetryChatModelWrapper) Stream(ctx context.Context, input []*schema.Mess
 			continue
 		}
 
-		// 探测前 probeChunks 个 chunk：在向前端输出前捕获早期断流（如 "Error in input stream"）。
-		// 窗口内断流则重试；越过窗口后断流直接透传，避免重复内容。
-		// probe 预读的内容由 passCopy 完整重放（StreamReader.Copy 为广播缓冲，不丢数据）。
+		// Before probe probeChunks: Captures early interruptions before output to the frontend (e.g., "Error in input stream").
+		// If there is no flow inside the window, try again; After passing through the window, the flow is cut off and transmitted directly, avoiding duplicate content.
+		// The content preread by probe is fully replayed by passCopy (StreamReader.Copy serves as a broadcast buffer without data loss).
 		copies := stream.Copy(2)
 		probeCopy, passCopy := copies[0], copies[1]
 		probeErr := probeStream(probeCopy, w.probeChunks)
@@ -302,12 +302,12 @@ func (w *RetryChatModelWrapper) Stream(ctx context.Context, input []*schema.Mess
 			w.logWarnf("[RetryChatModel] Stream attempt %d probe error (probeChunks=%d): %v", attempt, w.probeChunks, probeErr)
 		}
 
-		// 探测窗口内未发现错误（已收到足够 chunk，或短流正常 EOF），交给调用方
+		// No errors are found in the probe window (sufficient chunk received, or short-current normal EOF), and the call is handed over
 		if probeErr == nil || errors.Is(probeErr, io.EOF) {
 			return passCopy, nil
 		}
 
-		// 窗口内断流，丢弃 passCopy 重试
+		// Disconnect from the window, discard passCopy, and try again
 		passCopy.Close()
 		if !w.isRetryableError(probeErr) {
 			return nil, probeErr
@@ -328,8 +328,8 @@ func (w *RetryChatModelWrapper) Stream(ctx context.Context, input []*schema.Mess
 	return nil, fmt.Errorf("Stream failed after %d attempts: %w", maxAttempts, lastErr)
 }
 
-// streamFullRetry 完整 mid-stream 重试模式：完整缓冲每条流，出错则重试，成功后重放。
-// 牺牲实时性（首字延迟≈完整生成时间）换取 mid-stream 断流的完整可重试性。
+// streamFullRetry Full mid-stream Retry Mode: Buffers each stream completely, retries if an error occurs, and replays after success.
+// Sacrificing real-time performance (initial delay ≈ full generation time) in exchange for full retryability of mid-stream interruptions.
 func (w *RetryChatModelWrapper) streamFullRetry(ctx context.Context, input []*schema.Message, opts ...model.Option) (*schema.StreamReader[*schema.Message], error) {
 	maxAttempts := w.maxRetries + 1
 	var lastErr error
@@ -351,7 +351,7 @@ func (w *RetryChatModelWrapper) streamFullRetry(ctx context.Context, input []*sc
 			}
 			continue
 		}
-		// 完整缓冲整条流，探测是否中途断流
+		// Complete buffering of the entire flow to detect any interruptions midway
 		chunks, streamErr := drainAndBufferStream(stream)
 		if streamErr == nil {
 			return streamReaderFromMessages(chunks), nil
@@ -377,7 +377,7 @@ func (w *RetryChatModelWrapper) streamFullRetry(ctx context.Context, input []*sc
 	return nil, fmt.Errorf("Stream failed after %d attempts: %w", maxAttempts, lastErr)
 }
 
-// drainAndBufferStream 消费整条流到 io.EOF（返回全部 chunk，nil）或错误（返回已收 chunk，err）。
+// drainAndBufferStream consumes the entire stream to io.EOF (returns all chunk, nil) or error (returns received chunk, err).
 func drainAndBufferStream(stream *schema.StreamReader[*schema.Message]) ([]*schema.Message, error) {
 	defer stream.Close()
 	var chunks []*schema.Message
@@ -395,7 +395,7 @@ func drainAndBufferStream(stream *schema.StreamReader[*schema.Message]) ([]*sche
 	}
 }
 
-// streamReaderFromMessages 从已缓冲的 chunk 构造可重放的 StreamReader。
+// streamReaderFromMessages constructs a replayable StreamReader from a buffered chunk.
 func streamReaderFromMessages(chunks []*schema.Message) *schema.StreamReader[*schema.Message] {
 	r, w := schema.Pipe[*schema.Message](0)
 	go func() {
@@ -407,7 +407,7 @@ func streamReaderFromMessages(chunks []*schema.Message) *schema.StreamReader[*sc
 	return r
 }
 
-// sleep 等待指定时长，期间响应 ctx 取消。返回 false 表示 ctx 已取消。
+// Sleep waits for the specified duration, during which CTX cancels the response. Returning false means the CTX has been canceled.
 func (w *RetryChatModelWrapper) sleep(ctx context.Context, d time.Duration) bool {
 	if d <= 0 {
 		select {
@@ -425,14 +425,14 @@ func (w *RetryChatModelWrapper) sleep(ctx context.Context, d time.Duration) bool
 	}
 }
 
-// WithTools 设置工具
+// WithTools setup tool
 func (w *RetryChatModelWrapper) WithTools(tools []*schema.ToolInfo) (model.ToolCallingChatModel, error) {
 	newModel, err := w.ToolCallingChatModel.WithTools(tools)
 	if err != nil {
 		return nil, err
 	}
-	// 返回包装后的模型，保持重试能力。必须复制 streamFull/probeChunks：
-	// eino react 绑工具必经此路径，若丢失则 full 模式会静默退化为 off（窗口外断流不再重试）。
+	// Return the packaged model to maintain retry capability. You must copy streamFull/probeChunks:
+	// The Eino React binding tool must go through this path; if lost, full mode will silently degrade to OFF (streaming outside the window will not be retried if the stream is cut off).
 	rw := NewRetryChatModelWrapper(newModel, w.maxRetries, w.logger)
 	rw.streamFull = w.streamFull
 	rw.probeChunks = w.probeChunks

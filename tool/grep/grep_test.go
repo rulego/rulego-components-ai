@@ -17,11 +17,11 @@ import (
 	"github.com/rulego/rulego-components-ai/tool/common"
 )
 
-// forceFallback 强制 hasRipgrep 返回 false，保证测试走 Go 兜底路径，Windows/无 rg 环境可移植。
-// 测试结束后恢复。
+// forceFallback forces hasRipgrep to return false, ensuring the test follows the Go-safe path, and is portable to Windows/RG environments.
+// Resume after the test ends.
 func forceFallback(t *testing.T) {
 	t.Helper()
-	// 清空 PATH 让 exec.LookPath("rg") 失败（不影响已编译进去的 Go 标准库调用）
+	// Empty the PATH to let exec.LookPath("rg") failure (does not affect calls to the compiled Go standard library)
 	t.Setenv("PATH", "")
 	common.ResetRipgrepCache()
 	t.Cleanup(func() {
@@ -29,7 +29,7 @@ func forceFallback(t *testing.T) {
 	})
 }
 
-// makeTempFixture 在临时目录构造测试文件树。
+// makeTempFixture constructs a test file tree in a temporary directory.
 //
 //	root/
 //	  a.go      ("hello world\nfoo bar")
@@ -50,12 +50,12 @@ func makeTempFixture(t *testing.T) string {
 	mustWrite("c.txt", "hello\n")
 	mustWrite("sub/d.go", "deep foo\nnested line\n")
 
-	// 通过细微的 mtime 间隔，保证 mtime 排序可观察（部分平台文件系统精度低）
+	// With fine mtime intervals, mtime sorting is kept observable (some platforms have low file system precision).
 	touchWithOffset := func(name string, offset time.Duration) {
 		full := filepath.Join(root, name)
 		require.NoError(t, os.Chtimes(full, time.Now(), time.Now().Add(offset)))
 	}
-	// d.go 最新，b.go 次之，a.go 较旧，c.txt 最旧
+	// d.go is the newest, b.go is next, a.go is older, and c.txt is the oldest
 	touchWithOffset("a.go", -3*time.Second)
 	touchWithOffset("b.go", -2*time.Second)
 	touchWithOffset("c.txt", -4*time.Second)
@@ -76,8 +76,8 @@ func runGrep(t *testing.T, root string, params map[string]interface{}) string {
 	return out
 }
 
-// TestGrep_CrossDirectory 验证 ctx 注入 allowCrossDir：
-// true 放行 workDir 外目录，false 拒绝。forceFallback 走 Go 兜底，不依赖 ripgrep。
+// TestGrep_CrossDirectory Verifying ctx injection allowCrossDir:
+// true allows the workDir external directory; false rejects. forceFallback uses Go as a backup and doesn't rely on ripgrep.
 func TestGrep_CrossDirectory(t *testing.T) {
 	forceFallback(t)
 	workDir := t.TempDir()
@@ -91,12 +91,12 @@ func TestGrep_CrossDirectory(t *testing.T) {
 	})
 	args, _ := json.Marshal(map[string]string{"pattern": "needle", "path": outside})
 
-	// cross=true：放行 workDir 外目录，命中 needle
+	// cross=true: Allows the workDir external directory to hit the needle
 	out, err := ti.InvokableRun(common.WithAllowCrossDir(context.Background(), true), string(args))
 	assert.NoError(t, err)
 	assert.Contains(t, out, "needle")
 
-	// cross=false：拒绝 workDir 外目录
+	// cross=false: Rejects the workDir external directory
 	_, err = ti.InvokableRun(common.WithAllowCrossDir(context.Background(), false), string(args))
 	assert.Error(t, err)
 }
@@ -108,12 +108,12 @@ func TestGrep_BasicMatch_Fallback(t *testing.T) {
 	out := runGrep(t, root, map[string]interface{}{
 		"pattern": "foo",
 	})
-	// a.go、b.go、sub/d.go 都含 foo
+	// a.go, b.go, sub/d.go all contain foo
 	assert.Contains(t, out, "a.go:")
 	assert.Contains(t, out, "b.go:")
 	assert.Contains(t, out, "sub/d.go:")
 	assert.Contains(t, out, "Found")
-	// 应包含匹配行号前缀
+	// It should include a prefix that matches the line number
 	assert.Contains(t, out, "Line ")
 }
 
@@ -125,7 +125,7 @@ func TestGrep_IncludeGlob_Fallback(t *testing.T) {
 		"pattern": "hello",
 		"include": "*.go",
 	})
-	assert.Contains(t, out, "a.go")  // a.go 是 .go
+	assert.Contains(t, out, "a.go") // a.go is.go
 	assert.NotContains(t, out, "c.txt")
 }
 
@@ -162,7 +162,7 @@ func TestGrep_OutputMode_FilesWithMatches_Fallback(t *testing.T) {
 		"pattern":     "foo",
 		"output_mode": "files_with_matches",
 	})
-	// 不应包含行内容，仅文件路径
+	// It should not contain line content, only file paths
 	assert.Contains(t, out, "a.go")
 	assert.Contains(t, out, "b.go")
 	assert.NotContains(t, out, "Line ")
@@ -176,7 +176,7 @@ func TestGrep_OutputMode_Count_Fallback(t *testing.T) {
 		"pattern":     "foo",
 		"output_mode": "count",
 	})
-	// a.go 含 1 个 foo，b.go 含 1 个 foo，sub/d.go 含 1 个 foo
+	// a.go contains 1 foo, b.go contains 1 foo, sub/d.go contains 1 foo
 	assert.Contains(t, out, "a.go: 1")
 	assert.Contains(t, out, "b.go: 1")
 	assert.Contains(t, out, "sub/d.go: 1")
@@ -190,8 +190,8 @@ func TestGrep_ContextLines_A_Fallback(t *testing.T) {
 		"pattern": "foo bar",
 		"-A":      1,
 	})
-	// a.go: 行1 "hello world"，行2 "foo bar"（匹配），-A=1 应带出后续行（这里已是末行）
-	// 主要验证包含匹配标记 "> " 与上下文分隔
+	// a.go: Line 1 "hello world", line 2 "foo bar" (match), -A=1 should lead the following line (this is the last line)
+	// The main validation includes matching tags "> " separated from context
 	assert.Contains(t, out, "> Line 2: foo bar")
 }
 
@@ -211,7 +211,7 @@ func TestGrep_ContextLines_C_Fallback(t *testing.T) {
 	forceFallback(t)
 	root := makeTempFixture(t)
 
-	// sub/d.go: 行1 "deep foo", 行2 "nested line" — 匹配行1，-C=1 应同时带出行2
+	// sub/d.go: Line 1 "deep foo", line 2 "nested line" — matches line 1, -C=1 should include line 2 at the same time
 	out := runGrep(t, root, map[string]interface{}{
 		"pattern": "deep foo",
 		"-C":      1,
@@ -228,7 +228,7 @@ func TestGrep_HeadLimit_Fallback(t *testing.T) {
 		"pattern":    "foo",
 		"head_limit": 2,
 	})
-	// foo 出现在 a.go(1)、b.go(1)、sub/d.go(1)，共 3 个匹配，head_limit=2 应截断
+	// FOO appears in three matches: a.go(1), b.go(1), sub/d.go(1), head_limit=2, truncated
 	assert.Contains(t, out, "head_limit=2")
 }
 
@@ -241,12 +241,12 @@ func TestGrep_HardMaxLimit_Fallback(t *testing.T) {
 
 	root := makeTempFixture(t)
 	gt.config.WorkDir = root
-	// 构造超过硬上限的 head_limit，应被截断到硬上限
+	// head_limit constructed exceeding the hard upper limit should be cut off to the hard upper limit
 	out := runGrep(t, root, map[string]interface{}{
 		"pattern":    "foo",
 		"head_limit": 99999,
 	})
-	// 不必断言具体值，只要不 panic 且包含结果即可（foo 命中数远小于 500）
+	// No need to assert specific values; just don't panic and include the result (foo hits are much less than 500).
 	assert.Contains(t, out, "Found")
 }
 
@@ -254,13 +254,13 @@ func TestGrep_MtimeSort_Fallback(t *testing.T) {
 	forceFallback(t)
 	root := makeTempFixture(t)
 
-	// files_with_matches 便于提取文件顺序
+	// files_with_matches Facilitates file extraction order
 	out := runGrep(t, root, map[string]interface{}{
-		"pattern":     "foo", // a.go, b.go, sub/d.go
-		"output_mode": "files_with_matches",
+		"pattern":       "foo", // a.go, b.go, sub/d.go
+		"output_mode":   "files_with_matches",
 		"sort_by_mtime": true,
 	})
-	// mtime 最新 -> 最旧：sub/d.go(-1s), b.go(-2s), a.go(-3s)
+	// mtime latest -> oldest: sub/d.go(-1s), b.go(-2s), a.go(-3s)
 	idxD := strings.Index(out, "sub/d.go")
 	idxB := strings.Index(out, "b.go")
 	idxA := strings.Index(out, "a.go")
@@ -303,14 +303,14 @@ func TestGrep_SingleFile_Fallback(t *testing.T) {
 	forceFallback(t)
 	root := makeTempFixture(t)
 
-	// 指定单文件路径
+	// Specify the path to a single file
 	single := filepath.Join(root, "a.go")
 	out := runGrep(t, root, map[string]interface{}{
 		"pattern": "hello",
 		"path":    single,
 	})
 	assert.Contains(t, out, "hello world")
-	// 不应搜到其他文件
+	// No other documents should be found
 	assert.NotContains(t, out, "b.go")
 }
 
@@ -327,7 +327,7 @@ func TestGrep_PathEscape_Rejected(t *testing.T) {
 		"path":    "../../../etc",
 	})
 	out, runErr := ti.InvokableRun(context.Background(), string(args))
-	// 路径越界以 Go error 返回（与 read 工具一致）
+	// Path outbounds return with Go error (same as read tool)
 	require.Error(t, runErr)
 	upperErr := strings.ToUpper(runErr.Error())
 	assert.True(t,
@@ -335,19 +335,19 @@ func TestGrep_PathEscape_Rejected(t *testing.T) {
 		"expected path escape error, got: %v (out=%s)", runErr, out)
 }
 
-// 编译期断言：兜底路径在无 rg 环境被实际执行（Windows 友好）。
+// Compile Time Assertion: The Catch-All Path is actually executed in RG-free environments (Windows-friendly).
 func TestGrep_FallbackIsReachable(t *testing.T) {
 	forceFallback(t)
 	require.False(t, common.HasRipgrep(), "HasRipgrep should be false after forceFallback")
-	// 重置后下次探测应回到真实状态（CI 无 rg 时为 false，本地有 rg 时为 true）
+	// After resetting, the next probe should return to the true state (false when CI has no RG, true when local RG is present).
 	common.ResetRipgrepCache()
 	_ = common.HasRipgrep()
-	// 标记 Windows 下我们已知 rg 探测对 PATH 敏感
+	// Tag Under Windows, we know that RG detection is sensitive to PATH
 	_ = runtime.GOOS
 }
 
-// TestGrep_RipgrepPath 覆盖 ripgrep 优先路径（仅当真实环境装了 rg 时执行，
-// 否则 t.Skip，保证 CI 无 rg 环境不挂）。
+// TestGrep_RipgrepPath Override ripgrep priority paths (only executed when RG is installed in the real environment,
+// Otherwise, t.Skip ensures the CI does not hang in an RG environment).
 func TestGrep_RipgrepPath(t *testing.T) {
 	common.ResetRipgrepCache()
 	if !common.HasRipgrep() {
@@ -357,19 +357,19 @@ func TestGrep_RipgrepPath(t *testing.T) {
 	out := runGrep(t, root, map[string]interface{}{
 		"pattern": "foo",
 	})
-	// ripgrep 路径同样应命中三个文件
+	// The ripgrep path should also hit three files
 	assert.Contains(t, out, "a.go")
 	assert.Contains(t, out, "b.go")
 	assert.Contains(t, out, "sub/d.go")
 }
 
-// ---- 正则语法边界（Go 兜底，regexp/RE2）----
+// ---- Regular syntax boundaries (Go as a safeguard, regexp/RE2)----
 
 func TestGrep_RegexAnchors_Fallback(t *testing.T) {
 	forceFallback(t)
 	root := t.TempDir()
 	require.NoError(t, os.WriteFile(filepath.Join(root, "a.txt"), []byte("hello world\nworld hello\n"), 0644))
-	// ^world 只匹配行首的 world（第 2 行），第 1 行的 world 在行尾不匹配
+	// ^world only matches the world at the beginning of the line (line 2); the world at the end of the line 1 does not match
 	out := runGrep(t, root, map[string]interface{}{"pattern": "^world"})
 	assert.Contains(t, out, "world hello")
 	assert.NotContains(t, out, "hello world")
@@ -378,7 +378,7 @@ func TestGrep_RegexAnchors_Fallback(t *testing.T) {
 func TestGrep_RegexAlternation_Fallback(t *testing.T) {
 	forceFallback(t)
 	root := makeTempFixture(t)
-	// hello|second：a.go 含 hello，b.go 含 second，sub/d.go 都不含
+	// Hello|second: a.go contains hello, b.go includes second, sub/d.go does not include it
 	out := runGrep(t, root, map[string]interface{}{"pattern": "hello|second"})
 	assert.Contains(t, out, "a.go")
 	assert.Contains(t, out, "b.go")
@@ -389,11 +389,11 @@ func TestGrep_CaseSensitive_Fallback(t *testing.T) {
 	forceFallback(t)
 	root := t.TempDir()
 	require.NoError(t, os.WriteFile(filepath.Join(root, "a.txt"), []byte("Foo\nfoo\n"), 0644))
-	// 默认大小写敏感：Foo 只匹配第 1 行
+	// Default case-sensitive: Foo only matches line 1
 	out := runGrep(t, root, map[string]interface{}{"pattern": "Foo"})
 	assert.Contains(t, out, "> Line 1: Foo")
 	assert.NotContains(t, out, "> Line 2")
-	// (?i) 不敏感：两行都匹配
+	// (?i) Insensitive: Both lines match
 	out2 := runGrep(t, root, map[string]interface{}{"pattern": "(?i)foo"})
 	assert.Contains(t, out2, "> Line 1: Foo")
 	assert.Contains(t, out2, "> Line 2: foo")
@@ -403,7 +403,7 @@ func TestGrep_RegexCharClass_Fallback(t *testing.T) {
 	forceFallback(t)
 	root := t.TempDir()
 	require.NoError(t, os.WriteFile(filepath.Join(root, "a.txt"), []byte("cat\ncot\ncut\ndog\n"), 0644))
-	// c[aou]t 匹配 cat/cot/cut，不匹配 dog
+	// c[aou]t matches cat/cot/cut, not dog
 	out := runGrep(t, root, map[string]interface{}{"pattern": "c[aou]t"})
 	assert.Contains(t, out, "cat")
 	assert.Contains(t, out, "cot")
@@ -411,7 +411,7 @@ func TestGrep_RegexCharClass_Fallback(t *testing.T) {
 	assert.NotContains(t, out, "dog")
 }
 
-// ---- gitignore + 二进制（对齐 rg）----
+// ---- Gitignore + binary (aligned rg)----
 
 func TestGrep_Gitignore_Fallback(t *testing.T) {
 	forceFallback(t)
@@ -422,22 +422,22 @@ func TestGrep_Gitignore_Fallback(t *testing.T) {
 
 	out := runGrep(t, root, map[string]interface{}{"pattern": "needle"})
 	assert.Contains(t, out, "keep.go")
-	assert.NotContains(t, out, "ignored.log") // 被 .gitignore 跳过
+	assert.NotContains(t, out, "ignored.log") // Skipped by.gitignore
 }
 
 func TestGrep_BinaryFile_Fallback(t *testing.T) {
 	forceFallback(t)
 	root := t.TempDir()
-	// text.go 正常；bin.bin 含 NUL（二进制），都含 "nee"
+	// text.go is normal; bin.bin Contains NUL (binary), both containing "nee"
 	require.NoError(t, os.WriteFile(filepath.Join(root, "text.go"), []byte("needle\n"), 0644))
 	require.NoError(t, os.WriteFile(filepath.Join(root, "bin.bin"), []byte("nee\x00dle\n"), 0644))
 
 	out := runGrep(t, root, map[string]interface{}{"pattern": "nee"})
 	assert.Contains(t, out, "text.go")
-	assert.NotContains(t, out, "bin.bin") // 二进制跳过
+	assert.NotContains(t, out, "bin.bin") // Binary skipped
 }
 
-// ---- 其他边界：Unicode/空文件/count 多匹配 ----
+// ---- Other boundaries: Unicode/empty file/count Multiple matches ----
 
 func TestGrep_Unicode_Fallback(t *testing.T) {
 	forceFallback(t)
@@ -454,7 +454,7 @@ func TestGrep_EmptyFile_Fallback(t *testing.T) {
 	require.NoError(t, os.WriteFile(filepath.Join(root, "has.go"), []byte("needle\n"), 0644))
 	out := runGrep(t, root, map[string]interface{}{"pattern": "needle"})
 	assert.Contains(t, out, "has.go")
-	assert.NotContains(t, out, "empty.go") // 空文件不匹配
+	assert.NotContains(t, out, "empty.go") // Empty file mismatch
 }
 
 func TestGrep_CountMultiple_Fallback(t *testing.T) {
@@ -462,5 +462,5 @@ func TestGrep_CountMultiple_Fallback(t *testing.T) {
 	root := t.TempDir()
 	require.NoError(t, os.WriteFile(filepath.Join(root, "a.go"), []byte("foo\nfoo\nbar\nfoo\n"), 0644))
 	out := runGrep(t, root, map[string]interface{}{"pattern": "foo", "output_mode": "count"})
-	assert.Contains(t, out, "a.go: 3") // 一文件多 hit，count=3
+	assert.Contains(t, out, "a.go: 3") // One file has multiple hits, count=3
 }

@@ -12,8 +12,8 @@ import (
 	"github.com/stretchr/testify/assert"
 )
 
-// TestExecuteStream_MidStreamError 复现：model stream 中途返回 "Error in input stream"，
-// ExecuteStream 应把错误透传给上层（output.Error + return err），不再静默吞掉当成成功。
+// TestExecuteStream_MidStreamError Reproduction: Model stream returns "Error in input stream" midway,
+// ExecuteStream should pass errors to the upper layer (output.Error + return err), no longer silently swallowing as a success.
 func TestExecuteStream_MidStreamError(t *testing.T) {
 	executor := NewAgentAspectExecutor(NewTestLogger(t))
 	executor.manager = aspect.NewAspectManager()
@@ -26,7 +26,7 @@ func TestExecuteStream_MidStreamError(t *testing.T) {
 	agentInput := &aspect.AgentInput{}
 	messages := []*schema.Message{{Role: schema.User, Content: "Hello"}}
 
-	// 模拟 model stream：2 个正常 chunk 后，第 3 个 Recv 返回 "Error in input stream"
+	// Simulating model stream: After 2 normal chunks, the third Recv returns "Error in input stream"
 	streamExecutor := func(ctx context.Context, msgs []*schema.Message) (*schema.StreamReader[*schema.Message], error) {
 		reader, writer := schema.Pipe[*schema.Message](1)
 		go func() {
@@ -45,19 +45,19 @@ func TestExecuteStream_MidStreamError(t *testing.T) {
 
 	output, err := executor.ExecuteStream(context.Background(), opts, agentInput, messages, streamExecutor, onChunk)
 
-	// 改后：错误不再被吞，ExecuteStream 返回 error
+	// After modification: Errors are no longer swallowed, ExecuteStream returns error
 	assert.Error(t, err, "mid-stream 错误应透传，不应被吞")
 	assert.Contains(t, err.Error(), "Error in input stream")
-	// output 仍带已收的部分内容 + Error 字段
+	// output still contains the received content + Error field
 	if assert.NotNil(t, output) {
 		assert.Contains(t, output.Content, "chunk1")
 		assert.Error(t, output.Error, "output.Error 应记录截断错误")
 	}
-	// 已发出的 chunk 不受影响
+	// Issued chunks are unaffected
 	assert.Equal(t, []string{"chunk1 ", "chunk2"}, chunks)
 }
 
-// TestExecuteStream_NormalEOF 正常 io.EOF 不应返回 error（回归保护：别把正常结束也当错误）
+// TestExecuteStream_NormalEOF Normal io.EOF should not return error (Regression protection: don't treat normal termination as an error)
 func TestExecuteStream_NormalEOF(t *testing.T) {
 	executor := NewAgentAspectExecutor(NewTestLogger(t))
 	executor.manager = aspect.NewAspectManager()

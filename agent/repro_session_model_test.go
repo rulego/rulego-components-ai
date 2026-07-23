@@ -1,8 +1,8 @@
 package agent
 
-// 复现/验证会话级模型切换：baseModel=glm-5，context 注入 session_model=glm-5.2，
-// 用 httptest mock provider 捕获真实 HTTP 请求，确认 provider 收到的 model 字段。
-// 不依赖网络/真实 key，决定性定位"切到 glm-5.2 但请求仍是 glm-5"的根因。
+// Reproduce/verify session-level model switching: baseModel=glm-5, context injection session_model=glm-5.2,
+// Use Httptest Mock Provider to capture the real HTTP request and confirm the model field received by the provider.
+// Without relying on the network/real key, it decisively locates the root cause of "switching to glm-5.2 but the request is still GLM-5."
 
 import (
 	"context"
@@ -38,7 +38,7 @@ func writeMockSSE(w http.ResponseWriter, model string) {
 	}
 }
 
-// newMockProviderServer 启动一个 openai 兼容的 mock provider，记录每次请求的 model 字段。
+// newMockProviderServer starts an OpenAI-compatible mock provider, recording the model field for each request.
 func newMockProviderServer(t *testing.T) (*httptest.Server, *[]string, *sync.Mutex) {
 	var mu sync.Mutex
 	var gotModels []string
@@ -57,8 +57,8 @@ func newMockProviderServer(t *testing.T) (*httptest.Server, *[]string, *sync.Mut
 	return srv, &gotModels, &mu
 }
 
-// TestRepro_SessionModelSwitch_NoTools 验证不绑工具时：注入 session_model=glm-5.2，
-// provider 收到的 model 应为 glm-5.2。
+// TestRepro_SessionModelSwitch_NoTools When verifying without binding tools: inject session_model = glm-5.2,
+// The provider should receive the model glm-5.2.
 func TestRepro_SessionModelSwitch_NoTools(t *testing.T) {
 	srv, gotModels, mu := newMockProviderServer(t)
 	llm := config.LLMConfig{Model: "glm-5", Url: srv.URL, Key: "test"}
@@ -78,20 +78,20 @@ func TestRepro_SessionModelSwitch_NoTools(t *testing.T) {
 
 	mu.Lock()
 	defer mu.Unlock()
-	t.Logf("provider 收到 model 序列: %v", *gotModels)
+	t.Logf("provider Receive model sequence: %v", *gotModels)
 	if len(*gotModels) == 0 {
-		t.Fatalf("mock 未收到任何请求")
+		t.Fatalf("mock No requests have been received")
 	}
 	for i, m := range *gotModels {
 		if m != "glm-5.2" {
-			t.Fatalf("❌ 第 %d 次请求 model=%q，期望 glm-5.2", i+1, m)
+			t.Fatalf("❌ The %d th request model=%q, expecting glm-5.2", i+1, m)
 		}
 	}
-	t.Logf("✅ 不绑工具：provider 收到 model=%s", strings.Join(*gotModels, ","))
+	t.Logf("✅ No tool binding: provider Received model=%s", strings.Join(*gotModels, ","))
 }
 
-// TestRepro_SessionModelSwitch_WithTools 验证绑工具时（模拟 eino react 调用路径）：
-// 注入 session_model=glm-5.2，provider 收到的 model 仍应为 glm-5.2。
+// TestRepro_SessionModelSwitch_WithTools When verifying binding tools (simulating eino react call paths):
+// Inject session_model = glm-5.2, and the provider should still receive a model of glm-5.2.
 func TestRepro_SessionModelSwitch_WithTools(t *testing.T) {
 	srv, gotModels, mu := newMockProviderServer(t)
 	llm := config.LLMConfig{Model: "glm-5", Url: srv.URL, Key: "test"}
@@ -102,7 +102,7 @@ func TestRepro_SessionModelSwitch_WithTools(t *testing.T) {
 	}
 	wrapper := NewAgentAwareModelWrapper(base, llm, opts)
 
-	// 模拟 eino react agent 绑定工具（WithTools 返回派生 wrapper）
+	// Simulating eino react agent binding tool (WithTools returns a derived wrapper)
 	toolInfo := &schema.ToolInfo{
 		Name: "search",
 		Desc: "search the web",
@@ -124,19 +124,19 @@ func TestRepro_SessionModelSwitch_WithTools(t *testing.T) {
 
 	mu.Lock()
 	defer mu.Unlock()
-	t.Logf("provider 收到 model 序列: %v", *gotModels)
+	t.Logf("provider Receive model sequence: %v", *gotModels)
 	if len(*gotModels) == 0 {
-		t.Fatalf("mock 未收到任何请求")
+		t.Fatalf("mock No requests have been received")
 	}
 	for i, m := range *gotModels {
 		if m != "glm-5.2" {
-			t.Fatalf("❌ 第 %d 次请求 model=%q，期望 glm-5.2", i+1, m)
+			t.Fatalf("❌ The %d th request model=%q, expecting glm-5.2", i+1, m)
 		}
 	}
-	t.Logf("✅ 绑工具：provider 收到 model=%s", strings.Join(*gotModels, ","))
+	t.Logf("✅ Bind tool: provider Received model=%s", strings.Join(*gotModels, ","))
 }
 
-// TestRepro_NoSessionOverride 对照组：不注入 session_model，provider 收到的应是 baseModel=glm-5。
+// TestRepro_NoSessionOverride Control group: No session_model is injected; the provider should receive baseModel = glm-5.
 func TestRepro_NoSessionOverride(t *testing.T) {
 	srv, gotModels, mu := newMockProviderServer(t)
 	llm := config.LLMConfig{Model: "glm-5", Url: srv.URL, Key: "test"}
@@ -155,14 +155,14 @@ func TestRepro_NoSessionOverride(t *testing.T) {
 
 	mu.Lock()
 	defer mu.Unlock()
-	t.Logf("provider 收到 model 序列: %v", *gotModels)
+	t.Logf("provider Receive model sequence: %v", *gotModels)
 	if len(*gotModels) == 0 {
-		t.Fatalf("mock 未收到任何请求")
+		t.Fatalf("mock No requests have been received")
 	}
 	for i, m := range *gotModels {
 		if m != "glm-5" {
-			t.Fatalf("❌ 对照组第 %d 次请求 model=%q，期望 glm-5", i+1, m)
+			t.Fatalf("❌ The %d request in the control group is model=%q, with an expected glm-5", i+1, m)
 		}
 	}
-	t.Logf("✅ 无覆盖：provider 收到 model=%s（默认 glm-5）", strings.Join(*gotModels, ","))
+	t.Logf("✅ No coverage: provider Received model=%s (default glm-5)", strings.Join(*gotModels, ","))
 }

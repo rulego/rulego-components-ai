@@ -21,61 +21,61 @@ package aspect
 const (
 	// ============== Session Control ==============
 
-	// MetaLoadHistory 是否加载历史消息 (true/false)
-	// 用于 SessionAspect 决定是否加载会话历史
+	// Does MetaLoadHistory load history messages (true/false)
+	// Used for SessionAspect to decide whether to load the session history
 	MetaLoadHistory = "loadHistory"
 
 	// ============== Channel Identification ==============
 
-	// MetaChannel 通道标识 (如: api, dispatch, feishu, dingtalk)
-	// 与 rulego-components-im 的 im.channel 对齐
+	// MetaChannel channel identifiers (e.g., api, dispatch, feishu, dingtalk)
+	// Align with the im.channel of rulego-components-im
 	MetaChannel = "im.channel"
 
-	// MetaPlatform 平台标识 (如: feishu, dingtalk, wecom)
-	// 与 rulego-components-im 的 im.platform 对齐
+	// MetaPlatform platform identity (e.g., feishu, dingtalk, wecom)
+	// Align with im.platform for rulego-components-im
 	MetaPlatform = "im.platform"
 
 	// ============== Scope Identification ==============
 
-	// MetaScopeID 会话作用域 ID（会话隔离标识）
-	// 最高优先级，显式指定会话隔离
+	// MetaScopeID Session Scope ID (Session Isolation Identifier)
+	// Highest priority, explicitly designating session isolation
 	MetaScopeID = "scopeId"
 
-	// MetaChatID 会话 ID
-	// 常用的会话隔离标识
+	// MetaChatID Session ID
+	// Common session isolation marks
 	MetaChatID = "chatId"
 
-	// MetaIMChatID IM 平台会话 ID
-	// 与 rulego-components-im 的 im.chatId 对齐
+	// MetaIMChatID IM platform session ID
+	// Align with the im.chatId of rulego-components-im
 	MetaIMChatID = "im.chatId"
 
-	// MetaThreadID 线程/话题 ID
+	// MetaThreadID thread/topic ID
 	MetaThreadID = "threadId"
 
-	// MetaIMThreadID IM 平台线程/话题 ID
-	// 与 rulego-components-im 的 im.threadId 对齐
+	// MetaIMThreadID IM platform thread/topic ID
+	// Align with the im.threadId of rulego-components-im
 	MetaIMThreadID = "im.threadId"
 
 	// ============== User Identification ==============
 
-	// MetaUserID 用户 ID
+	// MetaUserID User ID
 	MetaUserID = "userId"
 
-	// MetaIMUserID IM 平台用户 ID
-	// 与 rulego-components-im 的 im.userId 对齐
+	// MetaIMUserID: The user ID of the IM platform
+	// Align with the im.userId of rulego-components-im
 	MetaIMUserID = "im.userId"
 
-	// MetaIMSenderID IM 平台发送者 ID
-	// 与 rulego-components-im 的 im.senderId 对齐
+	// MetaIMSenderID IM platform sender ID
+	// Align with the im.senderId of rulego-components-im
 	MetaIMSenderID = "im.senderId"
 
 	// ============== Model Selection ==============
 
-	// MetaSessionModel 会话级模型
-	// 用于从会话中读取用户通过 /model set 命令切换的模型
+	// MetaSessionModel session-level model
+	// Used to read models switched by users via the /model set command from sessions
 	MetaSessionModel = "session_model"
 
-	// MetaSessionExtraFields 会话级扩展参数覆盖（JSON 字符串）
-	// 用于传递思考强度等模型特定参数的会话级临时覆盖（如 thinking.type、reasoning_effort）
+	// MetaSessionExtraFields session-level extended parameter coverage (JSON string)
+	// Session-level temporary covers for transmitting model-specific parameters such as thinking intensity (e.g., thinking.type, reasoning_effort)
 	MetaSessionExtraFields = "session_extra_fields"
 )

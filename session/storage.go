@@ -2,31 +2,31 @@ package session
 
 import "context"
 
-// SessionStorage 会话存储接口
+// SessionStorage session storage interface
 type SessionStorage interface {
-	// Create 创建会话
+	// Create creates a session
 	Create(ctx context.Context, session *Session) error
 
-	// Get 获取会话
+	// Get the session
 	Get(ctx context.Context, key string) (*Session, error)
 
-	// Update 更新会话
+	// Update the session
 	Update(ctx context.Context, session *Session) error
 
-	// Delete 删除会话
+	// Delete: Delete the session
 	Delete(ctx context.Context, key string) error
 
-	// AddMessage 添加消息到会话
+	// AddMessage Adds a message to a session
 	AddMessage(ctx context.Context, sessionKey string, msg *SessionMessage) error
 
-	// GetHistory 获取会话历史消息
+	// GetHistory to get session history messages
 	GetHistory(ctx context.Context, sessionKey string, limit int) ([]*SessionMessage, error)
 
-	// List 列出会话（可选接口实现）
+	// List of sessions (optional interface implementation)
 	List(ctx context.Context, query *SessionQuery) ([]*Session, error)
 }
 
-// SessionQuery 会话查询条件
+// SessionQuery Session query conditions
 type SessionQuery struct {
 	AgentID string
 	Channel string
@@ -37,21 +37,21 @@ type SessionQuery struct {
 	Offset  int
 }
 
-// StorageConfig 存储配置
+// StorageConfig storage configuration
 type StorageConfig struct {
-	Type string
+	Type   string
 	Prefix string
 
-	// Redis 配置
+	// Redis configuration
 	RedisAddr     string
 	RedisDB       int
 	RedisPassword string
 
-	// SQLite 配置
+	// SQLite configuration
 	SQLitePath string
 }
 
-// DefaultStorageConfig 默认存储配置
+// DefaultStorageConfig The default storage configuration
 func DefaultStorageConfig() *StorageConfig {
 	return &StorageConfig{
 		Type:   "memory",

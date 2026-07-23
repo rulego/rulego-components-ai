@@ -50,8 +50,8 @@ func TestReadTool_GitBashPath(t *testing.T) {
 	t.Logf("Result length: %d", len(resultStr))
 }
 
-// TestReadTool_CrossDirectory 验证 ctx 注入 allowCrossDir：
-// true 放行 workDir 外路径，false 拒绝（覆盖 read 工具正确把 cross 透传到 resolver 的链路）。
+// TestReadTool_CrossDirectory Verifying ctx injection allowCrossDir:
+// true allows the workDir path outside the workDir, false rejects (override the read tool correctly transmitting cross to the resolver's link).
 func TestReadTool_CrossDirectory(t *testing.T) {
 	workDir := t.TempDir()
 	outside := t.TempDir()
@@ -65,12 +65,12 @@ func TestReadTool_CrossDirectory(t *testing.T) {
 	})
 	args, _ := json.Marshal(map[string]string{"operation": "file", "path": outsideFile})
 
-	// cross=true：放行 workDir 外文件
+	// cross=true: Releases files outside the workDir
 	out, err := ti.InvokableRun(common.WithAllowCrossDir(context.Background(), true), string(args))
 	assert.NoError(t, err)
 	assert.Contains(t, out, "TOPSECRET")
 
-	// cross=false：拒绝 workDir 外文件
+	// cross=false: Rejects files outside the workDir
 	_, err = ti.InvokableRun(common.WithAllowCrossDir(context.Background(), false), string(args))
 	assert.Error(t, err)
 }

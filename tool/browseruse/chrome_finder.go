@@ -9,8 +9,8 @@ import (
 
 // findChromePath attempts to find the Chrome executable path on the current system.
 // It checks common installation directories and the system PATH.
-// findChromePath 尝试在当前系统上查找 Chrome 可执行文件路径。
-// 它检查常见的安装目录和系统 PATH。
+// findChromePath attempts to find the path to the Chrome executable on your current system.
+// It checks common installation directories and system PATHs.
 func findChromePath() string {
 	var paths []string
 
@@ -49,7 +49,7 @@ func findChromePath() string {
 	}
 
 	// Try to find in PATH
-	// 尝试在 PATH 中查找
+	// Try to find it in PATH
 	exeNames := []string{"google-chrome", "google-chrome-stable", "chromium", "chromium-browser", "chrome"}
 	if runtime.GOOS == "windows" {
 		exeNames = []string{"chrome.exe"}

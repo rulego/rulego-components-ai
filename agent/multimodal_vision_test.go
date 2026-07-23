@@ -36,31 +36,31 @@ import (
 )
 
 // ============================================================================
-// 多模态图片识别测试
+// Multimodal image recognition testing
 // ============================================================================
 //
-// 使用方法：
+// How to use:
 //
-//	方式一：设置环境变量
+//	Method 1: Set environment variables
 //	  export LLM_API_KEY="your-api-key"
 //	  export LLM_BASE_URL="https://coding.dashscope.aliyuncs.com/v1"
 //	  export LLM_MODEL="qwen3.5-plus"
 //	  go test -v -run TestMultimodal ./...
 //
-//	方式二：直接运行（使用内置默认配置）
+//	Method 2: Run directly (using built-in default configuration)
 //	  go test -v -run TestMultimodal ./...
 //
 // ============================================================================
 
-// 阿里云通义千问多模态测试配置
+// Alibaba Cloud Tongyi Qianwen multimodal test configuration
 const (
-	// 默认配置（阿里云 DashScope API）
+	// Default configuration (Alibaba Cloud DashScope API)
 	defaultQwenBaseURL = "https://coding.dashscope.aliyuncs.com/v1"
 	defaultQwenModel   = "qwen3.5-plus"
 )
 
-// getMultimodalTestConfig 获取多模态测试配置
-// 优先使用 LLM_VISION_* 环境变量，回退到 LLM_* 环境变量，最后使用默认配置
+// getMultimodalTestConfig to obtain the multimodal test configuration
+// Prioritize using LLM_VISION_* environment variables, revert to LLM_* environment variables, and finally use the default configuration
 func getMultimodalTestConfig() config.LLMConfig {
 	apiKey := os.Getenv("LLM_VISION_API_KEY")
 	if apiKey == "" {
@@ -95,7 +95,7 @@ func getMultimodalTestConfig() config.LLMConfig {
 	}
 }
 
-// skipIfNoAPIKeyForMultimodal 如果没有 API Key 或模型不支持视觉则跳过测试
+// skipIfNoAPIKeyForMultimodal If there is no API Key or the model does not support vision, the test is skipped
 func skipIfNoAPIKeyForMultimodal(t *testing.T, cfg config.LLMConfig) {
 	if cfg.Key == "" {
 		t.Skip("Skipping test: LLM_API_KEY environment variable not set. " +
@@ -108,10 +108,10 @@ func skipIfNoAPIKeyForMultimodal(t *testing.T, cfg config.LLMConfig) {
 }
 
 // ============================================================================
-// 测试 1: 模型创建和视觉能力检测
+// Test 1: Model creation and visual ability assessment
 // ============================================================================
 
-// TestMultimodal_CreateChatModel 测试创建支持视觉能力的聊天模型
+// TestMultimodal_CreateChatModel Test the creation of chat models that support visual abilities
 func TestMultimodal_CreateChatModel(t *testing.T) {
 	cfg := getMultimodalTestConfig()
 	skipIfNoAPIKeyForMultimodal(t, cfg)
@@ -128,32 +128,32 @@ func TestMultimodal_CreateChatModel(t *testing.T) {
 	t.Logf("✅ Chat model created successfully for model: %s", cfg.Model)
 }
 
-// TestMultimodal_VisionCapabilityDetection 测试模型视觉能力检测
-// 注意：由于配置使用 strings.Contains 进行模式匹配，map 遍历顺序不确定，
-// 某些模型名称可能会被更短的模式提前匹配（如 gpt-4o 可能被 gpt-4 匹配）
-// 这里只测试那些不会被提前匹配的关键模型
+// TestMultimodal_VisionCapabilityDetection Test model visual ability assessment
+// Note: Due to the configuration using strings.Contains performs pattern matching, map traversal order is uncertain,
+// Some model names may be pre-matched by shorter patterns (e.g., gpt-4o may be matched by GPT-4)
+// Here, only the key models that will not be pre-matched are tested
 //
-// 配置使用保守默认策略：未知模型默认支持所有能力（包括视觉）
+// Configure with a conservative default policy: unknown models support all capabilities by default (including vision)
 func TestMultimodal_VisionCapabilityDetection(t *testing.T) {
 	tests := []struct {
 		modelName      string
 		description    string
-		checkSupported bool // 是否检查支持视觉，false 表示检查不支持
+		checkSupported bool // Check whether vision is supported; false means the check does not support it
 	}{
-		// 阿里通义系列（关键模型）
+		// Alibaba Tongyi Series (Key Model)
 		{"qwen3.5-plus", "Qwen3.5 Plus supports vision", true},
 		{"qwen-vl-max", "Qwen VL Max supports vision", true},
 		{"qwen2-vl", "Qwen2 VL supports vision", true},
 
-		// Claude 系列（不会被其他模式干扰）
+		// Claude Series (not affected by other modes)
 		{"claude-3-opus", "Claude 3 supports vision", true},
 		{"claude-4-sonnet", "Claude 4 supports vision", true},
 
-		// 智谱 GLM 系列（注意：glm-4-vision 可能被 glm-4 模式先匹配）
-		// 使用 glm-4.6v 这个更具体的名称来测试
+		// Zhipu GLM Series (Note: glm-4-vision may be matched first by the GLM-4 mode)
+		// Use the more specific name glm-4.6v for testing
 		{"glm-4.6v", "GLM-4.6V supports vision", true},
 
-		// 未知模型（保守默认支持视觉）
+		// Unknown model (conservative default supports vision)
 		{"unknown-model-xyz", "Unknown models default to supporting vision", true},
 	}
 
@@ -171,15 +171,15 @@ func TestMultimodal_VisionCapabilityDetection(t *testing.T) {
 }
 
 // ============================================================================
-// 测试 2: URL 图片识别
+// Test 2: URL image recognition
 // ============================================================================
 
-// TestMultimodal_ImageRecognitionWithURL 测试使用 URL 图片进行识别
+// TestMultimodal_ImageRecognitionWithURL Testing uses URL images for recognition
 func TestMultimodal_ImageRecognitionWithURL(t *testing.T) {
 	cfg := getMultimodalTestConfig()
 	skipIfNoAPIKeyForMultimodal(t, cfg)
 
-	// 验证模型支持视觉能力
+	// Validation models support visual capabilities
 	require.True(t, config.SupportsVision(cfg.Model),
 		"Model %s should support vision capability", cfg.Model)
 
@@ -193,11 +193,11 @@ func TestMultimodal_ImageRecognitionWithURL(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 120*time.Second)
 	defer cancel()
 
-	// 使用阿里云官方文档中的示例图片
-	// 注意：阿里云 Qwen VL 模型对图片 URL 有特定要求
+	// Using sample images from Alibaba Cloud's official documentation
+	// Note: Alibaba Cloud's Qwen VL model has specific requirements for image URLs
 	imageURL := "https://dashscope.oss-cn-beijing.aliyuncs.com/images/dog_and_girl.jpeg"
 
-	// 构建多模态消息
+	// Build multimodal messaging
 	messages := []*schema.Message{
 		schema.SystemMessage("你是一个图像识别助手。请简洁地回答问题。"),
 		{
@@ -229,7 +229,7 @@ func TestMultimodal_ImageRecognitionWithURL(t *testing.T) {
 	t.Logf("   Response: %s", truncateString(response.Content, 300))
 }
 
-// TestMultimodal_ImageRecognitionWithMultipleURLs 测试多张 URL 图片识别
+// TestMultimodal_ImageRecognitionWithMultipleURLs Testing multiple URL image recognition
 func TestMultimodal_ImageRecognitionWithMultipleURLs(t *testing.T) {
 	cfg := getMultimodalTestConfig()
 	skipIfNoAPIKeyForMultimodal(t, cfg)
@@ -244,7 +244,7 @@ func TestMultimodal_ImageRecognitionWithMultipleURLs(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 120*time.Second)
 	defer cancel()
 
-	// 使用阿里云官方测试图片
+	// Using official Alibaba Cloud test images
 	imageURLs := []string{
 		"https://dashscope.oss-cn-beijing.aliyuncs.com/images/dog_and_girl.jpeg",
 	}
@@ -262,7 +262,7 @@ func TestMultimodal_ImageRecognitionWithMultipleURLs(t *testing.T) {
 		})
 	}
 
-	// 添加文本问题
+	// Add text questions
 	imageParts = append(imageParts, schema.MessageInputPart{
 		Type: schema.ChatMessagePartTypeText,
 		Text: "请描述这张图片，用一句话概括。",
@@ -285,10 +285,10 @@ func TestMultimodal_ImageRecognitionWithMultipleURLs(t *testing.T) {
 }
 
 // ============================================================================
-// 测试 3: Base64 图片识别
+// Test 3: Base64 image recognition
 // ============================================================================
 
-// TestMultimodal_ImageRecognitionWithBase64 测试使用 Base64 编码的图片进行识别
+// TestMultimodal_ImageRecognitionWithBase64 Test using images encoded in Base64 for recognition
 func TestMultimodal_ImageRecognitionWithBase64(t *testing.T) {
 	cfg := getMultimodalTestConfig()
 	skipIfNoAPIKeyForMultimodal(t, cfg)
@@ -303,11 +303,11 @@ func TestMultimodal_ImageRecognitionWithBase64(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 120*time.Second)
 	defer cancel()
 
-	// 创建一个简单的测试图片（1x1 红色像素 PNG）
-	// 这是一个最小的有效 PNG 文件的 Base64 编码
+	// Create a simple test image (1x1 red pixel PNG)
+	// This is the smallest valid PNG file in Base64 encoding
 	smallRedPng := createTestPNGBase64()
 
-	// 构建多模态消息
+	// Build multimodal messaging
 	messages := []*schema.Message{
 		schema.SystemMessage("你是一个图像识别助手。"),
 		{
@@ -360,10 +360,10 @@ func createTestPNGBase64() string {
 }
 
 // ============================================================================
-// 测试 4: 流式图片识别
+// Test 4: Streaming image recognition
 // ============================================================================
 
-// TestMultimodal_StreamImageRecognition 测试流式图片识别
+// TestMultimodal_StreamImageRecognition Test streaming image recognition
 func TestMultimodal_StreamImageRecognition(t *testing.T) {
 	cfg := getMultimodalTestConfig()
 	skipIfNoAPIKeyForMultimodal(t, cfg)
@@ -416,7 +416,7 @@ func TestMultimodal_StreamImageRecognition(t *testing.T) {
 		chunkCount++
 		fullContent += chunk.Content
 
-		// 仅在调试模式下打印每个 chunk
+		// Each chunk is printed only in debug mode
 		if isDebugMode() && chunkCount <= 5 {
 			t.Logf("  Chunk %d: %s", chunkCount, truncateString(chunk.Content, 50))
 		}
@@ -429,12 +429,12 @@ func TestMultimodal_StreamImageRecognition(t *testing.T) {
 }
 
 // ============================================================================
-// 测试 5: 多模态消息转换
+// Test 5: Multimodal message transformation
 // ============================================================================
 
-// TestMultimodal_MessageConversionWithURL 测试 URL 图片的消息转换
+// TestMultimodal_MessageConversionWithURL Test message conversion for URL images
 func TestMultimodal_MessageConversionWithURL(t *testing.T) {
-	// 测试 OpenAI 格式的多模态消息转换
+	// Testing multimodal message conversion in OpenAI format
 	chatRequest := config.MultiTurnChatRequest{
 		Messages: []config.ChatMessage{
 			{
@@ -452,7 +452,7 @@ func TestMultimodal_MessageConversionWithURL(t *testing.T) {
 		},
 	}
 
-	// 验证消息解析
+	// Verify message resolution
 	msg := chatRequest.Messages[0]
 	assert.True(t, msg.IsMultimodal(), "Message should be multimodal")
 
@@ -466,7 +466,7 @@ func TestMultimodal_MessageConversionWithURL(t *testing.T) {
 	t.Logf("✅ Message conversion test passed")
 }
 
-// TestMultimodal_MessageConversionWithBase64 测试 Base64 图片的消息转换
+// TestMultimodal_MessageConversionWithBase64 Testing message conversion for Base64 images
 func TestMultimodal_MessageConversionWithBase64(t *testing.T) {
 	base64Img := "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg=="
 
@@ -497,7 +497,7 @@ func TestMultimodal_MessageConversionWithBase64(t *testing.T) {
 	t.Logf("✅ Base64 message conversion test passed")
 }
 
-// TestMultimodal_MultipleImagesInMessage 测试一条消息中包含多张图片
+// TestMultimodal_MultipleImagesInMessage Test for multiple images in a single message
 func TestMultimodal_MultipleImagesInMessage(t *testing.T) {
 	chatRequest := config.MultiTurnChatRequest{
 		Messages: []config.ChatMessage{
@@ -532,10 +532,10 @@ func TestMultimodal_MultipleImagesInMessage(t *testing.T) {
 }
 
 // ============================================================================
-// 测试 6: 多轮对话中的图片处理
+// Test 6: Image Processing in Multi-Turn Dialogue
 // ============================================================================
 
-// TestMultimodal_MultiTurnWithImages 测试多轮对话中的图片处理
+// TestMultimodal_MultiTurnWithImages Test image processing in multi-turn conversations
 func TestMultimodal_MultiTurnWithImages(t *testing.T) {
 	cfg := getMultimodalTestConfig()
 	skipIfNoAPIKeyForMultimodal(t, cfg)
@@ -552,7 +552,7 @@ func TestMultimodal_MultiTurnWithImages(t *testing.T) {
 
 	imageURL := "https://dashscope.oss-cn-beijing.aliyuncs.com/images/dog_and_girl.jpeg"
 
-	// 第一轮：发送图片并提问
+	// Round 1: Send pictures and ask questions
 	messages := []*schema.Message{
 		schema.SystemMessage("你是一个图像识别助手。"),
 		{
@@ -579,7 +579,7 @@ func TestMultimodal_MultiTurnWithImages(t *testing.T) {
 	require.NoError(t, err, "First turn failed")
 	t.Logf("✅ Turn 1 response: %s", truncateString(response1.Content, 150))
 
-	// 第二轮：追问（不带图片）
+	// Round 2: Follow-up questions (without pictures)
 	messages = append(messages, response1)
 	messages = append(messages, schema.UserMessage("你提到的内容中，最主要的颜色是什么？"))
 
@@ -587,29 +587,29 @@ func TestMultimodal_MultiTurnWithImages(t *testing.T) {
 	require.NoError(t, err, "Second turn failed")
 	t.Logf("✅ Turn 2 response: %s", truncateString(response2.Content, 150))
 
-	// 验证模型能够记住第一轮的图片内容
+	// The validation model can remember the image content from the first round
 	assert.NotEmpty(t, response2.Content)
 }
 
 // ============================================================================
-// 测试 7: 错误处理
+// Test 7: Error handling
 // ============================================================================
 
-// TestMultimodal_InvalidURL 测试无效 URL 的错误处理
+// TestMultimodal_InvalidURL Error handling of invalid testing URLs
 func TestMultimodal_InvalidURL(t *testing.T) {
 	cfg := getMultimodalTestConfig()
 	skipIfNoAPIKeyForMultimodal(t, cfg)
 
 	chatModel, err := CreateChatModel(cfg, ModelOptions{
 		Logger:    NewTestLogger(t),
-		WrapRetry: false, // 禁用重试以加快测试
+		WrapRetry: false, // Disable retries to speed up testing
 	})
 	require.NoError(t, err)
 
 	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
 	defer cancel()
 
-	// 使用一个无效的图片 URL
+	// Using an invalid image URL
 	invalidURL := "https://invalid-url-that-does-not-exist.com/fake-image.png"
 
 	messages := []*schema.Message{
@@ -633,11 +633,11 @@ func TestMultimodal_InvalidURL(t *testing.T) {
 		},
 	}
 
-	// 注意：某些模型可能会忽略无法加载的图片并只响应文本
-	// 这个测试主要验证不会 panic 或出现意外错误
+	// Note: Some models may ignore images that cannot be loaded and only respond to text
+	// This test mainly verifies that there will be no panic or unexpected errors
 	response, err := chatModel.Generate(ctx, messages)
 
-	// 记录结果（不强制要求失败，因为不同模型的处理方式不同）
+	// Record results (failure is not mandatory, as different models handle them differently)
 	if err != nil {
 		t.Logf("⚠️ Expected error for invalid URL: %v", err)
 	} else {
@@ -645,9 +645,9 @@ func TestMultimodal_InvalidURL(t *testing.T) {
 	}
 }
 
-// TestMultimodal_EmptyImage 测试空图片处理
+// TestMultimodal_EmptyImage Test empty image processing
 func TestMultimodal_EmptyImage(t *testing.T) {
-	// 测试空 URL 的消息构建
+	// Test message construction for empty URLs
 	chatRequest := config.MultiTurnChatRequest{
 		Messages: []config.ChatMessage{
 			{
@@ -657,7 +657,7 @@ func TestMultimodal_EmptyImage(t *testing.T) {
 					map[string]interface{}{
 						"type": "image_url",
 						"image_url": map[string]interface{}{
-							"url": "", // 空 URL
+							"url": "", // Empty URL
 						},
 					},
 				},
@@ -668,7 +668,7 @@ func TestMultimodal_EmptyImage(t *testing.T) {
 	msg := chatRequest.Messages[0]
 	images := msg.GetAllImages()
 
-	// 空 URL 不应该被包含在图片列表中
+	// Empty URLs should not be included in the image list
 	for _, img := range images {
 		assert.NotEmpty(t, img, "Empty URLs should be filtered out")
 	}
@@ -677,10 +677,10 @@ func TestMultimodal_EmptyImage(t *testing.T) {
 }
 
 // ============================================================================
-// 测试 8: 图片格式检测
+// Test 8: Image format check
 // ============================================================================
 
-// TestMultimodal_ImageFormatDetection 测试图片格式检测
+// TestMultimodal_ImageFormatDetection Test image format check
 func TestMultimodal_ImageFormatDetection(t *testing.T) {
 	tests := []struct {
 		name     string
@@ -747,16 +747,16 @@ func TestMultimodal_ImageFormatDetection(t *testing.T) {
 }
 
 // ============================================================================
-// 辅助函数
+// Auxiliary function
 // ============================================================================
 
-// 注意：truncateString 函数在 aspect_integration.go 中已定义，这里直接使用
+// Note: The truncateString function is defined in aspect_integration.go, so it is used directly
 
 // ============================================================================
-// 基准测试
+// Benchmark Test
 // ============================================================================
 
-// BenchmarkMultimodal_VisionCapabilityDetection 基准测试视觉能力检测
+// BenchmarkMultimodal_VisionCapabilityDetection Benchmark visual ability assessment
 func BenchmarkMultimodal_VisionCapabilityDetection(b *testing.B) {
 	models := []string{
 		"qwen3.5-plus",
@@ -773,7 +773,7 @@ func BenchmarkMultimodal_VisionCapabilityDetection(b *testing.B) {
 	}
 }
 
-// BenchmarkMultimodal_MessageConversion 基准测试消息转换
+// BenchmarkMultimodal_MessageConversion Benchmark message transformation
 func BenchmarkMultimodal_MessageConversion(b *testing.B) {
 	chatRequest := config.MultiTurnChatRequest{
 		Messages: []config.ChatMessage{
@@ -801,10 +801,10 @@ func BenchmarkMultimodal_MessageConversion(b *testing.B) {
 }
 
 // ============================================================================
-// 示例测试（Example Tests）
+// Example Tests
 // ============================================================================
 
-// Example_createChatModelWithVision 演示如何创建支持视觉的模型
+// Example_createChatModelWithVision Demonstrate how to create models that support vision
 func TestExample_CreateChatModelWithVision(t *testing.T) {
 	cfg := getMultimodalTestConfig()
 	if cfg.Key == "" {
@@ -823,9 +823,9 @@ func TestExample_CreateChatModelWithVision(t *testing.T) {
 	t.Logf("Model created: %v", chatModel != nil)
 }
 
-// Example_checkVisionSupport 演示如何检查模型视觉支持
+// Example_checkVisionSupport Demonstrates how to check the model's visual support
 func Example_checkVisionSupport() {
-	// 检查模型是否支持视觉
+	// Check whether the model supports vision
 	modelName := "qwen3.5-plus"
 	if config.SupportsVision(modelName) {
 		fmt.Printf("Model %s supports vision\n", modelName)

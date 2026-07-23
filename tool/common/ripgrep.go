@@ -1,5 +1,5 @@
-// ripgrep 探测与共享调用，供 grep/glob 工具复用。
-// 仅探测系统 rg，不引入 bundled 二进制；缺失时由调用方走 Go 兜底实现。
+// ripgrep detection and shared calls are available for reuse by grep/glob tools.
+// Only detects system RG, without introducing bundled binaries; If missing, the caller uses Go as a safety net.
 package common
 
 import (
@@ -8,12 +8,12 @@ import (
 )
 
 var (
-	rgOnce    sync.Once
+	rgOnce      sync.Once
 	rgAvailable bool
 )
 
-// HasRipgrep 探测系统是否安装了 ripgrep（exec.LookPath("rg")），结果进程内缓存。
-// 调用方应在缺失时降级到 Go 兜底实现（filepath.WalkDir + regexp）。
+// HasRipgrep detects whether the system has ripgrep(exec.LookPath("rg")), resulting in the process cache.
+// The caller should downgrade to Go as a backup implementation (filepath.WalkDir + regexp) when it is missing.
 func HasRipgrep() bool {
 	rgOnce.Do(func() {
 		_, err := exec.LookPath("rg")
@@ -22,8 +22,8 @@ func HasRipgrep() bool {
 	return rgAvailable
 }
 
-// ResetRipgrepCache 重置 hasRipgrep 缓存，仅供测试使用。
-// 测试可通过调用此函数 + 临时修改 PATH 强制走兜底路径。
+// ResetRipgrepCache resets hasRipgrep cache, for testing purposes only.
+// Testing can be done by calling this function + temporarily modifying the PATH to force a shortcut path.
 func ResetRipgrepCache() {
 	rgOnce = sync.Once{}
 	rgAvailable = false

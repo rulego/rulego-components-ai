@@ -17,54 +17,54 @@ func init() {
 	_ = rulego.Registry.Register(&TextGenerateNode{})
 }
 
-// 定义正则表达式
-// <think>[\s\S]*?</think>：匹配 <think> 和 </think> 之间的所有内容，包括换行符
+// Define a regular expression
+// <think>[\s\S]*?</think>: Matches everything between <think> and </think>, including line breaks
 var re = regexp.MustCompile(`<think>[\s\S]*?</think>`)
 
-// NodeConfiguration 组件配置
+// NodeConfiguration component configuration
 type NodeConfiguration struct {
-	Url          string        `json:"url" label:"API URL" desc:"LLM API base URL. Supports OpenAI-compatible endpoints" required:"true"`                            // 请求地址
-	Key          string        `json:"key" label:"API Key" desc:"API key for authentication" required:"true"`                                                          // API Key
-	Model        string        `json:"model" label:"Model" desc:"Model name, e.g. gpt-4o, o1-mini" required:"true"`                                                   // 模型名称
-	SystemPrompt string        `json:"systemPrompt" label:"System Prompt" desc:"System prompt to define model behavior and response style. Supports ${} placeholder variables"` // 系统提示
-	Messages     []ChatMessage `json:"messages" label:"Messages" desc:"Chat message list for conversation context. Each item has role and content fields"`                  // 上下文/用户消息列表
-	Images       []string      `json:"images" label:"Images" desc:"Image URLs for multimodal input. Supports ${} placeholder variables"`                                  // 图片输入
-	Params       Params        `json:"params" label:"Parameters" desc:"LLM generation parameters including temperature, maxTokens, etc."`                                 // 大模型参数
+	Url          string        `json:"url" label:"API URL" desc:"LLM API base URL. Supports OpenAI-compatible endpoints" required:"true"`                                       // Request address
+	Key          string        `json:"key" label:"API Key" desc:"API key for authentication" required:"true"`                                                                   // API Key
+	Model        string        `json:"model" label:"Model" desc:"Model name, e.g. gpt-4o, o1-mini" required:"true"`                                                             // Model name
+	SystemPrompt string        `json:"systemPrompt" label:"System Prompt" desc:"System prompt to define model behavior and response style. Supports ${} placeholder variables"` // System notification
+	Messages     []ChatMessage `json:"messages" label:"Messages" desc:"Chat message list for conversation context. Each item has role and content fields"`                      // Context/user message list
+	Images       []string      `json:"images" label:"Images" desc:"Image URLs for multimodal input. Supports ${} placeholder variables"`                                        // Image input
+	Params       Params        `json:"params" label:"Parameters" desc:"LLM generation parameters including temperature, maxTokens, etc."`                                       // Large model parameters
 }
 
-// Params 大模型参数
+// Params large model parameters
 type Params struct {
-	Temperature      float32  `json:"temperature" label:"Temperature" desc:"Sampling temperature in [0.0, 2.0]. Higher values produce more random and creative output"`                     // 采样温度
-	TopP             float32  `json:"topP" label:"Top P" desc:"Nucleus sampling threshold in [0.0, 1.0]. Selects tokens from top p% probability candidates"`                                     // Top P
-	PresencePenalty  float32  `json:"presencePenalty" label:"Presence Penalty" desc:"Penalty for tokens already present in text. Range [0.0, 1.0]"`                                          // 存在惩罚
-	FrequencyPenalty float32  `json:"frequencyPenalty" label:"Frequency Penalty" desc:"Penalty based on token frequency in text. Range [0.0, 1.0]"`                                       // 频率惩罚
-	MaxTokens        int      `json:"maxTokens" label:"Max Tokens" desc:"Maximum number of tokens in the output"`                                                                  // 最大输出长度
-	Stop             []string `json:"stop" label:"Stop Sequences" desc:"List of strings that cause the model to stop generating"`                                                   // 停止标记
-	ResponseFormat   string   `json:"responseFormat" label:"Response Format" desc:"Output format: text, json_object, or json_schema. Default is text"`                                     // 输出格式
-	JsonSchema       string   `json:"jsonSchema" label:"JSON Schema" desc:"JSON Schema for structured output when responseFormat is json_schema"`                                    // JSON Schema
-	KeepThink        bool     `json:"keepThink" label:"Keep Think" desc:"Keep thinking process in output. Only applies to text response format"`                                     // 保留思考过程
+	Temperature      float32  `json:"temperature" label:"Temperature" desc:"Sampling temperature in [0.0, 2.0]. Higher values produce more random and creative output"` // Sampling temperature
+	TopP             float32  `json:"topP" label:"Top P" desc:"Nucleus sampling threshold in [0.0, 1.0]. Selects tokens from top p% probability candidates"`            // Top P
+	PresencePenalty  float32  `json:"presencePenalty" label:"Presence Penalty" desc:"Penalty for tokens already present in text. Range [0.0, 1.0]"`                     // There is punishment
+	FrequencyPenalty float32  `json:"frequencyPenalty" label:"Frequency Penalty" desc:"Penalty based on token frequency in text. Range [0.0, 1.0]"`                     // Frequent penalties
+	MaxTokens        int      `json:"maxTokens" label:"Max Tokens" desc:"Maximum number of tokens in the output"`                                                       // Maximum output length
+	Stop             []string `json:"stop" label:"Stop Sequences" desc:"List of strings that cause the model to stop generating"`                                       // Stop marking
+	ResponseFormat   string   `json:"responseFormat" label:"Response Format" desc:"Output format: text, json_object, or json_schema. Default is text"`                  // Output format
+	JsonSchema       string   `json:"jsonSchema" label:"JSON Schema" desc:"JSON Schema for structured output when responseFormat is json_schema"`                       // JSON Schema
+	KeepThink        bool     `json:"keepThink" label:"Keep Think" desc:"Keep thinking process in output. Only applies to text response format"`                        // Keep the thought process in place
 }
 
-// ChatMessage 上下文消息/用户消息
+// ChatMessage Context Messages / User Messages
 type ChatMessage struct {
-	Role    string `json:"role" label:"Role" desc:"Message role: user or assistant"`                          // 消息角色
-	Content string `json:"content" label:"Content" desc:"Message content. Supports ${} placeholder variables"` // 消息内容
+	Role    string `json:"role" label:"Role" desc:"Message role: user or assistant"`                           // Message role
+	Content string `json:"content" label:"Content" desc:"Message content. Supports ${} placeholder variables"` // News content
 }
 
-// ChatMessageTemplate 上下文消息/用户消息模板
+// ChatMessageTemplate Contextual message/user message template
 type ChatMessageTemplate struct {
 	Role            string
 	ContentTemplate str.Template
 }
 
-// TextGenerateNode 向模型提供指令、查询或任何基于文本的输入，并得到大模型文本响应
+// TextGenerateNode provides the model with instructions, queries, or any text-based input, and receives a large model text response
 type TextGenerateNode struct {
 	Config               NodeConfiguration
 	Client               *openai.Client
 	systemPromptTemplate str.Template
 	chatMessageTemplates []ChatMessageTemplate
 	imagesTemplates      []str.Template
-	hasVar               bool // 是否包含变量占位符
+	hasVar               bool // Whether variable placeholders are included
 	responseFormat       openai.ChatCompletionResponseFormatType
 }
 
@@ -148,7 +148,7 @@ func (x *TextGenerateNode) OnMsg(ctx types.RuleContext, msg types.RuleMsg) {
 	}
 	systemPrompt = x.systemPromptTemplate.Execute(evn)
 
-	//发送消息，并获取回复
+	//Send messages and get replies
 	content, err := x.sendCompletionMessage(ctx, evn, systemPrompt, x.chatMessageTemplates, x.imagesTemplates)
 	if err != nil {
 		ctx.TellFailure(msg, err)
@@ -184,10 +184,10 @@ func (x *TextGenerateNode) sendCompletionMessage(ctx types.RuleContext, evn map[
 	imageLen := len(imagesTemplates)
 	for index, item := range messagesTemplates {
 		content := item.ContentTemplate.Execute(evn)
-		//是否是最后一条用户消息
+		//Is it the last user message?
 		if index == (messageLen-1) && imageLen > 0 {
 			var multiContent []openai.ChatMessagePart
-			//增加图片消息
+			//Added image messages
 			for _, imageItemTpl := range imagesTemplates {
 				imageUrl := imageItemTpl.Execute(evn)
 				multiContent = append(multiContent, openai.ChatMessagePart{
@@ -198,7 +198,7 @@ func (x *TextGenerateNode) sendCompletionMessage(ctx types.RuleContext, evn map[
 					},
 				})
 			}
-			//增加用户消息
+			//Increase user messages
 			multiContent = append(multiContent, openai.ChatMessagePart{
 				Type: openai.ChatMessagePartTypeText,
 				Text: content,
@@ -256,9 +256,9 @@ func (x *TextGenerateNode) sendCompletionMessage(ctx types.RuleContext, evn map[
 			combinedContent = strings.TrimLeft(re.ReplaceAllString(combinedContent, ""), "\n")
 		}
 	} else {
-		// 去掉思考过程
+		// Eliminate the process of thinking
 		combinedContent = strings.TrimLeft(re.ReplaceAllString(combinedContent, ""), "\n")
-		// 去掉开头和结尾的 ```json 和 ```
+		// Remove the opening ```json and closing ``` fences
 		combinedContent = strings.TrimPrefix(combinedContent, "```json\n")
 		combinedContent = strings.TrimSuffix(combinedContent, "\n```")
 	}

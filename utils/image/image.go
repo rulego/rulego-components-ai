@@ -34,40 +34,40 @@ import (
 	"golang.org/x/image/draw"
 )
 
-// DefaultImageMaxSize 默认图片最大尺寸
+// DefaultImageMaxSize is the maximum size of the default image
 const DefaultImageMaxSize = 1024
 
-// DefaultJPEGQuality 默认 JPEG 压缩质量
+// DefaultJPEGQuality Defaults to JPEG compression quality
 const DefaultJPEGQuality = 92
 
-// CompressOptions 图片压缩选项
+// CompressOptions image compression option
 type CompressOptions struct {
-	// MaxSize 图片最大尺寸（宽或高的最大值），超过则等比缩放
+	// MaxSize: The maximum image size (width or height); if exceeded, scale proportionally
 	MaxSize int
-	// Quality JPEG 压缩质量 (1-100)，值越高画质越好但文件越大
-	// 推荐：颜色敏感场景使用 95+，普通场景使用 85-92
+	// Quality JPEG compressed quality (1-100); the higher the value, the better the image quality but the larger the file
+	// Recommendation: Use 95+ for color-sensitive scenes, 85-92 for normal scenes
 	Quality int
-	// KeepFormat 是否保留原始图片格式
-	// true: PNG 保持 PNG 格式（无损），JPEG 保持 JPEG 格式
-	// false: 统一转为 JPEG 格式（压缩效果更好，但有损）
+	// KeepFormat retains the original image format
+	// true: PNG remains in PNG format (lossless), JPEG remains in JPEG format
+	// false: Uniformly converted to JPEG format (better compression but lossy)
 	KeepFormat bool
 }
 
 var (
-	// DefaultCompressOptions 默认压缩选项
+	// DefaultCompressOptions is the default compression option
 	DefaultCompressOptions = CompressOptions{
 		MaxSize:    DefaultImageMaxSize,
 		Quality:    DefaultJPEGQuality,
-		KeepFormat: true, // 默认保留格式，避免颜色丢失
+		KeepFormat: true, // Default format retention prevents color loss
 	}
 
-	// globalMediaRootDir 全局媒体存储根目录
+	// globalMediaRootDir Global Media Storage Root
 	globalMediaRootDir = ""
 )
 
-// SetGlobalMediaRootDir 设置全局媒体存储根目录
+// SetGlobalMediaRootDir sets the global media storage root
 func SetGlobalMediaRootDir(dir string) {
-	// 在设置时直接转化为绝对路径，确保后续拼接出来的全是绝对路径
+	// During setup, it is directly converted to absolute paths to ensure that all subsequent stitching is absolute paths
 	if absDir, err := filepath.Abs(dir); err == nil {
 		globalMediaRootDir = absDir
 	} else {
@@ -75,22 +75,22 @@ func SetGlobalMediaRootDir(dir string) {
 	}
 }
 
-// IsBase64Image 检查是否为 base64 格式图片
+// IsBase64Image checks whether the image is in base64 format
 func IsBase64Image(s string) bool {
 	return strings.HasPrefix(s, "data:image/")
 }
 
-// IsExternalURL 检查是否为外部 URL
+// IsExternalURL checks whether it is an external URL
 func IsExternalURL(s string) bool {
 	return strings.HasPrefix(s, "http://") || strings.HasPrefix(s, "https://")
 }
 
-// LoadImageFromURL 从外部 URL 下载图片并转为 base64 格式（带压缩）
+// LoadImageFromURL Download images from external URLs and convert them to base64 format (with compression)
 func LoadImageFromURL(url string) (string, error) {
 	return LoadImageFromURLWithMaxSize(url, DefaultImageMaxSize)
 }
 
-// LoadImageFromURLWithMaxSize 从外部 URL 下载图片并转为 base64 格式（带压缩，指定最大尺寸）
+// LoadImageFromURLWithMaxSize Download images from external URLs and convert them to base64 format (with compression, specify maximum size)
 func LoadImageFromURLWithMaxSize(url string, maxSize int) (string, error) {
 	client := &http.Client{
 		Timeout: 30 * time.Second,
@@ -130,7 +130,7 @@ func LoadImageFromURLWithMaxSize(url string, maxSize int) (string, error) {
 
 	compressedData, compressedMimeType, err := CompressImage(data, originalFormat, maxSize)
 	if err != nil {
-		// 压缩失败，使用原始数据
+		// Compression failed, using raw data
 		compressedData = data
 		compressedMimeType = mimeType
 		if compressedMimeType == "" {
@@ -142,52 +142,52 @@ func LoadImageFromURLWithMaxSize(url string, maxSize int) (string, error) {
 	return fmt.Sprintf("data:%s;base64,%s", compressedMimeType, base64Data), nil
 }
 
-// IsLocalFilePath 检查是否为本地文件路径
+// IsLocalFilePath checks whether it is a local file path
 func IsLocalFilePath(s string) bool {
-	// 排除 URL 和 base64 格式
+	// Excluding URLs and base64 formats
 	if strings.HasPrefix(s, "http://") || strings.HasPrefix(s, "https://") || strings.HasPrefix(s, "data:") {
 		return false
 	}
-	// file:// 协议也是本地文件，去除前缀后检查
+	// file:// protocol is also a local file, which is checked after removing the prefix
 	path := s
 	if strings.HasPrefix(s, "file://") {
 		path = strings.TrimPrefix(s, "file://")
 	}
-	// 检查是否为文件路径（以常见图片扩展名结尾）
+	// Check if it is a file path (ending with a common image extension)
 	ext := strings.ToLower(filepath.Ext(path))
 	return ext == ".png" || ext == ".jpg" || ext == ".jpeg" || ext == ".gif" || ext == ".webp" || ext == ".bmp"
 }
 
-// ParseBase64Image 解析 base64 图片，返回 mimeType 和 base64Data
+// ParseBase64Image parses the base64 image, returning mimeType and base64Data
 func ParseBase64Image(s string) (mimeType, base64Data string) {
-	// 格式: data:image/png;base64,iVBORw0KGgo...
+	// Format: data:image/png; base64,iVBORw0KGgo...
 	if !strings.HasPrefix(s, "data:image/") {
 		return "", ""
 	}
-	// 查找 base64 数据的起始位置
+	// Find the starting position of the base64 data
 	commaIdx := strings.Index(s, ",")
 	if commaIdx == -1 {
 		return "", ""
 	}
-	// 提取 MIME 类型: data:image/png;base64 -> image/png
+	// Extract MIME type: data:image/png; base64 -> image/png
 	header := s[:commaIdx]
 	semiIdx := strings.Index(header, ";")
 	if semiIdx == -1 {
 		return "", ""
 	}
-	mimeType = header[5:semiIdx] // 去掉 "data:" 前缀
+	mimeType = header[5:semiIdx] // Remove the "data:" prefix
 	base64Data = s[commaIdx+1:]
 	return mimeType, base64Data
 }
 
-// LoadLocalImage 加载本地图片并转为 base64 格式（带压缩）
+// LoadLocalImage loads the local image and converts it to base64 format (with compression)
 func LoadLocalImage(path string) (string, error) {
 	return LoadLocalImageWithMaxSize(path, DefaultImageMaxSize)
 }
 
-// LoadLocalImageWithMaxSize 加载本地图片并转为 base64 格式（带压缩，指定最大尺寸）
+// LoadLocalImageWithMaxSize loads the local image and converts it to base64 format (with compression, specifying maximum size)
 func LoadLocalImageWithMaxSize(path string, maxSize int) (string, error) {
-	// 处理 file:// 协议前缀
+	// Handle file:// protocol prefixes
 	if strings.HasPrefix(path, "file://") {
 		path = strings.TrimPrefix(path, "file://")
 	}
@@ -211,7 +211,7 @@ func LoadLocalImageWithMaxSize(path string, maxSize int) (string, error) {
 
 	compressedData, mimeType, err := CompressImage(data, originalFormat, maxSize)
 	if err != nil {
-		// 压缩失败，使用原始数据
+		// Compression failed, using raw data
 		mimeType = "image/" + originalFormat
 		if originalFormat == "jpeg" {
 			mimeType = "image/jpeg"
@@ -223,17 +223,17 @@ func LoadLocalImageWithMaxSize(path string, maxSize int) (string, error) {
 	return fmt.Sprintf("data:%s;base64,%s", mimeType, base64Data), nil
 }
 
-// CompressImage 压缩图片，返回压缩后的数据和 MIME 类型
-// 使用默认压缩选项（保留格式，质量 92）
+// CompressImage compresses images and returns the compressed data and MIME type
+// Use the default compression option (keep format, quality 92)
 func CompressImage(data []byte, originalFormat string, maxSize int) ([]byte, string, error) {
 	opts := DefaultCompressOptions
 	opts.MaxSize = maxSize
 	return CompressImageWithOptions(data, originalFormat, opts)
 }
 
-// CompressImageWithOptions 使用指定选项压缩图片
+// CompressImageWithOptions compresses images using the specified option
 func CompressImageWithOptions(data []byte, originalFormat string, opts CompressOptions) ([]byte, string, error) {
-	// 设置默认值
+	// Set the default value
 	if opts.MaxSize <= 0 {
 		opts.MaxSize = DefaultImageMaxSize
 	}
@@ -256,7 +256,7 @@ func CompressImageWithOptions(data []byte, originalFormat string, opts CompressO
 	var newWidth, newHeight int
 
 	if needsResize {
-		// 计算缩放比例
+		// Calculate the scaling ratio
 		if origWidth > origHeight {
 			newWidth = opts.MaxSize
 			newHeight = origHeight * opts.MaxSize / origWidth
@@ -265,7 +265,7 @@ func CompressImageWithOptions(data []byte, originalFormat string, opts CompressO
 			newWidth = origWidth * opts.MaxSize / origHeight
 		}
 
-		// 创建缩放后的图片
+		// Create a scaled image
 		resized := image.NewRGBA(image.Rect(0, 0, newWidth, newHeight))
 		draw.CatmullRom.Scale(resized, resized.Bounds(), img, bounds, draw.Over, nil)
 		resultImg = resized
@@ -277,7 +277,7 @@ func CompressImageWithOptions(data []byte, originalFormat string, opts CompressO
 	if opts.KeepFormat {
 		switch format {
 		case "png":
-			// PNG 无损编码
+			// PNG lossless encoding
 			if err := png.Encode(&buf, resultImg); err != nil {
 				return nil, "", fmt.Errorf("failed to encode PNG: %w", err)
 			}
@@ -288,14 +288,14 @@ func CompressImageWithOptions(data []byte, originalFormat string, opts CompressO
 			}
 			mimeType = "image/jpeg"
 		default:
-			// 其他格式统一转 PNG（无损）
+			// Other formats are uniformly converted to PNG (lossless)
 			if err := png.Encode(&buf, resultImg); err != nil {
 				return nil, "", fmt.Errorf("failed to encode image: %w", err)
 			}
 			mimeType = "image/png"
 		}
 	} else {
-		// 统一转 JPEG
+		// Unified conversion to JPEG
 		if err := jpeg.Encode(&buf, resultImg, &jpeg.Options{Quality: opts.Quality}); err != nil {
 			return nil, "", fmt.Errorf("failed to encode JPEG: %w", err)
 		}
@@ -305,9 +305,9 @@ func CompressImageWithOptions(data []byte, originalFormat string, opts CompressO
 	return buf.Bytes(), mimeType, nil
 }
 
-// LoadLocalImageWithOptions 加载本地图片并转为 base64 格式（使用指定压缩选项）
+// LoadLocalImageWithOptions Load the local image and convert it to base64 format (using the specified compression option)
 func LoadLocalImageWithOptions(path string, opts CompressOptions) (string, error) {
-	// 处理 file:// 协议前缀
+	// Handle file:// protocol prefixes
 	if strings.HasPrefix(path, "file://") {
 		path = strings.TrimPrefix(path, "file://")
 	}
@@ -331,7 +331,7 @@ func LoadLocalImageWithOptions(path string, opts CompressOptions) (string, error
 
 	compressedData, mimeType, err := CompressImageWithOptions(data, originalFormat, opts)
 	if err != nil {
-		// 压缩失败，使用原始数据
+		// Compression failed, using raw data
 		mimeType = "image/" + originalFormat
 		if originalFormat == "jpeg" {
 			mimeType = "image/jpeg"
@@ -343,13 +343,13 @@ func LoadLocalImageWithOptions(path string, opts CompressOptions) (string, error
 	return fmt.Sprintf("data:%s;base64,%s", mimeType, base64Data), nil
 }
 
-// SaveBase64ToTempFile 将 base64 图片保存到临时文件，返回文件路径
-// 用于非视觉模型场景：将 base64 图片保存到临时文件，使模型可以通过文件路径将图片传递给图像分析工具
+// SaveBase64ToTempFile saves the base64 image to a temporary file and returns to the file path
+// For non-visual model scenarios: Save base64 images to temporary files, allowing the model to pass images to image analysis tools via file paths
 func SaveBase64ToTempFile(base64Str string) (string, error) {
 	return SaveBase64WithContext(base64Str, "")
 }
 
-// SaveBase64WithContext 将 base64 图片保存到指定上下文目录（根目录/agentID/日期/文件名），返回文件路径
+// SaveBase64WithContext saves the base64 image to the specified context directory (root/agentID/date/filename), returning the file path
 func SaveBase64WithContext(base64Str string, agentID string) (string, error) {
 	mimeType, base64Data := ParseBase64Image(base64Str)
 	if mimeType == "" || base64Data == "" {
@@ -377,7 +377,7 @@ func SaveBase64WithContext(base64Str string, agentID string) (string, error) {
 	if globalMediaRootDir != "" {
 		rootDir = globalMediaRootDir
 	} else {
-		// 回退到临时目录下的 images
+		// Fall back to images in the temporary directory
 		rootDir = filepath.Join(os.TempDir(), "images")
 	}
 
@@ -400,12 +400,12 @@ func SaveBase64WithContext(base64Str string, agentID string) (string, error) {
 		return "", fmt.Errorf("failed to write image data: %w", err)
 	}
 
-	// 因为我们在 SetGlobalMediaRootDir 中已经保证了 globalMediaRootDir 是绝对路径
-	// 或者兜底使用 os.TempDir() 也是绝对路径，所以此处 filePath 拼接出来就已经是绝对路径了，直接返回即可
+	// Because we have already ensured in SetGlobalMediaRootDir that globalMediaRootDir is an absolute path
+	// Alternatively, use os.TempDir () as a backup method, which is also an absolute path, so concatenating filePath here already counts as an absolute path, so just return directly
 	return filePath, nil
 }
 
-// LoadImageFromURLWithOptions 从外部 URL 下载图片并转为 base64 格式（使用指定压缩选项）
+// LoadImageFromURLWithOptions Download images from external URLs and convert them to base64 format (using specified compression options)
 func LoadImageFromURLWithOptions(url string, opts CompressOptions) (string, error) {
 	client := &http.Client{
 		Timeout: 30 * time.Second,
@@ -445,7 +445,7 @@ func LoadImageFromURLWithOptions(url string, opts CompressOptions) (string, erro
 
 	compressedData, compressedMimeType, err := CompressImageWithOptions(data, originalFormat, opts)
 	if err != nil {
-		// 压缩失败，使用原始数据
+		// Compression failed, using raw data
 		compressedData = data
 		compressedMimeType = mimeType
 		if compressedMimeType == "" {

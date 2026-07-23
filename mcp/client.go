@@ -14,12 +14,12 @@
  * limitations under the License.
  */
 
-// Package mcp 提供 MCP（Model Context Protocol）客户端组件。
-// 连接远程 MCP 服务器，调用远程 MCP 工具，将结果写入消息体传递给下一个节点。
-// 同时作为 MCPToolProvider 注册到 RuleConfig.Udf，供 agent 的 "self" 模式调用远程工具。
+// Package MCP provides MCP (Model Context Protocol) client components.
+// Connect to the remote MCP server, call the remote MCP tool, and write the result into the message body to pass to the next node.
+// At the same time, it registers as an MCPToolProvider in RuleConfig.Udf, allowing the agent to call remote tools in "self" mode.
 package mcp
 
-// 规则链节点配置示例：
+// Example of rule chain node configuration:
 // {
 //   "id": "s1",
 //   "type": "ai/mcpClient",
@@ -57,27 +57,27 @@ func init() {
 const (
 	// nodeType is the component type identifier
 	nodeType = "ai/mcpClient"
-	// defaultClientName 默认客户端名称
+	// defaultClientName The default client name
 	defaultClientName = "RuleGo MCP Client"
-	// defaultClientVersion 默认客户端版本
+	// defaultClientVersion The default client version
 	defaultClientVersion = "1.0.0"
 )
 
-// ClientConfiguration MCP 客户端配置
+// ClientConfiguration MCP client configuration
 type ClientConfiguration struct {
-	// Server MCP 服务器地址，可以是 HTTP URL 或 stdio 命令
+	// Server MCP server address, which can be an HTTP URL or a stdio command
 	Server string `json:"server" label:"MCP Server" desc:"MCP server address, supports HTTP URL or stdio command" required:"true"`
 
-	// ToolName 调用的远程 MCP 工具名称。支持 ${} 表达式。
-	// 如果为空，则从消息 metadata 的 mcpToolName 字段获取。
+	// ToolName is the name of the remote MCP tool called by ToolName. Supports ${} expressions.
+	// If empty, it is retrieved from the mcpToolName field of the message metadata.
 	ToolName string `json:"toolName" label:"Tool Name" desc:"Remote MCP tool name to call. Supports ${metadata.xxx} and ${msg.xxx} expressions"`
 
-	// Args 自定义工具参数 JSON 模板。支持 ${} 表达式。
-	// 例如: '{"city": "${msg.city}", "unit": "celsius"}'
-	// 如果为空，默认使用消息体 JSON 作为工具参数。
+	// Args custom tool parameter JSON template. Supports ${} expressions.
+	// For example: '{"city": "${msg.city}", "unit": "celsius"}'
+	// If it is empty, the message body JSON is used as the tool parameter by default.
 	Args string `json:"args" label:"Arguments" desc:"Tool arguments JSON template. Supports ${msg.xxx} and ${metadata.xxx} expressions. Falls back to message body"`
 
-	// ToolFilter 工具过滤器，仅影响 MCPToolProvider 注册
+	// ToolFilter tool filter, only affects MCPToolProvider registration
 	ToolFilter []string `json:"toolFilter" label:"Tool Filter" desc:"Filter tools for ToolProvider registration. Empty means all. Supports * wildcard"`
 }
 
@@ -86,7 +86,7 @@ func (ClientConfiguration) Desc() string {
 	return "Connect to a remote MCP server, call MCP tools, and write results to the message body. Routes to Success/Failure"
 }
 
-// Client 连接远程 MCP 服务器，调用远程 MCP 工具。
+// Client connects to the remote MCP server and calls the remote MCP tool.
 type Client struct {
 	Config     ClientConfiguration
 	RuleConfig types.Config
@@ -120,7 +120,7 @@ func (c *Client) Init(ruleConfig types.Config, configuration types.Configuration
 		return fmt.Errorf("mcpClient server config is empty")
 	}
 
-	// 预编译 toolName 表达式模板
+	// Precompile toolName expression templates
 	if c.Config.ToolName != "" {
 		tpl, err := el.NewTemplate(c.Config.ToolName)
 		if err != nil {
@@ -129,7 +129,7 @@ func (c *Client) Init(ruleConfig types.Config, configuration types.Configuration
 		c.toolNameTpl = tpl
 	}
 
-	// 预编译 args JSON 模板
+	// Pre-compile args JSON templates
 	if c.Config.Args != "" {
 		tpl, err := el.NewTemplate(c.Config.Args)
 		if err != nil {
@@ -142,7 +142,7 @@ func (c *Client) Init(ruleConfig types.Config, configuration types.Configuration
 	return nil
 }
 
-// OnMsg 处理消息：解析工具名和参数，调用远程 MCP 工具，将结果写入消息体。
+// OnMsg processes messages: parses tool names and parameters, calls remote MCP tools, and writes results into the message body.
 func (c *Client) OnMsg(ctx types.RuleContext, msg types.RuleMsg) {
 	toolName := c.resolveToolName(ctx, msg)
 	if toolName == "" {
@@ -162,7 +162,7 @@ func (c *Client) OnMsg(ctx types.RuleContext, msg types.RuleMsg) {
 	ctx.TellSuccess(msg)
 }
 
-// resolveToolName 解析工具名，支持 ${} 表达式
+// resolveToolName parses the tool name, supports ${} expressions
 func (c *Client) resolveToolName(ctx types.RuleContext, msg types.RuleMsg) string {
 	if c.toolNameTpl != nil {
 		if c.toolNameTpl.HasVar() {
@@ -174,7 +174,7 @@ func (c *Client) resolveToolName(ctx types.RuleContext, msg types.RuleMsg) strin
 	return msg.Metadata.GetValue("mcpToolName")
 }
 
-// resolveArgs 解析工具参数，支持 ${} 表达式 JSON 模板，默认使用消息体
+// resolveArgs parsing tool parameters, supports ${} expression JSON templates, default uses message bodies
 func (c *Client) resolveArgs(ctx types.RuleContext, msg types.RuleMsg) map[string]interface{} {
 	if c.argsTpl != nil {
 		var env map[string]interface{}
@@ -189,7 +189,7 @@ func (c *Client) resolveArgs(ctx types.RuleContext, msg types.RuleMsg) map[strin
 		return args
 	}
 
-	// 默认使用消息体 JSON 作为参数
+	// By default, the message body JSON is used as a parameter
 	var args map[string]interface{}
 	data := msg.GetData()
 	if data != "" {
@@ -203,7 +203,7 @@ func (c *Client) resolveArgs(ctx types.RuleContext, msg types.RuleMsg) map[strin
 	return args
 }
 
-// Destroy 关闭连接
+// Destroy to close the connection
 func (c *Client) Destroy() {
 	c.mu.Lock()
 	defer c.mu.Unlock()
@@ -214,7 +214,7 @@ func (c *Client) Destroy() {
 	c.started = false
 }
 
-// Start 连接远程 MCP 服务器，发现工具，注册为 MCPToolProvider
+// Start to connect to the remote MCP server, discover the tool, and register as MCPToolProvider
 func (c *Client) Start() error {
 	c.mu.Lock()
 	defer c.mu.Unlock()
@@ -258,15 +258,15 @@ func (c *Client) Start() error {
 	if c.RuleConfig.Udf == nil {
 		c.RuleConfig.Udf = make(map[string]interface{})
 	}
-	// 使用 MCPToolProviderKey 作为默认 key 注册（保持向后兼容）
-	// 注意：如果同一 RuleConfig 下有多个 MCP Client 实例，后注册的会覆盖先注册的。
-	// 需要唯一标识时，可使用 MCPToolProviderKey + ":" + server 地址。
+	// Register using MCPToolProviderKey as the default key (maintain backward compatibility)
+	// Note: If there are multiple MCP Client instances under the same RuleConfig, the one registered later will override the one registered first.
+	// If a unique identifier is needed, MCPToolProviderKey + ":" + server address can be used.
 	c.RuleConfig.Udf[types.MCPToolProviderKey] = c
 
 	return nil
 }
 
-// ListToolDefinitions 实现 types.MCPToolProvider 接口
+// ListToolDefinitions implementation types.MCPToolProvider interface
 func (c *Client) ListToolDefinitions() ([]types.MCPToolDefinition, error) {
 	c.mu.RLock()
 	defer c.mu.RUnlock()
@@ -275,7 +275,7 @@ func (c *Client) ListToolDefinitions() ([]types.MCPToolDefinition, error) {
 	return defs, nil
 }
 
-// CallTool 实现 types.MCPToolProvider 接口
+// CallTool implements types.MCPToolProvider interface
 func (c *Client) CallTool(ctx context.Context, toolName string, args map[string]interface{}) (string, error) {
 	c.mu.RLock()
 	handler, ok := c.toolHandlers[toolName]
@@ -286,7 +286,7 @@ func (c *Client) CallTool(ctx context.Context, toolName string, args map[string]
 	return handler(ctx, args)
 }
 
-// connect 建立 MCP 客户端连接
+// connect: establish an MCP client connection
 func (c *Client) connect(ctx context.Context) (*client.Client, error) {
 	var cli *client.Client
 
@@ -326,7 +326,7 @@ func (c *Client) connect(ctx context.Context) (*client.Client, error) {
 	return cli, nil
 }
 
-// callTool 调用远程 MCP 工具
+// callTool calls remote MCP tools
 func (c *Client) callTool(ctx context.Context, toolName string, args map[string]interface{}) (string, error) {
 	c.mu.RLock()
 	cli := c.cli

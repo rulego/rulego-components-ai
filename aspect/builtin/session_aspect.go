@@ -15,14 +15,14 @@ import (
 	"github.com/rulego/rulego/api/types"
 )
 
-// imagePathMarkerRegexp 匹配 processImages 添加的 [图片：path] 标记
+// imagePathMarkerRegexp matches the [image:path] tag added by processImages
 var imagePathMarkerRegexp = regexp.MustCompile(`\[图片：[^\]]*\]\n?`)
 
-// imageTokenEstimate 每张图片估算的 token 数
+// imageTokenEstimate: The estimated number of tokens per image
 const imageTokenEstimate = 85
 
-// estimateTokenCount 估算文本的 token 数量
-// 使用简单的估算算法：区分中文和英文
+// estimateTokenCount estimates the number of tokens in the text
+// Use simple estimation algorithms: distinguish between Chinese and English
 func estimateTokenCount(text string) int {
 	if len(text) == 0 {
 		return 0
@@ -37,8 +37,8 @@ func estimateTokenCount(text string) int {
 		}
 	}
 
-	// 中文：约 1.5 字符/token (即 2/3 token/字符)
-	// 英文/其他：约 4 字符/token (即 1/4 token/字符)
+	// Chinese: about 1.5 characters/token (i.e., 2/3 token/character)
+	// English/Other: about 4 characters/token (i.e., 1/4 token/character)
 	nonChineseCount := charCount - chineseCount
 	estimatedTokens := chineseCount*2/3 + nonChineseCount/4
 
@@ -48,8 +48,8 @@ func estimateTokenCount(text string) int {
 	return estimatedTokens
 }
 
-// filterImageURLs 过滤图片列表
-// 保留：本地文件路径、base64 格式、http/https URL
+// filterImageURLs: filters the list of images
+// Retain: local file path, base64 format, http/https URL
 func filterImageURLs(images []string) []string {
 	if len(images) == 0 {
 		return nil
@@ -63,8 +63,8 @@ func filterImageURLs(images []string) []string {
 	return result
 }
 
-// SessionAspect 会话管理切面
-// 负责加载和保存会话历史
+// SessionAspect Session Management Aspect
+// Responsible for loading and saving session history
 type SessionAspect struct {
 	order        int
 	sessionMgr   session.SessionManager
@@ -72,7 +72,7 @@ type SessionAspect struct {
 	logger       types.Logger
 }
 
-// NewSessionAspect 创建会话管理切面
+// NewSessionAspect creates a session management aspect
 func NewSessionAspect(sessionMgr session.SessionManager, defaultScope session.SessionScope, logger types.Logger) *SessionAspect {
 	return &SessionAspect{
 		order:        50,
@@ -82,12 +82,12 @@ func NewSessionAspect(sessionMgr session.SessionManager, defaultScope session.Se
 	}
 }
 
-// Order 返回执行顺序
+// Order returns the execution order
 func (a *SessionAspect) Order() int {
 	return a.order
 }
 
-// New 创建切面的新实例
+// New: Create a new instance of the face
 func (a *SessionAspect) New() aspect.Aspect {
 	return &SessionAspect{
 		order:        a.order,
@@ -97,27 +97,27 @@ func (a *SessionAspect) New() aspect.Aspect {
 	}
 }
 
-// PointCut 检查是否应用此切面
+// PointCut checks whether this cut is applied
 func (a *SessionAspect) PointCut(ctx context.Context, point *aspect.AgentPoint) bool {
 	return a.sessionMgr != nil
 }
 
-// log 内部日志方法
+// log internal log method
 func (a *SessionAspect) log(format string, v ...interface{}) {
 	if a.logger != nil {
 		a.logger.Debugf(format, v...)
 	}
 }
 
-// Before 加载会话历史
+// Before loading session history
 func (a *SessionAspect) Before(ctx context.Context, point *aspect.AgentPoint, input *aspect.AgentInput) (*aspect.AgentInput, error) {
-	// 确定会话作用域：优先使用配置的 defaultScope，否则使用 per_peer
+	// Determine session scope: prioritize the configured defaultScope; otherwise, use per_peer
 	scope := a.defaultScope
 	if scope == "" {
 		scope = session.ScopePerPeer
 	}
 
-	// 构建会话请求
+	// Construct the session request
 	req := session.SessionRequest{
 		AgentID: point.AgentId,
 		Channel: session.GetChannelFromInput(point, input),
@@ -128,7 +128,7 @@ func (a *SessionAspect) Before(ctx context.Context, point *aspect.AgentPoint, in
 	a.log("[SessionAspect] Before: agentId=%s, channel=%s, scope=%s, scopeId=%s, userId=%s",
 		req.AgentID, req.Channel, req.Scope, req.ScopeID, req.UserID)
 
-	// 获取或创建会话（无论是否跳过历史加载，都需要 sessionKey 用于保存消息）
+	// Retrieve or create a session (whether or not historical loading is skipped, sessionKey is required to save messages)
 	sess, err := a.sessionMgr.GetOrCreate(ctx, req)
 	if err != nil {
 		a.log("[SessionAspect] Before: GetOrCreate failed: %v", err)
@@ -137,12 +137,12 @@ func (a *SessionAspect) Before(ctx context.Context, point *aspect.AgentPoint, in
 	a.log("[SessionAspect] Before: session created/retrieved, key=%s", sess.Key)
 	input.SessionKey = sess.Key
 
-	// 注入会话模型到 metadata（如果用户通过命令切换了模型）
+	// Injecting the session model into metadata (if the user switches the model via command)
 	if sess.Metadata.Model != "" {
 		input.Metadata[aspect.MetaSessionModel] = sess.Metadata.Model
 		a.log("[SessionAspect] Before: injected session_model=%s into metadata", sess.Metadata.Model)
 	}
-	// 注入会话级扩展参数覆盖（思考强度等）到 metadata（JSON 字符串）
+	// Injecting session-level extended parameter coverage (such as thought strength) to metadata (JSON string)
 	if len(sess.Metadata.ExtraFields) > 0 {
 		if raw, err := json.Marshal(sess.Metadata.ExtraFields); err == nil {
 			input.Metadata[aspect.MetaSessionExtraFields] = string(raw)
@@ -150,7 +150,7 @@ func (a *SessionAspect) Before(ctx context.Context, point *aspect.AgentPoint, in
 		}
 	}
 
-	// 检查是否加载历史消息
+	// Check if historical messages are loading
 	if input.Metadata[aspect.MetaLoadHistory] != "true" {
 		a.log("[SessionAspect] Before: %s not set, skipping history load", aspect.MetaLoadHistory)
 		a.log("[SessionAspect] Before: session stats: messages=%d, totalTokens=%d", sess.Metadata.MessageCount, sess.Metadata.TotalTokenCount)
@@ -158,7 +158,7 @@ func (a *SessionAspect) Before(ctx context.Context, point *aspect.AgentPoint, in
 		return input, nil
 	}
 
-	// 智能保护: 检查是否需要压缩
+	// Intelligent protection: Check if compression is needed
 	if a.shouldAutoCompact(sess) {
 		a.log("[SessionAspect] Before: auto-triggering compaction for session=%s (tokens=%d, messages=%d)",
 			sess.Key, sess.Metadata.TotalTokenCount, sess.Metadata.MessageCount)
@@ -172,7 +172,7 @@ func (a *SessionAspect) Before(ctx context.Context, point *aspect.AgentPoint, in
 		}
 	}
 
-	// 从配置获取历史消息限制和工具调用过滤参数（一次取值）
+	// Retrieve historical message limits and tool call filtering parameters (single value) from configuration
 	historyLimit := 100
 	keepToolCallsCount := 5
 	if config := a.sessionMgr.GetConfig(); config != nil {
@@ -190,11 +190,11 @@ func (a *SessionAspect) Before(ctx context.Context, point *aspect.AgentPoint, in
 		return input, nil
 	}
 
-	// 过滤工具调用消息：只保留最近的 N 条
+	// Filter tool calls messages: only keep the most recent N
 	history = filterRecentToolCalls(history, keepToolCallsCount)
-	// 转换为 schema.Message
+	// Convert to schema.Message
 	input.HistoryMessages = convertSessionMessagesToSchema(history)
-	// 将最近历史消息中的本地图片文件路径转为 base64，确保 LLM API 可读取
+	// Convert the local image file path in recent history messages to base64 to ensure the LLM API is readable
 	converted, total := convertRecentHistoryImagesToBase64(input.HistoryMessages)
 	if total > 0 {
 		a.log("[SessionAspect] Before: converted %d/%d history images from local file to base64", converted, total)
@@ -202,14 +202,14 @@ func (a *SessionAspect) Before(ctx context.Context, point *aspect.AgentPoint, in
 	a.log("[SessionAspect] Before: loaded %d history messages, session stats: messages=%d, totalTokens=%d",
 		len(history), sess.Metadata.MessageCount, sess.Metadata.TotalTokenCount)
 
-	// 在 LLM 调用之前保存用户消息到 session
+	// Save user messages to sessions before LLM calls
 	a.saveUserMessageBeforeLLM(ctx, input, sess.Key)
 
 	return input, nil
 }
 
-// shouldAutoCompact 检查是否应该自动压缩
-// 安全阈值策略：当消息数 >= 10 且 token 数 >= 100000 时触发
+// shouldAutoCompact checks whether automatic compression is needed
+// Security threshold policy: triggered when the number of messages > = 10 and the number of tokens > = 100,000
 func (a *SessionAspect) shouldAutoCompact(sess *session.Session) bool {
 	if sess.Metadata.MessageCount < 10 {
 		return false
@@ -218,7 +218,7 @@ func (a *SessionAspect) shouldAutoCompact(sess *session.Session) bool {
 	return sess.Metadata.TotalTokenCount >= safetyThreshold
 }
 
-// After 保存会话消息
+// After saving session messages
 func (a *SessionAspect) After(ctx context.Context, point *aspect.AgentPoint, output *aspect.AgentOutput) (*aspect.AgentOutput, error) {
 	sessionKey := output.SessionKey
 	if sessionKey == "" {
@@ -230,7 +230,7 @@ func (a *SessionAspect) After(ctx context.Context, point *aspect.AgentPoint, out
 	}
 	a.log("[SessionAspect] After: saving messages for session=%s", sessionKey)
 
-	// 检查是否是命令响应
+	// Check if it is a command response
 	if output.Metadata["_isCommandResponse"] == true {
 		a.log("[SessionAspect] After: command response detected, skipping history save")
 		if _, err := a.sessionMgr.Get(ctx, sessionKey); err != nil {
@@ -243,18 +243,18 @@ func (a *SessionAspect) After(ctx context.Context, point *aspect.AgentPoint, out
 		return output, nil
 	}
 
-	// 用户消息已在 Before() 中预存，After() 只保存助手回复和工具调用
+	// User messages are pre-stored in Before(), which only stores assistant replies and tool calls
 	userTokenCount := a.estimateUserTokenCount(output.OriginalMessages)
 
 	messageCount := 0
 	totalEstimatedTokens := userTokenCount
 
-	// 保存工具调用和结果
+	// Save tool calls and results
 	tcCount, tcTokens := a.saveToolCallMessages(ctx, sessionKey, output.ToolCalls)
 	messageCount += tcCount
 	totalEstimatedTokens += tcTokens
 
-	// 保存助手最终回复
+	// Save the assistant for final reply
 	if output.Content != "" {
 		assistantTokenCount := estimateTokenCount(output.Content)
 		assistantMsg := &session.SessionMessage{
@@ -273,13 +273,13 @@ func (a *SessionAspect) After(ctx context.Context, point *aspect.AgentPoint, out
 		}
 	}
 
-	// 更新会话统计
+	// Update session statistics
 	a.updateSessionStats(ctx, sessionKey, output, totalEstimatedTokens)
 
 	return output, nil
 }
 
-// saveToolCallMessages 保存工具调用和结果消息，返回消息数量和估算 token 数
+// saveToolCallMessages saves the tool call and result messages, returns message count, and estimates the number of tokens
 func (a *SessionAspect) saveToolCallMessages(ctx context.Context, sessionKey string, toolCalls []aspect.ToolCallResult) (messageCount, totalTokens int) {
 	saveToolCalls := true
 	if config := a.sessionMgr.GetConfig(); config != nil && config.PruningConfig != nil {
@@ -288,7 +288,7 @@ func (a *SessionAspect) saveToolCallMessages(ctx context.Context, sessionKey str
 	validToolCalls := a.filterSavableToolCalls(toolCalls)
 
 	if len(validToolCalls) > 0 && saveToolCalls {
-		// 1. 保存助手消息（带工具调用）
+		// 1. Save assistant messages (with tool call)
 		toolCallsInfo := make([]session.ToolCallInfo, 0, len(validToolCalls))
 		toolCallsTokenCount := 0
 		for _, tc := range validToolCalls {
@@ -316,7 +316,7 @@ func (a *SessionAspect) saveToolCallMessages(ctx context.Context, sessionKey str
 			a.log("[SessionAspect] After: assistant tool call message saved, toolCalls=%d, tokenCount=%d", len(toolCallsInfo), toolCallsTokenCount)
 		}
 
-		// 2. 保存工具结果消息
+		// 2. Save the tool result message
 		for _, tc := range validToolCalls {
 			toolResult := tc.Result
 			if tc.Error != nil {
@@ -349,7 +349,7 @@ func (a *SessionAspect) saveToolCallMessages(ctx context.Context, sessionKey str
 	return messageCount, totalTokens
 }
 
-// estimateUserTokenCount 从 OriginalMessages 估算用户消息的 token 数
+// estimateUserTokenCount estimates the number of tokens in a user's message from OriginalMessages
 func (a *SessionAspect) estimateUserTokenCount(messages []*schema.Message) int {
 	for i := len(messages) - 1; i >= 0; i-- {
 		msg := messages[i]
@@ -373,14 +373,14 @@ func (a *SessionAspect) estimateUserTokenCount(messages []*schema.Message) int {
 	return 0
 }
 
-// updateSessionStats 更新会话 token 统计
+// updateSessionStats updates session token statistics
 func (a *SessionAspect) updateSessionStats(ctx context.Context, sessionKey string, output *aspect.AgentOutput, totalEstimatedTokens int) {
 	sess, err := a.sessionMgr.Get(ctx, sessionKey)
 	if err != nil {
 		a.log("[SessionAspect] After: Get session for stats update failed: %v", err)
 		return
 	}
-	// 使用模型返回的 token 统计作为当前上下文占用
+	// Use the token statistics returned by the model as the current context occupancy
 	if output.TokenUsage.TotalTokens > 0 && output.Content != "" {
 		sess.Metadata.TotalTokenCount = output.TokenUsage.TotalTokens
 	}
@@ -407,7 +407,7 @@ func (a *SessionAspect) filterSavableToolCalls(toolCalls []aspect.ToolCallResult
 	return filtered
 }
 
-// parseSessionKeyToRequest 从 sessionKey 解析会话请求信息
+// parseSessionKeyToRequest parses session request information from the sessionKey
 func (a *SessionAspect) parseSessionKeyToRequest(sessionKey string, point *aspect.AgentPoint) session.SessionRequest {
 	agentId, channel, scope, scopeId, err := session.ParseSessionKey(sessionKey)
 	if err != nil {
@@ -433,9 +433,9 @@ func (a *SessionAspect) parseSessionKeyToRequest(sessionKey string, point *aspec
 	}
 }
 
-// filterRecentToolCalls 过滤工具调用消息，只保留最近的 N 组
-// 策略：保留所有用户消息和普通助手消息，只对工具调用相关消息进行限制
-// 一组工具调用 = 1 条 assistant(带 ToolCalls) + N 条 tool 结果消息
+// filterRecentToolCalls The filtering tool calls messages and only keeps the nearest N groups
+// Policy: Keep all user messages and regular assistant messages, and only restrict messages related to tool calls
+// A set of tool calls = 1 assistant (with ToolCalls) + N tool result messages
 func filterRecentToolCalls(msgs []*session.SessionMessage, keepCount int) []*session.SessionMessage {
 	if keepCount <= 0 || len(msgs) == 0 {
 		return msgs
@@ -487,7 +487,7 @@ func filterRecentToolCalls(msgs []*session.SessionMessage, keepCount int) []*ses
 	return result
 }
 
-// sanitizeRestorableToolCallHistory 清理恢复历史中的不成对工具调用消息。
+// sanitizeRestorableToolCallHistory cleans up unpaired tool call messages in the recovery history.
 func sanitizeRestorableToolCallHistory(msgs []*session.SessionMessage) []*session.SessionMessage {
 	if len(msgs) == 0 {
 		return nil
@@ -551,7 +551,7 @@ func sanitizeRestorableToolCallHistory(msgs []*session.SessionMessage) []*sessio
 	return result
 }
 
-// convertSessionMessagesToSchema 转换会话消息为 schema.Message
+// convertSessionMessagesToSchema Converts session messages to schema.Message
 func convertSessionMessagesToSchema(msgs []*session.SessionMessage) []*schema.Message {
 	sanitizedMessages := sanitizeRestorableToolCallHistory(msgs)
 	result := make([]*schema.Message, 0, len(sanitizedMessages))
@@ -609,7 +609,7 @@ func convertSessionMessagesToSchema(msgs []*session.SessionMessage) []*schema.Me
 						},
 					})
 				}
-				// 仅在文本内容非空时添加文本 part（空的 text part 会导致部分模型 API 返回空响应）
+				// Add text parts only when the text content is not empty (empty text parts cause some model APIs to return empty responses)
 				if msg.Content != "" {
 					multiContent = append(multiContent, schema.MessageInputPart{
 						Type: schema.ChatMessagePartTypeText,
@@ -631,7 +631,7 @@ func convertSessionMessagesToSchema(msgs []*session.SessionMessage) []*schema.Me
 	return result
 }
 
-// extractImagesFromExtra 从消息的 Extra 字段提取原始图片引用（本地路径或 URL）
+// extractImagesFromExtra Extracts the original image reference (local path or URL) from the Extra field of the message
 func extractImagesFromExtra(extra map[string]any) []string {
 	if extra == nil {
 		return nil
@@ -651,7 +651,7 @@ func extractImagesFromExtra(extra map[string]any) []string {
 	return images
 }
 
-// saveUserMessageBeforeLLM 在 LLM 调用之前保存用户消息到 session
+// saveUserMessageBeforeLLM saves the user message to the session before the LLM calls
 func (a *SessionAspect) saveUserMessageBeforeLLM(ctx context.Context, input *aspect.AgentInput, sessionKey string) {
 	if len(input.Messages) == 0 {
 		return
@@ -665,7 +665,7 @@ func (a *SessionAspect) saveUserMessageBeforeLLM(ctx context.Context, input *asp
 		userContent := msg.Content
 		var userImages []string
 
-		// 当 Content 为空但 UserInputMultiContent 有文本 part 时，提取文本内容
+		// When Content is empty but UserInputMultiContent has a text part, extract the text content
 		if userContent == "" && len(msg.UserInputMultiContent) > 0 {
 			for _, part := range msg.UserInputMultiContent {
 				if part.Type == schema.ChatMessagePartTypeText && part.Text != "" {
@@ -675,7 +675,7 @@ func (a *SessionAspect) saveUserMessageBeforeLLM(ctx context.Context, input *asp
 			}
 		}
 
-		// 提取图片：优先从 Extra 获取原始引用（本地路径/URL）
+		// Image extraction: prioritize obtaining original references (local paths/URLs) from Extra
 		if extraImages := extractImagesFromExtra(msg.Extra); len(extraImages) > 0 {
 			userImages = extraImages
 		} else if len(msg.UserInputMultiContent) > 0 {
@@ -691,8 +691,8 @@ func (a *SessionAspect) saveUserMessageBeforeLLM(ctx context.Context, input *asp
 			}
 		}
 
-		// 清理 processImages 添加的冗余 [图片：path] 标记
-		// 图片路径已保存在 images 字段，content 中不需要重复
+		// Clean up redundant [image:path] tags added by processImages
+		// The image path is saved in the images field, and there is no need to duplicate it in content
 		if len(userImages) > 0 {
 			userContent = stripImagePathMarkers(userContent)
 		}
@@ -717,8 +717,8 @@ func (a *SessionAspect) saveUserMessageBeforeLLM(ctx context.Context, input *asp
 	}
 }
 
-// convertRecentHistoryImagesToBase64 将最近历史消息中的本地图片文件路径转为 base64
-// 只在最近几轮对话内查找并转换，太老的图片降级为纯文本
+// convertRecentHistoryImagesToBase64 converts the local image file path in recent history messages to base64
+// Only search and convert within the most recent rounds of dialogue; images that are too old are downgraded to plain text
 func convertRecentHistoryImagesToBase64(history []*schema.Message) (converted, total int) {
 	if len(history) == 0 {
 		return 0, 0
@@ -728,7 +728,7 @@ func convertRecentHistoryImagesToBase64(history []*schema.Message) (converted, t
 	if startIdx < 0 {
 		startIdx = 0
 	}
-	// 倒序查找最近一条有 UserInputMultiContent 的消息并转换
+	// Find the most recent message with UserInputMultiContent in reverse order and convert it
 	for i := len(history) - 1; i >= startIdx; i-- {
 		msg := history[i]
 		if len(msg.UserInputMultiContent) == 0 {
@@ -759,7 +759,7 @@ func convertRecentHistoryImagesToBase64(history []*schema.Message) (converted, t
 		}
 		break
 	}
-	// 清理：将所有仍包含本地文件路径 URL 的消息降级为纯文本
+	// Cleanup: Downgrade all messages that still contain the local file path URL to plain text
 	for i := range history {
 		msg := history[i]
 		if len(msg.UserInputMultiContent) == 0 {
@@ -791,7 +791,7 @@ func convertRecentHistoryImagesToBase64(history []*schema.Message) (converted, t
 	return converted, total
 }
 
-// stripImagePathMarkers 清理 processImages 添加的 [图片：path] 标记
+// stripImagePathMarkers cleans up the [image:path] tag added by processImages
 func stripImagePathMarkers(content string) string {
 	content = imagePathMarkerRegexp.ReplaceAllString(content, "")
 	return strings.TrimSpace(content)

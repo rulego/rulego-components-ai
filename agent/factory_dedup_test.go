@@ -8,7 +8,7 @@ import (
 	"github.com/cloudwego/eino/schema"
 )
 
-// mkAssistantWithTool 构造带单个 tool_call 的 assistant 消息。
+// mkAssistantWithTool constructs an assistant message with a single tool_call.
 func mkAssistantWithTool(name, args, callID string) *schema.Message {
 	return &schema.Message{
 		Role: schema.Assistant,
@@ -20,7 +20,7 @@ func mkAssistantWithTool(name, args, callID string) *schema.Message {
 	}
 }
 
-// mkTool 构造 tool result 消息。
+// mkTool constructs the tool result message.
 func mkTool(content, callID string) *schema.Message {
 	return &schema.Message{
 		Role:       schema.Tool,
@@ -29,7 +29,7 @@ func mkTool(content, callID string) *schema.Message {
 	}
 }
 
-// 无重复：原样返回（条数不变）。
+// No duplication: returns as is (number of entries unchanged).
 func TestDedup_NoRepeat(t *testing.T) {
 	in := []*schema.Message{
 		schema.UserMessage("hi"),
@@ -44,7 +44,7 @@ func TestDedup_NoRepeat(t *testing.T) {
 	}
 }
 
-// 3 连重复：折叠到 keepLast=2，删 1 对(assistant+tool)，保留轮 tool result 加提示。
+// 3 consecutive repetitions: fold to keepLast=2, delete 1 pair (assistant+tool), retain the tool result with a hint.
 func TestDedup_ThreeRepeatsCollapse(t *testing.T) {
 	args := `{"mode":"overwrite","path":"/f","content":"\n"}`
 	in := []*schema.Message{
@@ -57,7 +57,7 @@ func TestDedup_ThreeRepeatsCollapse(t *testing.T) {
 		mkTool("Success: Overwrote", "c3"),
 	}
 	out := dedupRepetitiveToolCalls(context.TODO(), in)
-	wantLen := len(in) - 2 // 删 1 对
+	wantLen := len(in) - 2 // Delete 1 pair
 	if len(out) != wantLen {
 		t.Fatalf("3-repeat should collapse 1 pair: got %d want %d", len(out), wantLen)
 	}
@@ -81,7 +81,7 @@ func TestDedup_ThreeRepeatsCollapse(t *testing.T) {
 	}
 }
 
-// 配对完整：折叠后每个保留的 assistant tool_call 都有其 tool result。
+// Complete pairing: After folding, each reserved assistant tool_call has its tool result.
 func TestDedup_PairIntact(t *testing.T) {
 	args := `{"x":1}`
 	in := []*schema.Message{
@@ -112,7 +112,7 @@ func TestDedup_PairIntact(t *testing.T) {
 	}
 }
 
-// 多并行 call（一个 assistant 2 个 tool_call）：签名留空，不折叠。
+// Multi-parallel call (one assistant, two tool_call): leave signatures blank, do not fold.
 func TestDedup_ParallelNotCollapsed(t *testing.T) {
 	in := []*schema.Message{
 		schema.UserMessage("do"),
@@ -129,17 +129,17 @@ func TestDedup_ParallelNotCollapsed(t *testing.T) {
 	}
 }
 
-// 中间有 user 消息打断（不紧邻）：不折叠。
+// If there is a user message interrupted in the middle (not adjacent to the next door): do not fold.
 func TestDedup_BrokenByUserNotCollapsed(t *testing.T) {
 	args := `{"p":1}`
 	in := []*schema.Message{
 		schema.UserMessage("do"),
 		mkAssistantWithTool("read", args, "c1"),
 		mkTool("r1", "c1"),
-		schema.UserMessage("again"), // 打断紧邻
+		schema.UserMessage("again"), // Interrupt the adjacent area
 		mkAssistantWithTool("read", args, "c2"),
 		mkTool("r2", "c2"),
-		schema.UserMessage("again2"), // 打断紧邻
+		schema.UserMessage("again2"), // Interrupt the adjacent area
 		mkAssistantWithTool("read", args, "c3"),
 		mkTool("r3", "c3"),
 	}
@@ -149,7 +149,7 @@ func TestDedup_BrokenByUserNotCollapsed(t *testing.T) {
 	}
 }
 
-// 幂等：对已折叠结果再跑，条数不变、不重复加提示。
+// Idempotency: Run again on the folded result, with the number of entries unchanged and no repeats, with a prompt.
 func TestDedup_Idempotent(t *testing.T) {
 	args := `{"m":1}`
 	in := []*schema.Message{
@@ -179,13 +179,13 @@ func TestDedup_Idempotent(t *testing.T) {
 	}
 }
 
-// args key 顺序不同但内容相同应判为相同（normalizeArgsKeyOrder）。
+// If the args key order is different but the content is the same, it should be treated as the same (normalizeArgsKeyOrder).
 func TestDedup_NormalizedArgs(t *testing.T) {
 	in := []*schema.Message{
 		schema.UserMessage("do"),
 		mkAssistantWithTool("read", `{"path":"a","n":1}`, "c1"),
 		mkTool("r1", "c1"),
-		mkAssistantWithTool("read", `{"n":1,"path":"a"}`, "c2"), // key 顺序不同
+		mkAssistantWithTool("read", `{"n":1,"path":"a"}`, "c2"), // The key order is different
 		mkTool("r2", "c2"),
 		mkAssistantWithTool("read", `{"path":"a","n":1}`, "c3"),
 		mkTool("r3", "c3"),
@@ -196,7 +196,7 @@ func TestDedup_NormalizedArgs(t *testing.T) {
 	}
 }
 
-// 多段不同工具的连续重复各自折叠。
+// Multiple consecutive repeats of different tools fold separately.
 func TestDedup_MultipleSegments(t *testing.T) {
 	in := []*schema.Message{
 		schema.UserMessage("do"),
@@ -213,7 +213,7 @@ func TestDedup_MultipleSegments(t *testing.T) {
 	}
 }
 
-// notice 加在保留轮（最后 keepLast 个）的首个 tool result，而非被删除的轮。
+// notice is added to the first tool result of the reserved round (the last keepLast round), rather than the deleted round.
 func TestDedup_NoticeOnKeptRound(t *testing.T) {
 	args := `{"p":1}`
 	in := []*schema.Message{
@@ -234,8 +234,8 @@ func TestDedup_NoticeOnKeptRound(t *testing.T) {
 	t.Fatal("no collapse notice found on kept round")
 }
 
-// 折叠后 tool_call / tool_result 严格成对：每个保留的 tool_call.id 恰好对应 1 个 tool result，
-// 反之亦然——无孤儿 tool_call、无孤儿 tool result（避免触发"工具不成对"的 API 报错）。
+// After folding, tool_call / tool_result are strictly paired: Each reserved tool_call.id corresponds exactly to one tool result,
+// Conversely, it is also the same — no orphan tool_call, no orphan tool result (to avoid triggering API errors caused by "tool not paired").
 func TestDedup_StrictPairing(t *testing.T) {
 	args := `{"p":1}`
 	in := []*schema.Message{

@@ -29,29 +29,29 @@ import (
 // It provides a centralized way to register and invoke aspects at different
 // execution points during agent processing.
 //
-// AspectManager 管理和执行 AI 智能体的切面。
-// 它提供了一种集中的方式来注册和调用智能体处理期间不同执行点的切面。
+// AspectManager manages and executes the AI agent face-to-face.
+// It provides a central place to register and invoke aspects at different points in agent execution.
 type AspectManager struct {
 	mu      sync.RWMutex
 	aspects []Aspect
 
 	// Categorized aspect lists for efficient execution
-	// 分类缓存的切面列表，用于高效执行
-	startAspects        []AgentStartAspect
-	beforeAspects       []AgentBeforeAspect
-	aroundAspects       []AgentAroundAspect
-	afterAspects        []AgentAfterAspect
-	completedAspects    []AgentCompletedAspect
-	messageBeforeAspects []MessageBeforeAspect
-	messageAfterAspects  []MessageAfterAspect
-	streamChunkAspects   []StreamChunkAspect
+	// Sectional lists of classification caches for efficient execution
+	startAspects          []AgentStartAspect
+	beforeAspects         []AgentBeforeAspect
+	aroundAspects         []AgentAroundAspect
+	afterAspects          []AgentAfterAspect
+	completedAspects      []AgentCompletedAspect
+	messageBeforeAspects  []MessageBeforeAspect
+	messageAfterAspects   []MessageAfterAspect
+	streamChunkAspects    []StreamChunkAspect
 	toolCallBeforeAspects []ToolCallBeforeAspect
 	toolCallAfterAspects  []ToolCallAfterAspect
 }
 
 // NewAspectManager creates a new AspectManager instance.
 //
-// NewAspectManager 创建一个新的 AspectManager 实例。
+// NewAspectManager creates a new AspectManager instance.
 func NewAspectManager() *AspectManager {
 	return &AspectManager{
 		aspects: make([]Aspect, 0),
@@ -61,8 +61,8 @@ func NewAspectManager() *AspectManager {
 // Register registers a single aspect to the manager.
 // The aspect will be categorized and sorted by order.
 //
-// Register 向管理器注册单个切面。
-// 切面将被分类并按顺序排序。
+// Register registers a single face in the manager.
+// The aspects are categorized and sorted by order.
 func (m *AspectManager) Register(aspect Aspect) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
@@ -73,8 +73,8 @@ func (m *AspectManager) Register(aspect Aspect) {
 // RegisterAll registers multiple aspects to the manager at once.
 // All aspects will be categorized and sorted by order.
 //
-// RegisterAll 一次性向管理器注册多个切面。
-// 所有切面将被分类并按顺序排序。
+// RegisterAll registers multiple aspects in the manager at once.
+// All aspects are categorized and sorted by order.
 func (m *AspectManager) RegisterAll(aspects ...Aspect) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
@@ -85,11 +85,11 @@ func (m *AspectManager) RegisterAll(aspects ...Aspect) {
 // categorizeAspects categorizes and sorts all registered aspects by type and order.
 // This method should be called after any modification to the aspects list.
 //
-// categorizeAspects 按类型和顺序对所有已注册的切面进行分类和排序。
-// 此方法应在修改切面列表后调用。
+// categorizeAspects categorizes and sorts all registered aspects by type and order.
+// This method should be called after modifying the facet list.
 func (m *AspectManager) categorizeAspects() {
 	// Create a copy and sort by Order
-	// 创建副本并按 Order 排序
+	// Create copies and sort them by Order
 	sortedAspects := make([]Aspect, len(m.aspects))
 	copy(sortedAspects, m.aspects)
 	sort.Slice(sortedAspects, func(i, j int) bool {
@@ -97,7 +97,7 @@ func (m *AspectManager) categorizeAspects() {
 	})
 
 	// Clear existing lists
-	// 清空现有列表
+	// Clear the existing list
 	m.startAspects = m.startAspects[:0]
 	m.beforeAspects = m.beforeAspects[:0]
 	m.aroundAspects = m.aroundAspects[:0]
@@ -110,7 +110,7 @@ func (m *AspectManager) categorizeAspects() {
 	m.toolCallAfterAspects = m.toolCallAfterAspects[:0]
 
 	// Categorize aspects
-	// 分类切面
+	// Classification and cross-section
 	for _, aspect := range sortedAspects {
 		if a, ok := aspect.(AgentStartAspect); ok {
 			m.startAspects = append(m.startAspects, a)
@@ -148,8 +148,8 @@ func (m *AspectManager) categorizeAspects() {
 // ExecuteStart executes all registered AgentStartAspect instances.
 // Returns the modified input and any error encountered.
 //
-// ExecuteStart 执行所有已注册的 AgentStartAspect 实例。
-// 返回修改后的输入和遇到的任何错误。
+// ExecuteStart executes all registered AgentStartAspect instances.
+// Returns the modified input and any errors encountered.
 func (m *AspectManager) ExecuteStart(ctx context.Context, point *AgentPoint, input *AgentInput) (*AgentInput, error) {
 	m.mu.RLock()
 	aspects := m.startAspects
@@ -171,8 +171,8 @@ func (m *AspectManager) ExecuteStart(ctx context.Context, point *AgentPoint, inp
 // ExecuteBefore executes all registered AgentBeforeAspect instances.
 // Returns the modified input and any error encountered.
 //
-// ExecuteBefore 执行所有已注册的 AgentBeforeAspect 实例。
-// 返回修改后的输入和遇到的任何错误。
+// ExecuteBefore executes all registered instances of AgentBeforeAspect.
+// Returns the modified input and any errors encountered.
 func (m *AspectManager) ExecuteBefore(ctx context.Context, point *AgentPoint, input *AgentInput) (*AgentInput, error) {
 	m.mu.RLock()
 	aspects := m.beforeAspects
@@ -194,15 +194,15 @@ func (m *AspectManager) ExecuteBefore(ctx context.Context, point *AgentPoint, in
 // ExecuteAround executes all registered AgentAroundAspect instances in a chain.
 // Each aspect can decide whether to call the next executor.
 //
-// ExecuteAround 以链式方式执行所有已注册的 AgentAroundAspect 实例。
-// 每个切面可以决定是否调用下一个执行器。
+// ExecuteAround executes all registered AgentAroundAspect instances in a chained manner.
+// Each facet can decide whether to call the next actuator.
 func (m *AspectManager) ExecuteAround(ctx context.Context, point *AgentPoint, input *AgentInput, executor AgentExecutor) (*AgentOutput, error) {
 	m.mu.RLock()
 	aspects := m.aroundAspects
 	m.mu.RUnlock()
 
 	// Build the aspect chain
-	// 构建切面链
+	// Build a faceted chain
 	next := executor
 	for i := len(aspects) - 1; i >= 0; i-- {
 		aspect := aspects[i]
@@ -221,8 +221,8 @@ func (m *AspectManager) ExecuteAround(ctx context.Context, point *AgentPoint, in
 // ExecuteAfter executes all registered AgentAfterAspect instances.
 // Returns the modified output and any error encountered.
 //
-// ExecuteAfter 执行所有已注册的 AgentAfterAspect 实例。
-// 返回修改后的输出和遇到的任何错误。
+// ExecuteAfter executes all registered AgentAfterAspect instances.
+// Returns the modified output and any errors encountered.
 func (m *AspectManager) ExecuteAfter(ctx context.Context, point *AgentPoint, output *AgentOutput) (*AgentOutput, error) {
 	m.mu.RLock()
 	aspects := m.afterAspects
@@ -235,7 +235,7 @@ func (m *AspectManager) ExecuteAfter(ctx context.Context, point *AgentPoint, out
 			currentOutput, err = aspect.After(ctx, point, currentOutput)
 			if err != nil {
 				// After aspect errors are non-terminating, log and continue
-				// After 切面错误是非终止的，记录并继续
+				// After the cross-section error is non-terminated, it is recorded and continues
 				log.Printf("[AspectManager] After aspect error: %v", err)
 				continue
 			}
@@ -247,8 +247,8 @@ func (m *AspectManager) ExecuteAfter(ctx context.Context, point *AgentPoint, out
 // ExecuteCompleted executes all registered AgentCompletedAspect instances.
 // This is called when agent processing completes (success or failure).
 //
-// ExecuteCompleted 执行所有已注册的 AgentCompletedAspect 实例。
-// 当智能体处理完成时调用（成功或失败）。
+// ExecuteCompleted executes all registered AgentCompletedAspect instances.
+// Called when the agent completes processing (success or failure).
 func (m *AspectManager) ExecuteCompleted(ctx context.Context, point *AgentPoint, output *AgentOutput) {
 	m.mu.RLock()
 	aspects := m.completedAspects
@@ -271,8 +271,8 @@ func (m *AspectManager) ExecuteCompleted(ctx context.Context, point *AgentPoint,
 // ExecuteMessageBefore executes all registered MessageBeforeAspect instances.
 // Returns the modified messages and any error encountered.
 //
-// ExecuteMessageBefore 执行所有已注册的 MessageBeforeAspect 实例。
-// 返回修改后的消息和遇到的任何错误。
+// ExecuteMessageBefore executes all registered instances of MessageBeforeAspect.
+// Returns the modified message and any errors encountered.
 func (m *AspectManager) ExecuteMessageBefore(ctx context.Context, point *AgentPoint, messages []*schema.Message) ([]*schema.Message, error) {
 	m.mu.RLock()
 	aspects := m.messageBeforeAspects
@@ -294,8 +294,8 @@ func (m *AspectManager) ExecuteMessageBefore(ctx context.Context, point *AgentPo
 // ExecuteMessageAfter executes all registered MessageAfterAspect instances.
 // Returns the modified response message and any error encountered.
 //
-// ExecuteMessageAfter 执行所有已注册的 MessageAfterAspect 实例。
-// 返回修改后的响应消息和遇到的任何错误。
+// ExecuteMessageAfter executes all registered MessageAfterAspect instances.
+// Returns the modified response message and any errors encountered.
 func (m *AspectManager) ExecuteMessageAfter(ctx context.Context, point *AgentPoint, response *schema.Message) (*schema.Message, error) {
 	m.mu.RLock()
 	aspects := m.messageAfterAspects
@@ -308,7 +308,7 @@ func (m *AspectManager) ExecuteMessageAfter(ctx context.Context, point *AgentPoi
 			currentResponse, err = aspect.AfterLLM(ctx, point, currentResponse)
 			if err != nil {
 				// MessageAfter aspect errors are non-terminating, log and continue
-				// MessageAfter 切面错误是非终止的，记录并继续
+				// The MessageAfter section error is not terminated, recorded, and continues
 				log.Printf("[AspectManager] MessageAfter aspect error: %v", err)
 				continue
 			}
@@ -320,8 +320,8 @@ func (m *AspectManager) ExecuteMessageAfter(ctx context.Context, point *AgentPoi
 // ExecuteStreamChunk executes all registered StreamChunkAspect instances.
 // Returns any error encountered during processing.
 //
-// ExecuteStreamChunk 执行所有已注册的 StreamChunkAspect 实例。
-// 返回处理期间遇到的任何错误。
+// ExecuteStreamChunk executes all registered instances of StreamChunkAspect instances.
+// Returns any errors encountered during processing.
 func (m *AspectManager) ExecuteStreamChunk(ctx context.Context, point *AgentPoint, chunk *StreamChunk) error {
 	m.mu.RLock()
 	aspects := m.streamChunkAspects
@@ -340,8 +340,8 @@ func (m *AspectManager) ExecuteStreamChunk(ctx context.Context, point *AgentPoin
 // ExecuteToolCallBefore executes all registered ToolCallBeforeAspect instances.
 // Returns the modified tool call info and any error encountered.
 //
-// ExecuteToolCallBefore 执行所有已注册的 ToolCallBeforeAspect 实例。
-// 返回修改后的工具调用信息和遇到的任何错误。
+// ExecuteToolCallBefore executes all registered instances of ToolCallBeforeAspect.
+// Returns the modified tool call information and any errors encountered.
 func (m *AspectManager) ExecuteToolCallBefore(ctx context.Context, point *AgentPoint, call *ToolCallInfo) (*ToolCallInfo, error) {
 	m.mu.RLock()
 	aspects := m.toolCallBeforeAspects
@@ -363,8 +363,8 @@ func (m *AspectManager) ExecuteToolCallBefore(ctx context.Context, point *AgentP
 // ExecuteToolCallAfter executes all registered ToolCallAfterAspect instances.
 // Returns any error encountered during processing.
 //
-// ExecuteToolCallAfter 执行所有已注册的 ToolCallAfterAspect 实例。
-// 返回处理期间遇到的任何错误。
+// ExecuteToolCallAfter executes all registered instances of ToolCallAfterAspect instances.
+// Returns any errors encountered during processing.
 func (m *AspectManager) ExecuteToolCallAfter(ctx context.Context, point *AgentPoint, call *ToolCallInfo, result *ToolCallResult) error {
 	m.mu.RLock()
 	aspects := m.toolCallAfterAspects
@@ -374,7 +374,7 @@ func (m *AspectManager) ExecuteToolCallAfter(ctx context.Context, point *AgentPo
 		if aspect.PointCut(ctx, point) {
 			if err := aspect.AfterToolCall(ctx, point, call, result); err != nil {
 				// ToolCallAfter aspect errors are non-terminating, log and continue
-				// ToolCallAfter 切面错误是非终止的，记录并继续
+				// The ToolCallAfter section error is non-terminated, recorded, and continued
 				continue
 			}
 		}
@@ -383,12 +383,12 @@ func (m *AspectManager) ExecuteToolCallAfter(ctx context.Context, point *AgentPo
 }
 
 // Context key type for storing AspectManager in context
-// 用于在上下文中存储 AspectManager 的上下文键类型
+// A context key type for storing AspectManager in context
 type aspectManagerKey struct{}
 
 // WithAspectManager stores the AspectManager in the context for later retrieval.
 //
-// WithAspectManager 将 AspectManager 存储在上下文中以供后续检索。
+// WithAspectManager stores AspectManager in context for subsequent retrieval.
 func WithAspectManager(ctx context.Context, manager *AspectManager) context.Context {
 	return context.WithValue(ctx, aspectManagerKey{}, manager)
 }
@@ -396,8 +396,8 @@ func WithAspectManager(ctx context.Context, manager *AspectManager) context.Cont
 // GetAspectManager retrieves the AspectManager from the context.
 // Returns the manager and true if found, nil and false otherwise.
 //
-// GetAspectManager 从上下文中检索 AspectManager。
-// 如果找到则返回管理器和 true，否则返回 nil 和 false。
+// GetAspectManager retrieves AspectManager from context.
+// If found, returns Manager and true; otherwise, returns nil and false.
 func GetAspectManager(ctx context.Context) (*AspectManager, bool) {
 	manager, ok := ctx.Value(aspectManagerKey{}).(*AspectManager)
 	return manager, ok
@@ -405,7 +405,7 @@ func GetAspectManager(ctx context.Context) (*AspectManager, bool) {
 
 // HasAspects returns true if any aspects are registered.
 //
-// HasAspects 返回是否注册了任何切面。
+// HasAspects reports whether any aspects have been registered.
 func (m *AspectManager) HasAspects() bool {
 	m.mu.RLock()
 	defer m.mu.RUnlock()

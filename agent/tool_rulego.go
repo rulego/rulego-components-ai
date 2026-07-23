@@ -13,14 +13,14 @@ import (
 	"github.com/rulego/rulego/api/types"
 )
 
-// RuleGoTool 实现 eino tool.InvokableTool
+// RuleGoTool implements eino tool.InvokableTool
 type RuleGoTool struct {
 	Config config.Tool
 }
 
 var _ tool.InvokableTool = (*RuleGoTool)(nil)
 
-// NewRuleGoTool 创建一个新的 RuleGoTool
+// NewRuleGoTool creates a new RuleGoTool
 func NewRuleGoTool(config config.Tool) *RuleGoTool {
 	return &RuleGoTool{
 		Config: config,
@@ -28,7 +28,7 @@ func NewRuleGoTool(config config.Tool) *RuleGoTool {
 }
 
 func (t *RuleGoTool) Info(ctx context.Context) (*schema.ToolInfo, error) {
-	// 如果存在参数，解析它们
+	// If there are parameters, parse them
 	paramsOneOf, err := toolutil.ParseToolParameters(t.Config.Parameters)
 	if err != nil {
 		return nil, fmt.Errorf("invalid tool parameters for %s: %v", t.Config.Name, err)
@@ -42,7 +42,7 @@ func (t *RuleGoTool) Info(ctx context.Context) (*schema.ToolInfo, error) {
 }
 
 func (t *RuleGoTool) InvokableRun(ctx context.Context, argumentsInJSON string, opts ...tool.Option) (string, error) {
-	// 从 context 获取 RuleContext
+	// Retrieves RuleContext from context
 	ruleCtxVal := ctx.Value(config.ShareRuleContextKey)
 	if ruleCtxVal == nil {
 		return "", fmt.Errorf("context 中未找到 RuleContext")
@@ -54,7 +54,7 @@ func (t *RuleGoTool) InvokableRun(ctx context.Context, argumentsInJSON string, o
 
 	switch t.Config.Type {
 	case config.ToolTypeRuleChain, config.ToolTypeAgent:
-		// agent 类型是 rulechain 的语义别名，用于调用子智能体
+		// The agent type is the semantic alias for rulechain and is used to call child agents
 		return t.executeRuleChain(ctx, ruleCtx, argumentsInJSON)
 	default:
 		return "", fmt.Errorf("不支持的工具类型: %s", t.Config.Type)
@@ -62,19 +62,19 @@ func (t *RuleGoTool) InvokableRun(ctx context.Context, argumentsInJSON string, o
 }
 
 func (t *RuleGoTool) executeRuleChain(ctx context.Context, ruleCtx types.RuleContext, arguments string) (string, error) {
-	// 直接使用参数创建消息，不做格式转换
-	// 子智能体会根据自己的 inputSchema 配置来解析参数
+	// Directly use parameters to create messages without format conversion
+	// The sub-agent parses parameters based on its own inputSchema configuration
 	toolMsg := ruleCtx.NewMsg(config.MsgTypeToolCall, types.NewMetadata(), arguments)
 	toolMsg.DataType = types.JSON
 
-	// 获取超时配置，默认120秒
-	// Timeout 单位是毫秒
+	// Get the timeout configuration, default 120 seconds
+	// Timeout is measured in milliseconds
 	timeout := time.Duration(t.Config.Timeout) * time.Millisecond
 	if timeout <= 0 {
 		timeout = 120 * time.Second
 	}
 
-	// 调用规则链
+	// Call the rule chain
 	var result string
 	var resultErr error
 	var wg sync.WaitGroup
@@ -93,7 +93,7 @@ func (t *RuleGoTool) executeRuleChain(ctx context.Context, ruleCtx types.RuleCon
 		wg.Done()
 	}))
 
-	// 使用带超时的等待，防止永久阻塞
+	// Use timeout waits to prevent permanent blockages
 	done := make(chan struct{})
 	go func() {
 		wg.Wait()
@@ -102,14 +102,14 @@ func (t *RuleGoTool) executeRuleChain(ctx context.Context, ruleCtx types.RuleCon
 
 	select {
 	case <-done:
-		// 正常完成
+		// Completed normally
 	case <-ctx.Done():
-		// 上下文取消
+		// Context cancellation
 		mu.Lock()
 		resultErr = ctx.Err()
 		mu.Unlock()
 	case <-time.After(timeout):
-		// 超时
+		// Overtime
 		mu.Lock()
 		resultErr = fmt.Errorf("rulego tool execution timeout after %v", timeout)
 		mu.Unlock()

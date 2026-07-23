@@ -12,10 +12,10 @@ import (
 )
 
 // ============================================================================
-// 环境变量相关
+// Environmental variables are related
 // ============================================================================
 
-// getEnvOrSkip 获取环境变量，如果不存在则跳过测试
+// getEnvOrSkip retrieves the environment variable; if it does not exist, the test is skipped
 func getEnvOrSkip(t *testing.T, key string) string {
 	value := os.Getenv(key)
 	if value == "" {
@@ -24,7 +24,7 @@ func getEnvOrSkip(t *testing.T, key string) string {
 	return value
 }
 
-// getEnvOrFatal 获取环境变量，如果不存在则 Fatal
+// getEnvOrFatal gets the environment variable; if it doesn't exist, use Fatal
 func getEnvOrFatal(t *testing.T, key string) string {
 	value := os.Getenv(key)
 	if value == "" {
@@ -34,10 +34,10 @@ func getEnvOrFatal(t *testing.T, key string) string {
 }
 
 // ============================================================================
-// 字符串处理
+// String processing
 // ============================================================================
 
-// truncateMiddle 截断字符串中间部分
+// truncateMiddle Prune the middle part of the string
 func truncateMiddle(s string, maxLen int) string {
 	if len(s) <= maxLen {
 		return s
@@ -46,7 +46,7 @@ func truncateMiddle(s string, maxLen int) string {
 	return s[:half] + "..." + s[len(s)-half:]
 }
 
-// maskSensitive 隐藏敏感信息
+// maskSensitive hides sensitive information
 func maskSensitive(s string, visibleChars int) string {
 	if len(s) <= visibleChars*2 {
 		return strings.Repeat("*", len(s))
@@ -55,17 +55,17 @@ func maskSensitive(s string, visibleChars int) string {
 }
 
 // ============================================================================
-// 测试控制
+// Test control
 // ============================================================================
 
-// skipIfNoAPIKey 如果没有配置 API Key 则跳过测试
+// skipIfNoAPIKey skips the test if the API Key is not configured
 func skipIfNoAPIKey(t *testing.T, apiKey string) {
 	if apiKey == "" {
 		t.Skip("Skipping test: LLM_API_KEY environment variable not set")
 	}
 }
 
-// skipIfAPIError 如果错误是 API 余额/限流/不可用等临时问题则跳过测试
+// skipIfAPIError If the error is due to temporary issues such as API balance, rate limit, or unavailability, the test is skipped
 func skipIfAPIError(t *testing.T, err error) {
 	if err == nil {
 		return
@@ -79,21 +79,21 @@ func skipIfAPIError(t *testing.T, err error) {
 	}
 }
 
-// skipIfShort 如果是短测试模式则跳过
+// skipIfShort: If it is a short test mode, skip it
 func skipIfShort(t *testing.T) {
 	if testing.Short() {
 		t.Skip("Skipping test in short mode")
 	}
 }
 
-// skipIfCI 如果在 CI 环境中则跳过
+// skipIfCI Skip if in a CI environment
 func skipIfCI(t *testing.T) {
 	if os.Getenv("CI") != "" || os.Getenv("GITHUB_ACTIONS") != "" {
 		t.Skip("Skipping test in CI environment")
 	}
 }
 
-// skipUnlessEnv 除非指定环境变量设置，否则跳过
+// skipUnlessEnv Skip unless specified environment variable settings
 func skipUnlessEnv(t *testing.T, key string) {
 	if os.Getenv(key) == "" {
 		t.Skipf("Skipping test: %s not set", key)
@@ -101,24 +101,24 @@ func skipUnlessEnv(t *testing.T, key string) {
 }
 
 // ============================================================================
-// 配置获取
+// Configuration acquisition
 // ============================================================================
 
-// getTestConfig 获取测试配置（从环境变量读取）
-// 注意：请设置环境变量 LLM_API_KEY 来运行测试
-// 示例：
+// getTestConfig Retrieves test configuration (read from environment variables)
+// Note: Please set the environment variable LLM_API_KEY to run the test
+// Example:
 //
 //	export LLM_BASE_URL="https://open.bigmodel.cn/api/paas/v4"
 //	export LLM_MODEL="GLM-5"
 //	export LLM_API_KEY="your-api-key"
 func getTestConfig() (baseURL, apiKey, model string) {
 	baseURL = getEnvOrDefault("LLM_BASE_URL", "https://open.bigmodel.cn/api/paas/v4")
-	apiKey = os.Getenv("LLM_API_KEY") // 必须通过环境变量设置，不提供默认值
+	apiKey = os.Getenv("LLM_API_KEY") // It must be set through environment variables; default values are not provided
 	model = getEnvOrDefault("LLM_MODEL", "GLM-5")
 	return
 }
 
-// getTestConfigWithTimeout 获取测试配置和超时时间
+// getTestConfigWithTimeout gets the test configuration and timeout timeout
 func getTestConfigWithTimeout() (baseURL, apiKey, model string, timeout time.Duration) {
 	baseURL, apiKey, model = getTestConfig()
 	timeoutStr := getEnvOrDefault("LLM_TIMEOUT", "120s")
@@ -130,10 +130,10 @@ func getTestConfigWithTimeout() (baseURL, apiKey, model string, timeout time.Dur
 }
 
 // ============================================================================
-// JSON 处理
+// JSON processing
 // ============================================================================
 
-// mustMarshalJSON 必须成功序列化为 JSON，否则 panic
+// mustMarshalJSON must be successfully serialized to JSON, or it will panic
 func mustMarshalJSON(v interface{}) string {
 	data, err := json.Marshal(v)
 	if err != nil {
@@ -142,7 +142,7 @@ func mustMarshalJSON(v interface{}) string {
 	return string(data)
 }
 
-// mustMarshalJSONIndent 必须成功序列化为格式化的 JSON，否则 panic
+// mustMarshalJSONIndent must be successfully serialized into a formatted JSON, or it will panic
 func mustMarshalJSONIndent(v interface{}) string {
 	data, err := json.MarshalIndent(v, "", "  ")
 	if err != nil {
@@ -151,13 +151,13 @@ func mustMarshalJSONIndent(v interface{}) string {
 	return string(data)
 }
 
-// isValidJSON 检查字符串是否是有效的 JSON
+// isValidJSON checks whether the string is a valid JSON
 func isValidJSON(s string) bool {
 	var js interface{}
 	return json.Unmarshal([]byte(s), &js) == nil
 }
 
-// jsonContains 检查 JSON 字符串是否包含指定的键值
+// jsonContains checks whether a JSON string contains the specified key value
 func jsonContains(jsonStr, key, value string) bool {
 	var m map[string]interface{}
 	if err := json.Unmarshal([]byte(jsonStr), &m); err != nil {
@@ -170,10 +170,10 @@ func jsonContains(jsonStr, key, value string) bool {
 }
 
 // ============================================================================
-// 断言辅助
+// Asserting support
 // ============================================================================
 
-// assertContains 断言字符串包含子串
+// assertContains asserts that the string contains substrings
 func assertContains(t *testing.T, s, substr string, msgAndArgs ...interface{}) {
 	t.Helper()
 	if !strings.Contains(s, substr) {
@@ -185,7 +185,7 @@ func assertContains(t *testing.T, s, substr string, msgAndArgs ...interface{}) {
 	}
 }
 
-// assertNotContains 断言字符串不包含子串
+// assertNotContains assertion strings do not contain substrings
 func assertNotContains(t *testing.T, s, substr string, msgAndArgs ...interface{}) {
 	t.Helper()
 	if strings.Contains(s, substr) {
@@ -197,7 +197,7 @@ func assertNotContains(t *testing.T, s, substr string, msgAndArgs ...interface{}
 	}
 }
 
-// assertOneOf 断言值是选项之一
+// assertOneOf assert value is one option
 func assertOneOf[T comparable](t *testing.T, actual T, expected []T, msgAndArgs ...interface{}) {
 	t.Helper()
 	for _, e := range expected {
@@ -212,7 +212,7 @@ func assertOneOf[T comparable](t *testing.T, actual T, expected []T, msgAndArgs 
 	t.Error(msg)
 }
 
-// assertLen 断言长度
+// assertLen asserts length
 func assertLen[T any](t *testing.T, slice []T, expected int, msgAndArgs ...interface{}) {
 	t.Helper()
 	if len(slice) != expected {
@@ -225,10 +225,10 @@ func assertLen[T any](t *testing.T, slice []T, expected int, msgAndArgs ...inter
 }
 
 // ============================================================================
-// 并发测试
+// Concurrent testing
 // ============================================================================
 
-// waitForChannel 等待 channel 返回值或超时
+// waitForChannel waits for the channel return value or timeout
 func waitForChannel[T any](ch <-chan T, timeout time.Duration) (T, bool) {
 	var zero T
 	select {
@@ -239,7 +239,7 @@ func waitForChannel[T any](ch <-chan T, timeout time.Duration) (T, bool) {
 	}
 }
 
-// waitGroupWithTimeout 等待 channel 关闭或超时
+// waitGroupWithTimeout: Waits for the channel to close or time out
 func waitGroupWithTimeout(done <-chan struct{}, timeout time.Duration) bool {
 	select {
 	case <-done:
@@ -250,10 +250,10 @@ func waitGroupWithTimeout(done <-chan struct{}, timeout time.Duration) bool {
 }
 
 // ============================================================================
-// 测试数据生成
+// Test data generation
 // ============================================================================
 
-// generateTestString 生成测试用字符串
+// generateTestString generates a string for testing
 func generateTestString(length int) string {
 	const charset = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789"
 	result := make([]byte, length)
@@ -263,22 +263,22 @@ func generateTestString(length int) string {
 	return string(result)
 }
 
-// generateTestJSON 生成测试用 JSON
+// generateTestJSON generates JSON for testing
 func generateTestJSON(fields map[string]interface{}) string {
 	return mustMarshalJSON(fields)
 }
 
 // ============================================================================
-// 日志辅助
+// Log assistance
 // ============================================================================
 
-// logTestName 记录测试名称
+// logTestName records the test name
 func logTestName(t *testing.T) {
 	t.Helper()
 	t.Logf("=== Running test: %s ===", t.Name())
 }
 
-// logTestResult 记录测试结果
+// logTestResult records the test results
 func logTestResult(t *testing.T, passed bool) {
 	t.Helper()
 	status := "PASSED"
@@ -288,7 +288,7 @@ func logTestResult(t *testing.T, passed bool) {
 	t.Logf("=== Test %s: %s ===", status, t.Name())
 }
 
-// logWithDuration 记录带耗时的操作
+// logWithDuration records time-consuming operations
 func logWithDuration(t *testing.T, operation string, fn func()) {
 	t.Helper()
 	start := time.Now()
@@ -298,17 +298,17 @@ func logWithDuration(t *testing.T, operation string, fn func()) {
 }
 
 // ============================================================================
-// 测试用例
+// Test cases
 // ============================================================================
 
-// TestGetEnvOrDefault 测试 getEnvOrDefault
+// TestGetEnvOrDefault Test getEnvOrDefault
 func TestGetEnvOrDefault(t *testing.T) {
-	// 测试不存在的环境变量
+	// Test environment variables that don't exist
 	result := getEnvOrDefault("NONEXISTENT_VAR_12345", "default_value")
 	assert.Equal(t, "default_value", result)
 }
 
-// TestTruncateString 测试 truncateString
+// TestTruncateString Tests truncateString
 func TestTruncateString(t *testing.T) {
 	tests := []struct {
 		name     string
@@ -332,7 +332,7 @@ func TestTruncateString(t *testing.T) {
 			name:     "long string",
 			input:    "hello world this is a long string",
 			maxLen:   10,
-			expected: "hello worl...", // 前10个字符 + "..."
+			expected: "hello worl...", // First 10 characters + "..."
 		},
 		{
 			name:     "empty string",
@@ -356,7 +356,7 @@ func TestTruncateString(t *testing.T) {
 	}
 }
 
-// TestTruncateMiddle 测试 truncateMiddle
+// TestTruncateMiddle tests truncateMiddle
 func TestTruncateMiddle(t *testing.T) {
 	tests := []struct {
 		name     string
@@ -374,7 +374,7 @@ func TestTruncateMiddle(t *testing.T) {
 			name:     "long string",
 			input:    "hello world this is long",
 			maxLen:   10,
-			expected: "hello... long", // half=5, 前5个 + "..." + 后5个（包含空格）
+			expected: "hello... long", // half=5, first 5 + "..." + last 5 (including spaces)
 		},
 		{
 			name:     "empty string",
@@ -392,7 +392,7 @@ func TestTruncateMiddle(t *testing.T) {
 	}
 }
 
-// TestMaskSensitive 测试 maskSensitive
+// TestMaskSensitive tests maskSensitive
 func TestMaskSensitive(t *testing.T) {
 	tests := []struct {
 		name         string
@@ -404,7 +404,7 @@ func TestMaskSensitive(t *testing.T) {
 			name:         "normal key",
 			input:        "sk-1234567890abcdef",
 			visibleChars: 4,
-			expected:     "sk-1***********cdef", // 前4 + (18-8=10个*) + 后4
+			expected:     "sk-1***********cdef", // First 4 + (18 - 8 = 10 *) + last 4
 		},
 		{
 			name:         "short string",
@@ -434,7 +434,7 @@ func TestMaskSensitive(t *testing.T) {
 	}
 }
 
-// TestMustMarshalJSON 测试 mustMarshalJSON
+// TestmustMarshalJSON TestMustMarshalJSON
 func TestMustMarshalJSON(t *testing.T) {
 	tests := []struct {
 		name     string
@@ -471,7 +471,7 @@ func TestMustMarshalJSON(t *testing.T) {
 	}
 }
 
-// TestIsValidJSON 测试 isValidJSON
+// TestIsValidJSON Test isValidJSON
 func TestIsValidJSON(t *testing.T) {
 	tests := []struct {
 		name     string
@@ -518,14 +518,14 @@ func TestIsValidJSON(t *testing.T) {
 	}
 }
 
-// TestJSONContains 测试 jsonContains
+// TestJSONContains tests jsonContains
 func TestJSONContains(t *testing.T) {
 	tests := []struct {
-		name       string
-		jsonStr    string
-		key        string
-		value      string
-		expected   bool
+		name     string
+		jsonStr  string
+		key      string
+		value    string
+		expected bool
 	}{
 		{
 			name:     "key exists with value",
@@ -565,7 +565,7 @@ func TestJSONContains(t *testing.T) {
 	}
 }
 
-// TestGenerateTestString 测试 generateTestString
+// TestGenerateTestString Test generateTestString
 func TestGenerateTestString(t *testing.T) {
 	tests := []struct {
 		name   string
@@ -585,7 +585,7 @@ func TestGenerateTestString(t *testing.T) {
 	}
 }
 
-// TestGenerateTestJSON 测试 generateTestJSON
+// TestGenerateTestJSON Test generateTestJSON
 func TestGenerateTestJSON(t *testing.T) {
 	fields := map[string]interface{}{
 		"name":  "test",
@@ -597,7 +597,7 @@ func TestGenerateTestJSON(t *testing.T) {
 	assert.True(t, jsonContains(result, "name", "test"))
 }
 
-// TestWaitForChannel 测试 waitForChannel
+// TestWaitForChannel Tests waitForChannel
 func TestWaitForChannel(t *testing.T) {
 	t.Run("value received", func(t *testing.T) {
 		ch := make(chan string, 1)
@@ -617,7 +617,7 @@ func TestWaitForChannel(t *testing.T) {
 	})
 }
 
-// TestWaitGroupWithTimeout 测试 waitGroupWithTimeout
+// TestWaitGroupWithTimeout Test: waitGroupWithTimeout
 func TestWaitGroupWithTimeout(t *testing.T) {
 	t.Run("completed", func(t *testing.T) {
 		done := make(chan struct{})
@@ -632,41 +632,41 @@ func TestWaitGroupWithTimeout(t *testing.T) {
 
 	t.Run("timeout", func(t *testing.T) {
 		done := make(chan struct{})
-		// 不关闭 channel
+		// Do not close the channel
 
 		result := waitGroupWithTimeout(done, 50*time.Millisecond)
 		assert.False(t, result)
 	})
 }
 
-// TestAssertContains 测试 assertContains
+// TestAssertContains tests assertContains
 func TestAssertContains(t *testing.T) {
-	// 这个测试验证 assertContains 不会对有效情况报错
+	// This test verifies that assertContains does not cause errors for valid cases
 	assertContains(t, "hello world", "world")
 }
 
-// TestAssertNotContains 测试 assertNotContains
+// TestAssertNotContains tests assertNotContains
 func TestAssertNotContains(t *testing.T) {
 	assertNotContains(t, "hello world", "xyz")
 }
 
-// TestAssertOneOf 测试 assertOneOf
+// TestAssertOneOf Test assertOneOf
 func TestAssertOneOf(t *testing.T) {
 	assertOneOf(t, "b", []string{"a", "b", "c"})
 	assertOneOf(t, 2, []int{1, 2, 3})
 }
 
-// TestAssertLen 测试 assertLen
+// TestAssertLen Test assertLen
 func TestAssertLen(t *testing.T) {
 	assertLen(t, []int{1, 2, 3}, 3)
 	assertLen(t, []string{}, 0)
 }
 
 // ============================================================================
-// 基准测试
+// Benchmark Test
 // ============================================================================
 
-// BenchmarkTruncateString 基准测试 truncateString
+// BenchmarktruncateString Benchmark TruncateString
 func BenchmarkTruncateString(b *testing.B) {
 	longStr := "This is a very long string that needs to be truncated for display purposes"
 
@@ -676,7 +676,7 @@ func BenchmarkTruncateString(b *testing.B) {
 	}
 }
 
-// BenchmarkMaskSensitive 基准测试 maskSensitive
+// BenchmarkMaskSensitive benchmark maskSensitive
 func BenchmarkMaskSensitive(b *testing.B) {
 	key := "sk-1234567890abcdefghijklmnopqrstuvwxyz"
 
@@ -686,7 +686,7 @@ func BenchmarkMaskSensitive(b *testing.B) {
 	}
 }
 
-// BenchmarkMustMarshalJSON 基准测试 mustMarshalJSON
+// BenchmarkmustMarshalJSON Benchmark MustMarshalJSON
 func BenchmarkMustMarshalJSON(b *testing.B) {
 	data := map[string]interface{}{
 		"name":  "test",
@@ -700,7 +700,7 @@ func BenchmarkMustMarshalJSON(b *testing.B) {
 	}
 }
 
-// BenchmarkIsValidJSON 基准测试 isValidJSON
+// BenchmarkIsValidJSON Benchmark isValidJSON
 func BenchmarkIsValidJSON(b *testing.B) {
 	jsonStr := `{"name": "test", "count": 42, "items": ["a", "b", "c"]}`
 
@@ -710,7 +710,7 @@ func BenchmarkIsValidJSON(b *testing.B) {
 	}
 }
 
-// BenchmarkGenerateTestString 基准测试 generateTestString
+// BenchmarkGenerateTestString Benchmark test generateTestString
 func BenchmarkGenerateTestString(b *testing.B) {
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {

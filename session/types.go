@@ -18,7 +18,7 @@ package session
 
 import "time"
 
-// SessionScope 会话作用域
+// SessionScope session scope
 type SessionScope string
 
 const (
@@ -30,7 +30,7 @@ const (
 	ScopeTask                  SessionScope = "task"
 )
 
-// SessionState 会话状态
+// SessionState Session status
 type SessionState string
 
 const (
@@ -40,7 +40,7 @@ const (
 	StateArchived  SessionState = "archived"
 )
 
-// ToolCallStatus 工具调用状态
+// ToolCallStatus: The state of the tool call
 type ToolCallStatus string
 
 const (
@@ -50,16 +50,16 @@ const (
 	ToolCallStatusError   ToolCallStatus = "error"
 )
 
-// ToolCallInfo 工具调用信息
-// 用于记录 assistant 消息中的工具调用
+// ToolCallInfo tool call information
+// Used to record tool calls in Assistant messages
 type ToolCallInfo struct {
-	ID        string `json:"id"`        // 工具调用 ID
-	Name      string `json:"name"`      // 工具名称
-	Arguments string `json:"arguments"` // JSON 参数
+	ID        string `json:"id"`        // Tool call ID
+	Name      string `json:"name"`      // Tool name
+	Arguments string `json:"arguments"` // JSON parameters
 }
 
-// ToolCall 工具调用完整记录
-// 包含执行结果和状态
+// ToolCall tool call complete record
+// Includes execution results and status
 type ToolCall struct {
 	ID          string         `json:"id"`
 	Name        string         `json:"name"`
@@ -70,11 +70,11 @@ type ToolCall struct {
 	CompletedAt *time.Time     `json:"completedAt,omitempty"`
 }
 
-// SessionMetadata 会话元数据
+// SessionMetadata session metadata
 type SessionMetadata struct {
 	Title           string         `json:"title"`
-	Model           string         `json:"model,omitempty"`       // 当前使用的模型
-	ExtraFields     map[string]any `json:"extraFields,omitempty"` // 会话级扩展参数覆盖（思考强度等，如 thinking.type/reasoning_effort）
+	Model           string         `json:"model,omitempty"`       // The model currently in use
+	ExtraFields     map[string]any `json:"extraFields,omitempty"` // Session-level extended parameter coverage (such as thinking intensity, e.g., thinking.type/reasoning_effort)
 	TotalTokenCount int            `json:"totalTokenCount"`
 	MessageCount    int            `json:"messageCount"`
 }

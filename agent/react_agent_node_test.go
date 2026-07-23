@@ -17,22 +17,22 @@ import (
 )
 
 func init() {
-	// 注册 bash 工具
+	// Register for the bash tool
 	if err := bash.RegisterDefault(); err != nil {
 		panic(err)
 	}
 }
 
-// TestReactAgentWithBash 测试 ReactAgent 调用 bash 工具
-// 验证工具调用结果是否能正确返回
+// TestReactAgentWithBash tests ReactAgent calls bash tools
+// Verify whether the tool call result returns correctly
 func TestReactAgentWithBash(t *testing.T) {
-	// 配置信息从环境变量读取
+	// Configuration information is read from environment variables
 	baseURL, apiKey, model := getTestConfig()
 
 	skipIfNoAPIKey(t, apiKey)
 
 	t.Run("BashTool", func(t *testing.T) {
-		// 定义 ReactAgent 规则链，使用 bash 工具
+		// Define the ReactAgent rule chain using the bash tool
 		agentDsl := fmt.Sprintf(`{
 			"ruleChain": {
 				"id": "react_agent_bash_test",
@@ -76,7 +76,7 @@ func TestReactAgentWithBash(t *testing.T) {
 		assert.Nil(t, err)
 		defer engine.Stop(context.Background())
 
-		// 发送消息 - 请求执行一个简单命令
+		// Send a message – request to execute a simple command
 		meta := types.NewMetadata()
 		msg := types.NewMsg(0, "TEST_MSG", types.TEXT, meta, "请使用 bash 工具执行 pwd 命令并告诉我当前工作目录")
 
@@ -111,21 +111,21 @@ func TestReactAgentWithBash(t *testing.T) {
 			t.Fatal("Timeout waiting for response")
 		}
 
-		// 打印最后收到的消息信息
+		// Print the last message you received
 		t.Logf("Final message data type: %s", lastMsg.DataType)
 		t.Logf("Final message metadata: %v", lastMsg.Metadata)
 	})
 }
 
-// TestReactAgentWithBashStream 测试流式模式下工具调用结果返回
+// TestReactAgentWithBashStream returns the result of the tool call in test streaming mode
 func TestReactAgentWithBashStream(t *testing.T) {
-	// 配置信息从环境变量读取
+	// Configuration information is read from environment variables
 	baseURL, apiKey, model := getTestConfig()
 
 	skipIfNoAPIKey(t, apiKey)
 
 	t.Run("StreamMode", func(t *testing.T) {
-		// 定义 ReactAgent 规则链
+		// Define the ReactAgent rule chain
 		agentDsl := fmt.Sprintf(`{
 			"ruleChain": {
 				"id": "react_agent_bash_stream_test",
@@ -169,7 +169,7 @@ func TestReactAgentWithBashStream(t *testing.T) {
 		assert.Nil(t, err)
 		defer engine.Stop(context.Background())
 
-		// 发送消息 - 启用流式模式，让 AI 执行命令并总结结果
+		// Send messages – enable streaming mode to let AI execute commands and summarize results
 		meta := types.NewMetadata()
 		meta.PutValue("stream", "true")
 		msg := types.NewMsg(0, "TEST_MSG", types.TEXT, meta, "请使用 bash 工具执行 ls 命令列出当前目录的文件，并告诉我有哪些文件")
@@ -177,8 +177,8 @@ func TestReactAgentWithBashStream(t *testing.T) {
 		done := make(chan string, 1)
 		var fullContent strings.Builder
 		var chunkCount int
-		var toolCallCount int        // 工具调用次数
-		var toolResultContent string // 工具返回内容
+		var toolCallCount int        // Tool call count
+		var toolResultContent string // Tools return content
 		var mu sync.Mutex
 
 		engine.OnMsg(msg, types.WithOnEnd(func(ctx types.RuleContext, outMsg types.RuleMsg, err error, relationType string) {
@@ -190,12 +190,12 @@ func TestReactAgentWithBashStream(t *testing.T) {
 				done <- ""
 			} else {
 				chunkCount++
-				// 检查是否是流式完成的最终结果
+				// Check whether the final result is the flow stream completion
 				if outMsg.Metadata.GetValue("stream_completed") == "true" {
 					t.Logf("Final response (chunk #%d): %s", chunkCount, outMsg.GetData())
 					done <- outMsg.GetData()
 				} else {
-					// 流式 chunk，记录但不发送到 done channel
+					// Stream chunk, which records but does not send to the done channel
 					isToolCall := outMsg.Metadata.GetValue("tool_call") == "true"
 					if isDebugMode() {
 						t.Logf("Stream chunk #%d (isChunk=%s, isToolCall=%v): %s",
@@ -205,10 +205,10 @@ func TestReactAgentWithBashStream(t *testing.T) {
 							truncateString(outMsg.GetData(), 100))
 					}
 
-					// 记录工具调用
+					// Record tool calls
 					if isToolCall {
 						toolCallCount++
-						// 尝试解析工具调用结果
+						// Try parsing the result of the tool call
 						data := outMsg.GetData()
 						if strings.Contains(data, `"event":"tool_result"`) {
 							toolResultContent = data
@@ -236,11 +236,11 @@ func TestReactAgentWithBashStream(t *testing.T) {
 				t.Logf("Agent Response: %s", result)
 				assert.True(t, len(result) > 0, "响应内容不应为空")
 
-				// 验证工具被调用过
+				// The verification tool was invoked
 				assert.True(t, toolCalls > 0, "应该至少调用一次工具 (实际调用: %d 次)", toolCalls)
 				t.Logf("Tool call count: %d", toolCalls)
 
-				// 验证响应中包含文件信息
+				// Verify that the response contains document information
 				hasFileInfo := strings.Contains(result, "文件") ||
 					strings.Contains(result, "file") ||
 					strings.Contains(result, "目录") ||
@@ -249,7 +249,7 @@ func TestReactAgentWithBashStream(t *testing.T) {
 				assert.True(t, hasFileInfo,
 					"响应应该包含文件信息，实际响应: %s", result)
 
-				// 验证工具返回内容不为空
+				// The verification tool's return content is not empty
 				if toolResult != "" {
 					t.Logf("Tool result received: %s", truncateString(toolResult, 200))
 				}
@@ -260,9 +260,9 @@ func TestReactAgentWithBashStream(t *testing.T) {
 	})
 }
 
-// TestReactAgentToolResultCallback 测试工具结果回调 - 使用 WithOnNodeCompleted
+// TestReactAgentToolResultCallback - Use WithOnNodeCompleted
 func TestReactAgentToolResultCallback(t *testing.T) {
-	// 配置信息从环境变量读取
+	// Configuration information is read from environment variables
 	baseURL, apiKey, model := getTestConfig()
 
 	skipIfNoAPIKey(t, apiKey)
@@ -311,7 +311,7 @@ func TestReactAgentToolResultCallback(t *testing.T) {
 		assert.Nil(t, err)
 		defer engine.Stop(context.Background())
 
-		// 发送消息 - 让 AI 执行命令并总结结果
+		// Send a message – let the AI execute commands and summarize the results
 		meta := types.NewMetadata()
 		meta.PutValue("stream", "true")
 		msg := types.NewMsg(0, "TEST", types.TEXT, meta, "请使用 bash 工具执行 pwd 命令并告诉我当前工作目录")
@@ -332,7 +332,7 @@ func TestReactAgentToolResultCallback(t *testing.T) {
 					t.Logf("Error in OnEnd: %v", err)
 					done <- ""
 				} else if outMsg.Metadata.GetValue("stream_completed") == "true" {
-					// 最终结果
+					// The final result
 					finalResponse = outMsg.GetData()
 					if finalResponse == "" && streamContent.Len() > 0 {
 						finalResponse = streamContent.String()
@@ -341,7 +341,7 @@ func TestReactAgentToolResultCallback(t *testing.T) {
 					done <- finalResponse
 				} else {
 					streamContent.WriteString(outMsg.GetData())
-					// 流式 chunk - 仅在调试模式下打印详细内容
+					// Streaming chunk - Prints detailed content only in debug mode
 					if outMsg.Metadata.GetValue("tool_call") == "true" {
 						toolCallCount++
 						if isDebugMode() {
@@ -370,13 +370,13 @@ func TestReactAgentToolResultCallback(t *testing.T) {
 			t.Logf("Node logs count: %d", len(logsSnapshot))
 			t.Logf("Tool call count: %d", toolCalls)
 
-			// 验证结果不为空
+			// The verification result is not empty
 			assert.True(t, len(result) > 0, "响应内容不应为空")
 
-			// 验证工具被调用过
+			// The verification tool was invoked
 			assert.True(t, toolCalls > 0, "应该至少调用一次工具 (实际调用: %d 次)", toolCalls)
 
-			// 验证响应中包含工作目录信息
+			// The verification response includes work directory information
 			hasWorkDir := strings.Contains(result, "/") ||
 				strings.Contains(result, "\\") ||
 				strings.Contains(result, "目录") ||
@@ -399,16 +399,16 @@ func TestReactAgentToolResultCallback(t *testing.T) {
 	})
 }
 
-// TestReactAgentWithCommand_MultiToolCalls 测试 ReactAgent 自主多次调用命令工具
-// 场景：让 AI 执行多个命令来完成一个任务，验证多次工具调用能力
+// TestReactAgentWithCommand_MultiToolCalls Test ReactAgent's autonomous multiple command call tools
+// Scenario: Let AI execute multiple commands to complete a task, verifying tool invocation capability multiple times
 func TestReactAgentWithCommand_MultiToolCalls(t *testing.T) {
-	// 配置信息从环境变量读取
+	// Configuration information is read from environment variables
 	baseURL, apiKey, model := getTestConfig()
 
 	skipIfNoAPIKey(t, apiKey)
 
 	t.Run("MultiCommandExecution", func(t *testing.T) {
-		// 定义 ReactAgent 规则链，使用 command_execute 工具
+		// Define the ReactAgent rule chain using command_execute tools
 		agentDsl := fmt.Sprintf(`{
 			"ruleChain": {
 				"id": "react_agent_command_multi_test",
@@ -452,8 +452,8 @@ func TestReactAgentWithCommand_MultiToolCalls(t *testing.T) {
 		assert.Nil(t, err)
 		defer engine.Stop(context.Background())
 
-		// 发送消息 - 要求 AI 执行多个命令
-		// 任务：1. 先查看当前目录(pwd) 2. 列出当前目录文件(ls) 3. 统计文件数量
+		// Send a message - Ask the AI to execute multiple commands
+		// Quest: 1. First, check the current directory (PWD) 2. List the current directory file (ls) 3. Count the number of documents
 		meta := types.NewMetadata()
 		msg := types.NewMsg(0, "TEST_MSG", types.TEXT, meta, "请帮我执行以下操作：1. 查看当前工作目录 2. 列出当前目录的文件 3. 告诉我当前目录有多少文件")
 
@@ -480,11 +480,11 @@ func TestReactAgentWithCommand_MultiToolCalls(t *testing.T) {
 				t.Logf("Agent Response: %s", result)
 				assert.True(t, len(result) > 0)
 
-				// 验证响应中包含工作目录信息
+				// The verification response includes work directory information
 				hasWorkDir := strings.Contains(result, "/") || strings.Contains(result, "目录") || strings.Contains(result, "directory")
 				assert.True(t, hasWorkDir, "响应应该包含工作目录信息")
 
-				// 验证响应中包含文件列表信息
+				// The verification response includes file list information
 				hasFileInfo := strings.Contains(result, "文件") || strings.Contains(result, "file") || len(result) > 50
 				assert.True(t, hasFileInfo, "响应应该包含文件信息")
 			}
@@ -496,9 +496,9 @@ func TestReactAgentWithCommand_MultiToolCalls(t *testing.T) {
 	})
 }
 
-// TestReactAgentWithCommand_StreamMode 测试流式模式下的命令执行
+// TestReactAgentWithCommand_StreamMode Test command execution in streaming mode
 func TestReactAgentWithCommand_StreamMode(t *testing.T) {
-	// 配置信息从环境变量读取
+	// Configuration information is read from environment variables
 	baseURL, apiKey, model := getTestConfig()
 
 	skipIfNoAPIKey(t, apiKey)
@@ -547,7 +547,7 @@ func TestReactAgentWithCommand_StreamMode(t *testing.T) {
 		assert.Nil(t, err)
 		defer engine.Stop(context.Background())
 
-		// 发送消息 - 启用流式模式
+		// Send a message - Enable streaming mode
 		meta := types.NewMetadata()
 		meta.PutValue("stream", "true")
 		msg := types.NewMsg(0, "TEST_MSG", types.TEXT, meta, "请列出当前目录的文件，并告诉我有哪些文件")
@@ -567,15 +567,15 @@ func TestReactAgentWithCommand_StreamMode(t *testing.T) {
 				done <- ""
 			} else {
 				chunkCount++
-				// 检查是否是流式完成的最终结果
+				// Check whether the final result is the flow stream completion
 				if outMsg.Metadata.GetValue("stream_completed") == "true" {
 					t.Logf("Final response (chunk #%d): %s", chunkCount, truncateString(outMsg.GetData(), 500))
 					done <- outMsg.GetData()
 				} else {
-					// 流式 chunk
+					// Streaming chunk
 					isToolCall := outMsg.Metadata.GetValue("tool_call") == "true"
 
-					// 记录工具调用
+					// Record tool calls
 					if isToolCall {
 						toolCallCount++
 					}
@@ -591,9 +591,9 @@ func TestReactAgentWithCommand_StreamMode(t *testing.T) {
 			toolCalls := toolCallCount
 			mu.Unlock()
 
-			// 流式模式下可能会收到空的最终消息，等待有内容的消息
+			// In streaming mode, you may receive an empty final message and wait for a message with content
 			if result == "" {
-				// 等待下一个有内容的消息
+				// Waiting for the next news with content
 				select {
 				case result = <-done:
 					if result == "" {
@@ -608,7 +608,7 @@ func TestReactAgentWithCommand_StreamMode(t *testing.T) {
 			t.Logf("Agent Response: %s", result)
 			assert.True(t, len(result) > 0, "响应内容不应为空")
 
-			// 验证工具被调用过
+			// The verification tool was invoked
 			t.Logf("Tool call count: %d", toolCalls)
 		case <-time.After(120 * time.Second):
 			t.Error("Timeout waiting for response")
@@ -616,9 +616,9 @@ func TestReactAgentWithCommand_StreamMode(t *testing.T) {
 	})
 }
 
-// TestReactAgentWithCommand_ComplexTask 测试复杂任务需要多次工具调用
+// TestReactAgentWithCommand_ComplexTask Testing complex tasks requires multiple tool calls
 func TestReactAgentWithCommand_ComplexTask(t *testing.T) {
-	// 配置信息从环境变量读取
+	// Configuration information is read from environment variables
 	baseURL, apiKey, model := getTestConfig()
 
 	skipIfNoAPIKey(t, apiKey)
@@ -667,7 +667,7 @@ func TestReactAgentWithCommand_ComplexTask(t *testing.T) {
 		assert.Nil(t, err)
 		defer engine.Stop(context.Background())
 
-		// 复杂任务：探索目录结构
+		// Complex task: Explore the structure of the directory
 		meta := types.NewMetadata()
 		msg := types.NewMsg(0, "TEST_MSG", types.TEXT, meta, "请帮我完成以下任务：1. 显示当前工作目录 2. 列出当前目录的内容 3. 如果有子目录，选择一个子目录并列出其内容 4. 总结你发现的信息")
 
@@ -683,12 +683,12 @@ func TestReactAgentWithCommand_ComplexTask(t *testing.T) {
 				t.Logf("Error in OnEnd: %v", err)
 				done <- ""
 			} else {
-				// 检查工具调用
+				// Check tool calls
 				if outMsg.Metadata.GetValue("tool_call") == "true" {
 					toolCallCount++
 				}
 
-				// 检查是否是最终结果
+				// Check if it is the final result
 				if outMsg.Metadata.GetValue("stream_completed") == "true" || outMsg.Metadata.GetValue("stream_completed") == "" {
 					t.Logf("Success in OnEnd: %s", truncateString(outMsg.GetData(), 500))
 					done <- outMsg.GetData()
@@ -708,7 +708,7 @@ func TestReactAgentWithCommand_ComplexTask(t *testing.T) {
 				t.Logf("Agent Response: %s", result)
 				assert.True(t, len(result) > 0)
 
-				// 验证响应中包含目录信息
+				// Verify that the response contains directory information
 				hasDirInfo := strings.Contains(result, "/") ||
 					strings.Contains(result, "目录") ||
 					strings.Contains(result, "directory") ||
@@ -724,14 +724,14 @@ func TestReactAgentWithCommand_ComplexTask(t *testing.T) {
 	})
 }
 
-// TestAgentV2Integration 集成测试
+// TestAgentV2Integration Integration testing
 func TestAgentV2Integration(t *testing.T) {
-	// 配置信息从环境变量读取
+	// Configuration information is read from environment variables
 	baseURL, apiKey, model := getTestConfig()
 
 	skipIfNoAPIKey(t, apiKey)
 
-	// 1. 测试基础对话
+	// 1. Test basic dialogue
 	t.Run("BasicConversation", func(t *testing.T) {
 		dsl := fmt.Sprintf(`{
 			"ruleChain": {
@@ -765,7 +765,7 @@ func TestAgentV2Integration(t *testing.T) {
 		assert.Nil(t, err)
 		defer engine.Stop(context.Background())
 
-		// 发送消息
+		// Send the message
 		meta := types.NewMetadata()
 		msg := types.NewMsg(0, "TEST_MSG", types.TEXT, meta, "你好，请介绍一下你自己")
 
@@ -795,9 +795,9 @@ func TestAgentV2Integration(t *testing.T) {
 		}
 	})
 
-	// 2. 测试带工具调用的 Agent
+	// 2. Test the Agent with tool calls
 	t.Run("AgentWithTools", func(t *testing.T) {
-		// 1. 注册工具规则链 (Calculator)
+		// 1. Register Tool Rule Chain (Calculator)
 		calcDsl := `{
 			"ruleChain": {
 				"id": "calculator_tool",
@@ -818,11 +818,11 @@ func TestAgentV2Integration(t *testing.T) {
 		}`
 
 		config := rulego.NewConfig()
-		// 先注册工具链
+		// First, register the toolchain
 		_, err := rulego.New("calculator_tool", []byte(calcDsl), types.WithConfig(config))
 		assert.Nil(t, err)
 
-		// 2. 定义 Agent 规则链
+		// 2. Define the Agent rule chain
 		agentDsl := fmt.Sprintf(`{
 			"ruleChain": {
 				"id": "agent_v2_tools_chain",
@@ -863,7 +863,7 @@ func TestAgentV2Integration(t *testing.T) {
 		assert.Nil(t, err)
 		defer engine.Stop(context.Background())
 
-		// 发送消息
+		// Send the message
 		meta := types.NewMetadata()
 		msg := types.NewMsg(0, "TEST_MSG_2", types.JSON, meta, "{\"model\": \""+model+"\", \"messages\": [{\"role\": \"user\", \"content\": \"请计算 (123 + 456) * 2 是多少？\"}]}")
 
@@ -887,7 +887,7 @@ func TestAgentV2Integration(t *testing.T) {
 			} else {
 				t.Logf("Agent Response: %s", result)
 				assert.True(t, len(result) > 0)
-				// 验证结果包含正确答案 1158
+				// The verification result contains 1158 correct answers
 				if !strings.Contains(result, "1158") {
 					t.Logf("Warning: Expected result to contain 1158, but got: %s", result)
 				}
@@ -899,7 +899,7 @@ func TestAgentV2Integration(t *testing.T) {
 }
 
 // ============================================================================
-// 并行工具调用测试
+// Parallel tool calls tests
 // ============================================================================
 
 type toolCallEvent struct {
@@ -909,7 +909,7 @@ type toolCallEvent struct {
 	Index     int       `json:"index"`
 }
 
-// TestParallelToolCalls 测试并行工具调用
+// TestParallelToolCalls tests parallel tool calls
 func TestParallelToolCalls(t *testing.T) {
 	baseURL, apiKey, model := getTestConfig()
 	skipIfNoAPIKey(t, apiKey)

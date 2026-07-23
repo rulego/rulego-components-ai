@@ -18,7 +18,7 @@ import (
 )
 
 // ==========================================
-// 单元测试
+// Unit testing
 // ==========================================
 
 func TestMcpServer_Type(t *testing.T) {
@@ -33,10 +33,10 @@ func TestMcpServer_New(t *testing.T) {
 }
 
 // ==========================================
-// 集成测试（使用真实 MCP 客户端连接）
+// Integration testing (using real MCP client connections)
 // ==========================================
 
-// testChainJSON 返回一个简单的测试规则链 JSON
+// testChainJSON returns a simple test rule chain JSON
 const testChainJSON = `
 {
   "ruleChain": {
@@ -59,7 +59,7 @@ const testChainJSON = `
 }
 `
 
-// startMcpServerEndpoint 启动一个带测试规则链的 MCP Server Endpoint
+// startMcpServerEndpoint Starts an MCP Server Endpoint with a test rule chain
 func startMcpServerEndpoint(t *testing.T, port string) (string, func()) {
 	t.Helper()
 
@@ -90,7 +90,7 @@ func startMcpServerEndpoint(t *testing.T, port string) (string, func()) {
 	return addr, func() { ep.Destroy() }
 }
 
-// connectMcpClient 创建并初始化一个 MCP 客户端连接
+// connectMcpClient creates and initializes an MCP client connection
 func connectMcpClient(t *testing.T, addr string) *client.Client {
 	t.Helper()
 
@@ -128,7 +128,7 @@ func TestMcpServerEndpoint_ClientConnect(t *testing.T) {
 	cli := connectMcpClient(t, addr)
 	defer cli.Close()
 
-	// 验证可以正常连接并发起初始化
+	// Verification can connect normally and initiate initialization
 	result, err := cli.ListTools(context.Background(), mcp.ListToolsRequest{})
 	require.NoError(t, err)
 	assert.NotNil(t, result)
@@ -160,7 +160,7 @@ func TestMcpServerEndpoint_CallTool(t *testing.T) {
 	cli := connectMcpClient(t, addr)
 	defer cli.Close()
 
-	// 调用 test_tool 工具
+	// Call test_tool tool
 	result, err := cli.CallTool(context.Background(), mcp.CallToolRequest{
 		Params: mcp.CallToolParams{
 			Name: "test_tool",
@@ -173,7 +173,7 @@ func TestMcpServerEndpoint_CallTool(t *testing.T) {
 	assert.False(t, result.IsError)
 	assert.NotEmpty(t, result.Content)
 
-	// 验证返回内容包含 processed=true
+	// Verify that the returned content contains processed=true
 	for _, content := range result.Content {
 		if textContent, ok := content.(mcp.TextContent); ok {
 			t.Logf("Result: %s", textContent.Text)
@@ -186,7 +186,7 @@ func TestMcpServerEndpoint_CallTool(t *testing.T) {
 func TestMcpServerEndpoint_MultipleTools(t *testing.T) {
 	config := rulego.NewConfig(types.WithDefaultPool())
 
-	// 创建两条规则链
+	// Create two rule chains
 	chain1 := `{"ruleChain":{"id":"chain_echo","name":"Echo Chain"},"metadata":{"nodes":[{"id":"s1","type":"jsTransform","name":"转换","configuration":{"jsScript":"return {'msg':msg,'metadata':metadata,'msgType':msgType};"}}],"connections":[]}}`
 	chain2 := `{"ruleChain":{"id":"chain_upper","name":"Upper Chain"},"metadata":{"nodes":[{"id":"s1","type":"jsTransform","name":"转换","configuration":{"jsScript":"msg['text'] = msg['text'].toUpperCase(); return {'msg':msg,'metadata':metadata,'msgType':msgType};"}}],"connections":[]}}`
 
@@ -205,7 +205,7 @@ func TestMcpServerEndpoint_MultipleTools(t *testing.T) {
 	ep, err := rulegoEndpoint.Registry.New(endpoint.Type, config, endpointConfig)
 	require.NoError(t, err)
 
-	// 注册两个工具
+	// Register two tools
 	r1 := rulegoEndpoint.NewRouter().From("echo").To("chain:chain_echo").End()
 	_, err = ep.AddRouter(r1, "回显工具", `{"type":"object","properties":{"text":{"type":"string"}}}`)
 	require.NoError(t, err)
@@ -223,12 +223,12 @@ func TestMcpServerEndpoint_MultipleTools(t *testing.T) {
 	cli := connectMcpClient(t, "http://localhost:19102/mcp")
 	defer cli.Close()
 
-	// 验证工具列表
+	// Verification tool list
 	toolsResult, err := cli.ListTools(context.Background(), mcp.ListToolsRequest{})
 	require.NoError(t, err)
 	assert.Len(t, toolsResult.Tools, 2)
 
-	// 调用 echo 工具
+	// Call the echo tool
 	echoResult, err := cli.CallTool(context.Background(), mcp.CallToolRequest{
 		Params: mcp.CallToolParams{
 			Name:      "echo",
@@ -238,7 +238,7 @@ func TestMcpServerEndpoint_MultipleTools(t *testing.T) {
 	require.NoError(t, err)
 	assert.False(t, echoResult.IsError)
 
-	// 调用 uppercase 工具
+	// Call the uppercase tool
 	upperResult, err := cli.CallTool(context.Background(), mcp.CallToolRequest{
 		Params: mcp.CallToolParams{
 			Name:      "uppercase",
@@ -268,12 +268,12 @@ func TestMcpServerEndpoint_DefaultPool(t *testing.T) {
 func TestMcpServerEndpoint_RemoveRouter(t *testing.T) {
 	_, shutdown := startMcpServerEndpoint(t, "19103")
 	defer shutdown()
-	// 验证 endpoint 正常启动和关闭
+	// Verify that the endpoint started and shut down normally
 }
 
-// TestMcpServerWithDsl 测试通过 DSL 配置 Endpoint 并使用 MCP 客户端连接
+// TestMcpServerWithDsl tests the endpoint configuration via DSL and connects using the MCP client
 func TestMcpServerWithDsl(t *testing.T) {
-	// 先创建规则链
+	// First, create a chain of rules
 	config := rulego.NewConfig(types.WithDefaultPool())
 	_, err := rulego.New("test_chain_mcp", []byte(testChainJSON), types.WithConfig(config))
 	require.NoError(t, err)
@@ -311,7 +311,7 @@ func TestMcpServerWithDsl(t *testing.T) {
 
 	time.Sleep(100 * time.Millisecond)
 
-	// 使用 MCP 客户端连接验证
+	// Use MCP client connection validation
 	cli := connectMcpClient(t, "http://localhost:19104/mcp-dsl")
 	defer cli.Close()
 
@@ -319,14 +319,14 @@ func TestMcpServerWithDsl(t *testing.T) {
 	require.NoError(t, err)
 	assert.NotEmpty(t, result.Tools)
 
-	// 验证工具名称
+	// Verification tool name
 	names := map[string]bool{}
 	for _, tool := range result.Tools {
 		names[tool.Name] = true
 	}
 	assert.True(t, names["my_tool"])
 
-	// 调用工具
+	// Invoke tools
 	callResult, err := cli.CallTool(context.Background(), mcp.CallToolRequest{
 		Params: mcp.CallToolParams{
 			Name:      "my_tool",

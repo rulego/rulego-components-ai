@@ -27,13 +27,13 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-// mockAroundAspect 模拟的环绕切面，用于测试切面链的执行顺序和中断行为
+// mockAroundAspect simulates an around aspect to test execution order and interruption behavior in the aspect chain.
 type mockAroundAspect struct {
 	name          string
 	order         int
 	calledBefore  bool
 	calledAfter   bool
-	shouldReturn  bool // 是否在此切面直接返回，中断链式调用
+	shouldReturn  bool // Whether to return directly on this facet interrupts the chain call
 	returnContent string
 }
 
@@ -53,7 +53,7 @@ func (a *mockAroundAspect) Around(ctx context.Context, point *aspect.AgentPoint,
 	a.calledBefore = true
 
 	if a.shouldReturn {
-		// 中断链式调用，直接返回结果
+		// Interrupt the chain call and return the result directly
 		return &aspect.AgentOutput{
 			Content:   a.returnContent,
 			IsSuccess: true,
@@ -61,21 +61,21 @@ func (a *mockAroundAspect) Around(ctx context.Context, point *aspect.AgentPoint,
 		}, nil
 	}
 
-	// 继续执行下一个切面或核心逻辑
+	// Continue executing the next aspect or core logic
 	out, err := next(ctx, input)
 	a.calledAfter = true
 	return out, err
 }
 
-// TestAspectIntegration_MultipleAroundAspects_Sync 测试同步模式下的多个环绕切面
+// TestAspectIntegration_MultipleAroundAspects_Sync tests multiple around aspects in synchronous mode.
 func TestAspectIntegration_MultipleAroundAspects_Sync(t *testing.T) {
-	// 创建执行器并清空默认切面
+	// Create an executor and clear the default aspects.
 	executor := NewAgentAspectExecutor(NewTestLogger(t))
-	// 通过反射或者重新创建一个只有我们需要的切面的管理器（为了简单，我们重新创建一个 Manager）
+	// Create a new Manager containing only the aspects needed by this test.
 	manager := aspect.NewAspectManager()
 	executor.manager = manager
 
-	// 创建三个切面，order 分别为 1, 2, 3
+	// Create three aspects with orders 1, 2, and 3.
 	aspect1 := &mockAroundAspect{name: "Aspect1", order: 1}
 	aspect2 := &mockAroundAspect{name: "Aspect2", order: 2}
 	aspect3 := &mockAroundAspect{name: "Aspect3", order: 3}
@@ -90,7 +90,7 @@ func TestAspectIntegration_MultipleAroundAspects_Sync(t *testing.T) {
 	agentInput := &aspect.AgentInput{}
 	messages := []*schema.Message{{Role: schema.User, Content: "Hello"}}
 
-	// 核心业务逻辑
+	// Core business logic
 	coreExecuted := false
 	coreExecutor := func(ctx context.Context, msgs []*schema.Message) (*schema.Message, error) {
 		coreExecuted = true
@@ -100,7 +100,7 @@ func TestAspectIntegration_MultipleAroundAspects_Sync(t *testing.T) {
 	output, err := executor.ExecuteSync(context.Background(), opts, agentInput, messages, coreExecutor)
 	require.NoError(t, err)
 
-	// 验证执行顺序和结果
+	// Verify the execution sequence and results
 	assert.True(t, coreExecuted, "Core logic should be executed")
 	assert.Equal(t, "Core Output", output.Content)
 	assert.True(t, aspect1.calledBefore && aspect1.calledAfter, "Aspect1 should be fully executed")
@@ -108,7 +108,7 @@ func TestAspectIntegration_MultipleAroundAspects_Sync(t *testing.T) {
 	assert.True(t, aspect3.calledBefore && aspect3.calledAfter, "Aspect3 should be fully executed")
 }
 
-// TestAspectIntegration_MultipleAroundAspects_Stream 测试流式模式下的多个环绕切面
+// TestAspectIntegration_MultipleAroundAspects_Stream tests multiple around aspects in streaming mode.
 func TestAspectIntegration_MultipleAroundAspects_Stream(t *testing.T) {
 	executor := NewAgentAspectExecutor(NewTestLogger(t))
 	manager := aspect.NewAspectManager()
@@ -128,12 +128,12 @@ func TestAspectIntegration_MultipleAroundAspects_Stream(t *testing.T) {
 	agentInput := &aspect.AgentInput{}
 	messages := []*schema.Message{{Role: schema.User, Content: "Hello"}}
 
-	// 核心流式业务逻辑
+	// Core streaming business logic
 	coreExecuted := false
 	streamExecutor := func(ctx context.Context, msgs []*schema.Message) (*schema.StreamReader[*schema.Message], error) {
 		coreExecuted = true
 
-		// 模拟一个简单的流式读取器
+		// Simulates a simple stream reader
 		reader, writer := schema.Pipe[*schema.Message](1)
 		go func() {
 			defer writer.Close()
@@ -152,7 +152,7 @@ func TestAspectIntegration_MultipleAroundAspects_Stream(t *testing.T) {
 	output, err := executor.ExecuteStream(context.Background(), opts, agentInput, messages, streamExecutor, onChunk)
 	require.NoError(t, err)
 
-	// 验证执行顺序和结果
+	// Verify the execution sequence and results
 	assert.True(t, coreExecuted, "Core stream logic should be executed")
 	assert.Equal(t, "Stream Output", output.Content)
 	assert.Equal(t, []string{"Stream ", "Output"}, chunks, "Chunks should be received correctly")
@@ -161,13 +161,13 @@ func TestAspectIntegration_MultipleAroundAspects_Stream(t *testing.T) {
 	assert.True(t, aspect3.calledBefore && aspect3.calledAfter, "Aspect3 should be fully executed")
 }
 
-// TestAspectIntegration_MultipleAroundAspects_Interrupt 测试环绕切面中断机制
+// TestAspectIntegration_MultipleAroundAspects_Interrupt Test the surround cut interrupt mechanism
 func TestAspectIntegration_MultipleAroundAspects_Interrupt(t *testing.T) {
 	executor := NewAgentAspectExecutor(NewTestLogger(t))
 	manager := aspect.NewAspectManager()
 	executor.manager = manager
 
-	// 切面2 会中断调用链
+	// Facet 2 interrupts the call chain
 	aspect1 := &mockAroundAspect{name: "Aspect1", order: 1}
 	aspect2 := &mockAroundAspect{name: "Aspect2", order: 2, shouldReturn: true, returnContent: "Intercepted by Aspect2"}
 	aspect3 := &mockAroundAspect{name: "Aspect3", order: 3}
@@ -182,7 +182,7 @@ func TestAspectIntegration_MultipleAroundAspects_Interrupt(t *testing.T) {
 	agentInput := &aspect.AgentInput{}
 	messages := []*schema.Message{{Role: schema.User, Content: "Hello"}}
 
-	// 同步执行测试
+	// Tests are performed simultaneously
 	t.Run("Sync Interrupt", func(t *testing.T) {
 		coreExecuted := false
 		coreExecutor := func(ctx context.Context, msgs []*schema.Message) (*schema.Message, error) {
@@ -193,23 +193,23 @@ func TestAspectIntegration_MultipleAroundAspects_Interrupt(t *testing.T) {
 		output, err := executor.ExecuteSync(context.Background(), opts, agentInput, messages, coreExecutor)
 		require.NoError(t, err)
 
-		// 核心逻辑不应该被执行
+		// Core logic should not be executed
 		assert.False(t, coreExecuted, "Core logic should NOT be executed")
 		assert.Equal(t, "Intercepted by Aspect2", output.Content)
 
-		// 验证切面执行状态
+		// Verify the execution status of the face
 		assert.True(t, aspect1.calledBefore && aspect1.calledAfter, "Aspect1 should wrap Aspect2")
 		assert.True(t, aspect2.calledBefore, "Aspect2 before logic should execute")
 		assert.False(t, aspect2.calledAfter, "Aspect2 after logic shouldn't execute because it returned early")
 		assert.False(t, aspect3.calledBefore, "Aspect3 should NOT be reached")
 	})
 
-	// 重置状态
+	// Reset state
 	aspect1.calledBefore, aspect1.calledAfter = false, false
 	aspect2.calledBefore, aspect2.calledAfter = false, false
 	aspect3.calledBefore, aspect3.calledAfter = false, false
 
-	// 流式执行测试
+	// Stream execution of tests
 	t.Run("Stream Interrupt", func(t *testing.T) {
 		coreExecuted := false
 		streamExecutor := func(ctx context.Context, msgs []*schema.Message) (*schema.StreamReader[*schema.Message], error) {
@@ -226,12 +226,12 @@ func TestAspectIntegration_MultipleAroundAspects_Interrupt(t *testing.T) {
 		output, err := executor.ExecuteStream(context.Background(), opts, agentInput, messages, streamExecutor, onChunk)
 		require.NoError(t, err)
 
-		// 核心逻辑不应该被执行
+		// Core logic should not be executed
 		assert.False(t, coreExecuted, "Core stream logic should NOT be executed")
 		assert.False(t, onChunkCalled, "onChunk should NOT be called")
 		assert.Equal(t, "Intercepted by Aspect2", output.Content)
 
-		// 验证切面执行状态
+		// Verify the execution status of the face
 		assert.True(t, aspect1.calledBefore && aspect1.calledAfter, "Aspect1 should wrap Aspect2")
 		assert.True(t, aspect2.calledBefore, "Aspect2 before logic should execute")
 		assert.False(t, aspect2.calledAfter, "Aspect2 after logic shouldn't execute because it returned early")

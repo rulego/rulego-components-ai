@@ -15,32 +15,32 @@ func init() {
 	_ = rulego.Registry.Register(&GenerateImageNode{})
 }
 
-// GenerateImageNodeConfiguration 包含节点的配置信息
+// GenerateImageNodeConfiguration contains the node's configuration information
 type GenerateImageNodeConfiguration struct {
-	Url            string `json:"url" label:"API URL" desc:"Image generation API base URL. Supports OpenAI-compatible endpoints" required:"true"` // OpenAI API 的基础 URL
-	Key            string `json:"key" label:"API Key" desc:"API key for authentication" required:"true"`                                      // OpenAI API 的密钥
-	Model          string `json:"model" label:"Model" desc:"Model name, e.g. dall-e-3" required:"true"`                                     // 使用的模型名称
-	Prompt         string `json:"prompt" label:"Prompt" desc:"Image generation prompt. Supports ${} placeholder variables" required:"true"`  // 图像生成的提示
-	N              int    `json:"n" label:"Number of Images" desc:"Number of images to generate. Default is 1"`                              // 生成图像的数量
-	ResponseFormat string `json:"response_format" label:"Response Format" desc:"Response format: url or b64_json. Default is url"`            // 响应格式
-	Quality        string `json:"quality" label:"Quality" desc:"Image quality: hd or standard. Default is standard"`                        // 图像质量
-	Size           string `json:"size" label:"Size" desc:"Image size, e.g. 256x256, 512x512, 1024x1024, 1792x1024, 1024x1792"`              // 图像尺寸
-	Style          string `json:"style" label:"Style" desc:"Image style: vivid or natural. Default is vivid"`                                // 图像风格
+	Url            string `json:"url" label:"API URL" desc:"Image generation API base URL. Supports OpenAI-compatible endpoints" required:"true"` // The basic URL of the OpenAI API
+	Key            string `json:"key" label:"API Key" desc:"API key for authentication" required:"true"`                                          // The key to the OpenAI API
+	Model          string `json:"model" label:"Model" desc:"Model name, e.g. dall-e-3" required:"true"`                                           // The model name used
+	Prompt         string `json:"prompt" label:"Prompt" desc:"Image generation prompt. Supports ${} placeholder variables" required:"true"`       // Image generation prompts
+	N              int    `json:"n" label:"Number of Images" desc:"Number of images to generate. Default is 1"`                                   // The number of generated images
+	ResponseFormat string `json:"response_format" label:"Response Format" desc:"Response format: url or b64_json. Default is url"`                // Response format
+	Quality        string `json:"quality" label:"Quality" desc:"Image quality: hd or standard. Default is standard"`                              // Image quality
+	Size           string `json:"size" label:"Size" desc:"Image size, e.g. 256x256, 512x512, 1024x1024, 1792x1024, 1024x1792"`                    // Image size
+	Style          string `json:"style" label:"Style" desc:"Image style: vivid or natural. Default is vivid"`                                     // Image style
 }
 
-// GenerateImageNode 是用于生成图像的节点
+// GenerateImageNode is a node used to generate images
 type GenerateImageNode struct {
 	Config         GenerateImageNodeConfiguration
 	AiClient       *openai.Client
 	promptTemplate str.Template
 }
 
-// Type 返回节点类型
+// Type returns the node type
 func (x *GenerateImageNode) Type() string {
 	return "ai/createImage"
 }
 
-// New 创建一个新的 GenerateImageNode 实例
+// New creates a new GenerateImageNode instance
 func (x *GenerateImageNode) New() types.Node {
 	return &GenerateImageNode{
 		Config: GenerateImageNodeConfiguration{
@@ -57,7 +57,7 @@ func (x *GenerateImageNode) New() types.Node {
 	}
 }
 
-// Init 初始化节点
+// Init initializes the node
 func (x *GenerateImageNode) Init(ruleConfig types.Config, configuration types.Configuration) error {
 	err := maps.Map2Struct(configuration, &x.Config)
 	if err != nil {
@@ -103,7 +103,7 @@ func (x *GenerateImageNode) Init(ruleConfig types.Config, configuration types.Co
 	return nil
 }
 
-// generateImage 生成图像的 URL
+// generateImage generates the image URL
 func (x *GenerateImageNode) generateImage(ctx types.RuleContext, prompt string) ([]string, error) {
 	resp, err := x.AiClient.CreateImage(
 		ctx.GetContext(),
@@ -135,7 +135,7 @@ func (x *GenerateImageNode) generateImage(ctx types.RuleContext, prompt string) 
 	return responses, nil
 }
 
-// OnMsg 处理消息
+// OnMsg processes a message
 func (x *GenerateImageNode) OnMsg(ctx types.RuleContext, msg types.RuleMsg) {
 	prompt := x.Config.Prompt
 	if !x.promptTemplate.IsNotVar() {
@@ -151,7 +151,7 @@ func (x *GenerateImageNode) OnMsg(ctx types.RuleContext, msg types.RuleMsg) {
 	ctx.TellSuccess(msg)
 }
 
-// Destroy 销毁节点
+// Destroy the node
 func (x *GenerateImageNode) Destroy() {
 }
 

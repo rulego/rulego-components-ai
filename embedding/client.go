@@ -10,16 +10,16 @@ import (
 	"time"
 )
 
-// EmbeddingClient 轻量 Embedding HTTP 客户端，兼容 OpenAI embedding API 格式。
-// 支持私有化部署（HuggingFace TEI 等）和云端 API（Gitee AI 等）。
+// EmbeddingClient is a lightweight Embedding HTTP client compatible with the OpenAI embedding API format.
+// Supports private deployments (such as HuggingFace TEI) and cloud APIs (such as Gitee AI).
 type EmbeddingClient struct {
 	httpClient *http.Client
-	URL        string // Embedding API 地址，如 http://localhost:8080/embed
-	APIKey     string // API Key，私有部署可为空
-	Model      string // 模型名，如 BgeSmallZh
+	URL        string // Embedding API address, such as http://localhost:8080/embed
+	APIKey     string // API Key, private deployments can be empty
+	Model      string // Model names, such as BgeSmallZh
 }
 
-// NewEmbeddingClient 创建 Embedding 客户端
+// NewEmbeddingClient creates an Embedding client
 func NewEmbeddingClient(url, apiKey, model string) *EmbeddingClient {
 	return &EmbeddingClient{
 		httpClient: &http.Client{Timeout: 30 * time.Second},
@@ -29,9 +29,9 @@ func NewEmbeddingClient(url, apiKey, model string) *EmbeddingClient {
 	}
 }
 
-// Embed 批量计算文本 embedding，返回向量列表。
-// 请求格式：{"input": ["text1", "text2"], "model": "xxx"}
-// 响应格式：{"data": [{"embedding": [0.1, 0.2, ...]}, ...]}
+// Embed batch computes text embedding, returning a list of vectors.
+// Request format: {"input": ["text1", "text2"], "model": "xxx"}
+// Response format: {"data": [{"embedding": [0.1, 0.2,...]},...]}
 func (c *EmbeddingClient) Embed(ctx context.Context, texts []string) ([][]float64, error) {
 	if len(texts) == 0 {
 		return nil, nil
@@ -75,7 +75,7 @@ func (c *EmbeddingClient) Embed(ctx context.Context, texts []string) ([][]float6
 	return extractEmbeddings(responseData)
 }
 
-// extractEmbeddings 从 API 响应中提取 embedding 向量
+// extractEmbeddings extracts embedding vectors from API responses
 func extractEmbeddings(data []byte) ([][]float64, error) {
 	var response map[string]interface{}
 	if err := json.Unmarshal(data, &response); err != nil {

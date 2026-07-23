@@ -16,7 +16,7 @@ import (
 	"github.com/rulego/rulego/test/assert"
 )
 
-// TestCreateChatModel_MissingURL 测试缺少 URL 的情况
+// TestCreateChatModel_MissingURL Testing for missing URLs
 func TestCreateChatModel_MissingURL(t *testing.T) {
 	llmConfig := config.LLMConfig{
 		Url:   "",
@@ -33,10 +33,10 @@ func TestCreateChatModel_MissingURL(t *testing.T) {
 	}
 }
 
-// TestCreateChatModel_EmptyURLAfterTrim 测试 URL 只有空格的情况
+// TestCreateChatModel_EmptyURLAfterTrim Test the situation where the URL contains only spaces
 func TestCreateChatModel_EmptyURLAfterTrim(t *testing.T) {
 	llmConfig := config.LLMConfig{
-		Url:   "   ", // 只有空格
+		Url:   "   ", // Only the spaces remain
 		Key:   "test-key",
 		Model: "gpt-4",
 	}
@@ -50,16 +50,16 @@ func TestCreateChatModel_EmptyURLAfterTrim(t *testing.T) {
 	}
 }
 
-// TestCreateChatModel_ValidConfig 测试有效配置
+// TestCreateChatModel_ValidConfig Test effective configuration
 func TestCreateChatModel_ValidConfig(t *testing.T) {
-	// 这个测试需要真实的 API endpoint，所以我们使用一个假的 URL
-	// 实际上会尝试连接，可能会失败
+	// This test requires a real API endpoint, so we use a fake URL
+	// In reality, attempts to connect may fail
 	t.Skip("Requires valid API endpoint")
 }
 
-// TestCreateChatModel_DefaultParams 测试默认参数
+// TestCreateChatModel_DefaultParams Test default parameters
 func TestCreateChatModel_DefaultParams(t *testing.T) {
-	// 测试当参数为 0 时是否应用默认值
+	// Test whether the default value is applied when the parameter is 0
 	_ = config.LLMConfig{
 		Url:   "https://api.example.com/v1",
 		Key:   "test-key",
@@ -72,20 +72,20 @@ func TestCreateChatModel_DefaultParams(t *testing.T) {
 		},
 	}
 
-	// 创建模型会应用默认参数
-	// 由于需要实际连接，这里我们只验证逻辑
-	// 在实际测试中会使用 mock
+	// Creating a model applies default parameters
+	// Since actual connections are required, here we only verify the logic
+	// Mock is used in actual testing
 
-	// 验证默认值常量
+	// Verify the default value constant
 	assert.Equal(t, config.DefaultTemperature, float32(0.7))
 	assert.Equal(t, config.DefaultTopP, float32(0.9))
 	assert.Equal(t, config.DefaultFrequencyPenalty, float32(0.5))
 	assert.Equal(t, config.DefaultPresencePenalty, float32(0.5))
 }
 
-// TestCreateChatModel_CustomParams 测试自定义参数
+// TestCreateChatModel_CustomParams Test custom parameters
 func TestCreateChatModel_CustomParams(t *testing.T) {
-	// 当用户设置了参数时，不应该被默认值覆盖
+	// When users set parameters, they should not be overwritten by default values
 	llmConfig := config.LLMConfig{
 		Url:   "https://api.example.com/v1",
 		Key:   "test-key",
@@ -99,7 +99,7 @@ func TestCreateChatModel_CustomParams(t *testing.T) {
 		},
 	}
 
-	// 这些值不应该被默认值覆盖
+	// These values should not be overwritten by defaults
 	assert.Equal(t, float32(0.5), llmConfig.Params.Temperature)
 	assert.Equal(t, float32(0.8), llmConfig.Params.TopP)
 	assert.Equal(t, float32(0.3), llmConfig.Params.FrequencyPenalty)
@@ -107,7 +107,7 @@ func TestCreateChatModel_CustomParams(t *testing.T) {
 	assert.Equal(t, 1000, llmConfig.Params.MaxTokens)
 }
 
-// TestCreateChatModel_WithStopSequences 测试停止序列
+// TestCreateChatModel_WithStopSequences Test stops the sequence
 func TestCreateChatModel_WithStopSequences(t *testing.T) {
 	llmConfig := config.LLMConfig{
 		Url:   "https://api.example.com/v1",
@@ -123,7 +123,7 @@ func TestCreateChatModel_WithStopSequences(t *testing.T) {
 	assert.Equal(t, "END", llmConfig.Params.Stop[1])
 }
 
-// TestCreateChatModel_WithMaxRetries 测试重试配置
+// TestCreateChatModel_WithMaxRetries Test and retry the configuration
 func TestCreateChatModel_WithMaxRetries(t *testing.T) {
 	llmConfig := config.LLMConfig{
 		Url:        "https://api.example.com/v1",
@@ -135,7 +135,7 @@ func TestCreateChatModel_WithMaxRetries(t *testing.T) {
 	assert.Equal(t, 3, llmConfig.MaxRetries)
 }
 
-// TestCreateTools 测试创建工具
+// TestCreateTools Test creation tool
 func TestCreateTools(t *testing.T) {
 	toolsConfig := []config.Tool{
 		{
@@ -159,7 +159,7 @@ func TestCreateTools(t *testing.T) {
 	assert.Equal(t, 2, len(toolInfos))
 }
 
-// TestCreateTools_Empty 测试空工具列表
+// TestCreateTools_Empty List of test empty tools
 func TestCreateTools_Empty(t *testing.T) {
 	tools, toolInfos, _, err := CreateTools([]config.Tool{}, ToolOptions{})
 
@@ -168,7 +168,7 @@ func TestCreateTools_Empty(t *testing.T) {
 	assert.Equal(t, 0, len(toolInfos))
 }
 
-// TestCreateTools_Nil 测试 nil 工具列表
+// TestCreateTools_Nil List of testing NIL tools
 func TestCreateTools_Nil(t *testing.T) {
 	tools, toolInfos, _, err := CreateTools(nil, ToolOptions{})
 
@@ -177,7 +177,7 @@ func TestCreateTools_Nil(t *testing.T) {
 	assert.Equal(t, 0, len(toolInfos))
 }
 
-// TestCreateTools_MultipleTypes 测试不同类型的工具
+// TestCreateTools_MultipleTypes Test different types of tools
 func TestCreateTools_MultipleTypes(t *testing.T) {
 	toolsConfig := []config.Tool{
 		{
@@ -201,14 +201,14 @@ func TestCreateTools_MultipleTypes(t *testing.T) {
 	assert.Equal(t, 2, len(toolInfos))
 }
 
-// TestCreateChatModelAgent 测试创建 ChatModel Agent
+// TestCreateChatModelAgent Tests the creation of a ChatModel Agent
 func TestCreateChatModelAgent(t *testing.T) {
 	t.Skip("Requires valid API endpoint and LLM configuration")
 }
 
-// TestCreateChatModelAgent_Config 测试 Agent 配置
+// TestCreateChatModelAgent_Config Test Agent configuration
 func TestCreateChatModelAgent_Config(t *testing.T) {
-	// 测试配置结构的正确性
+	// Test the correctness of the configuration structure
 	agentConfig := ChatAgentConfig{
 		LLMConfig: config.LLMConfig{
 			Url:          "https://api.example.com/v1",
@@ -235,7 +235,7 @@ func TestCreateChatModelAgent_Config(t *testing.T) {
 	assert.Equal(t, 1, len(agentConfig.Tools))
 }
 
-// TestChatAgentConfig 测试 ChatAgentConfig 结构
+// TestChatAgentConfig Tests the ChatAgentConfig structure
 func TestChatAgentConfig(t *testing.T) {
 	config := ChatAgentConfig{
 		LLMConfig: config.LLMConfig{
@@ -254,7 +254,7 @@ func TestChatAgentConfig(t *testing.T) {
 	assert.Equal(t, "Test prompt", config.SystemPrompt)
 }
 
-// TestSubAgentConfig 测试 SubAgentConfig 结构
+// TestSubAgentConfig Tests the SubAgentConfig structure
 func TestSubAgentConfig(t *testing.T) {
 	subConfig := SubAgentConfig{
 		Name:        "sub_agent",
@@ -273,17 +273,17 @@ func TestSubAgentConfig(t *testing.T) {
 	assert.NotNil(t, subConfig.Config)
 }
 
-// TestCreateChatModel_WithContext 测试带 context 的创建
+// TestCreateChatModel_WithContext Creating the test tape context
 func TestCreateChatModel_WithContext(t *testing.T) {
-	// 验证 context 在创建过程中被正确使用
+	// Verify that context is used correctly during creation
 	ctx := context.Background()
 	assert.NotNil(t, ctx)
 
-	// 实际创建需要有效的 API endpoint
-	// 这里只验证 context 可用
+	// Actual creation requires a valid API endpoint
+	// Here, only the context is verified
 }
 
-// TestCreateChatModel_KeyTrim 测试 API Key 的空格处理
+// TestCreateChatModel_KeyTrim Test the space handling of API Keys
 func TestCreateChatModel_KeyTrim(t *testing.T) {
 	llmConfig := config.LLMConfig{
 		Url:   "https://api.example.com/v1",
@@ -291,12 +291,12 @@ func TestCreateChatModel_KeyTrim(t *testing.T) {
 		Model: "gpt-4",
 	}
 
-	// 创建后 Key 应该被 trim
-	// 由于需要实际连接，这里只验证配置
+	// After creation, the Key should be trimmed
+	// Since actual connection is required, only the configuration is verified here
 	assert.Equal(t, "  test-key-with-spaces  ", llmConfig.Key)
 }
 
-// TestIsExecutableToolCallArgs 测试工具调用参数是否可执行
+// TestIsExecutableToolCallArgs tests whether the parameter called by the tool can be executed
 func TestIsExecutableToolCallArgs(t *testing.T) {
 	tests := []struct {
 		name      string
@@ -355,7 +355,7 @@ func TestIsExecutableToolCallArgs(t *testing.T) {
 	}
 }
 
-// TestCreateStreamToolCallChecker_AcceptsNamedToolCallWithoutCompleteArgs 测试流式检查器识别未完成参数的工具调用
+// TestCreateStreamToolCallChecker_AcceptsNamedToolCallWithoutCompleteArgs Test the flow checker's tool call to identify incomplete parameters
 func TestCreateStreamToolCallChecker_AcceptsNamedToolCallWithoutCompleteArgs(t *testing.T) {
 	checker := createStreamToolCallChecker(nil)
 	stream := schema.StreamReaderFromArray([]*schema.Message{
@@ -379,7 +379,7 @@ func TestCreateStreamToolCallChecker_AcceptsNamedToolCallWithoutCompleteArgs(t *
 	assert.True(t, hasToolCall)
 }
 
-// TestCreateStreamToolCallChecker_RejectsUnnamedToolCall 测试流式检查器忽略没有名称的工具调用
+// TestCreateStreamToolCallChecker_RejectsUnnamedToolCall Test Flow Checker ignores tool calls without names
 func TestCreateStreamToolCallChecker_RejectsUnnamedToolCall(t *testing.T) {
 	checker := createStreamToolCallChecker(nil)
 	stream := schema.StreamReaderFromArray([]*schema.Message{
@@ -403,7 +403,7 @@ func TestCreateStreamToolCallChecker_RejectsUnnamedToolCall(t *testing.T) {
 	assert.False(t, hasToolCall)
 }
 
-// TestCreateStreamToolCallChecker_AcceptsValidArguments 测试流式检查器识别有效工具调用
+// TestCreateStreamToolCallChecker_AcceptsValidArguments Test flow checker to identify valid tool calls
 func TestCreateStreamToolCallChecker_AcceptsValidArguments(t *testing.T) {
 	checker := createStreamToolCallChecker(nil)
 	stream := schema.StreamReaderFromArray([]*schema.Message{
@@ -427,7 +427,7 @@ func TestCreateStreamToolCallChecker_AcceptsValidArguments(t *testing.T) {
 	assert.True(t, hasToolCall)
 }
 
-// TestVisualToolWrapper_RejectsEmptyArguments 测试工具包装器拒绝空参数调用
+// TestVisualToolWrapper_RejectsEmptyArguments Test tool wrapper rejects air parameter calls
 func TestVisualToolWrapper_RejectsEmptyArguments(t *testing.T) {
 	baseCalled := false
 	wrapper := NewVisualToolWrapper(&mockInvokableTool{
@@ -446,7 +446,7 @@ func TestVisualToolWrapper_RejectsEmptyArguments(t *testing.T) {
 	assert.True(t, strings.Contains(result, "blocked_invalid_arguments"))
 }
 
-// TestVisualToolWrapper_RejectsInvalidSkillArguments 测试工具包装器拒绝不符合 skill 工具协议的参数。
+// TestVisualToolWrapper_RejectsInvalidSkillArguments Test tool wrapper rejects parameters that do not comply with the Skill tool protocol.
 func TestVisualToolWrapper_RejectsInvalidSkillArguments(t *testing.T) {
 	baseCalled := false
 	wrapper := NewVisualToolWrapper(&mockInvokableTool{
@@ -465,9 +465,9 @@ func TestVisualToolWrapper_RejectsInvalidSkillArguments(t *testing.T) {
 	assert.True(t, strings.Contains(result, "blocked_invalid_arguments"))
 }
 
-// TestVisualToolWrapper_ForwardsDynamicSkillLister 测试 VisualToolWrapper 能转发 DynamicSkillLister 接口。
-// 这是 skill 改造的关键回归测试：当 WrapVisual=true 时，dynamicSkillTool 被 VisualToolWrapper 包装后，
-// DynamicSkillLister 接口不能丢失，否则 MessageModifier 为 nil，技能列表不会注入 system prompt。
+// TestVisualToolWrapper_ForwardsDynamicSkillLister Test that VisualToolWrapper can forward the DynamicSkillLister interface.
+// This is the key regression test for skill modification: when WrapVisual=true, after dynamicSkillTool is wrapped by VisualToolWrapper,
+// The DynamicSkillLister interface must not be lost; otherwise, the MessageModifier will be nil, and the skill list will not be injected into the system prompt.
 func TestVisualToolWrapper_ForwardsDynamicSkillLister(t *testing.T) {
 	tmpDir := t.TempDir()
 	skillDir := filepath.Join(tmpDir, "test-skill")
@@ -493,8 +493,8 @@ Test skill content
 		},
 	}
 
-	// 使用 WrapVisual=true，模拟生产代码路径
-	// skillLister 在包装前由 CreateTools 提取返回
+	// Use WrapVisual=true to simulate the production code path
+	// Before packaging, skillLister is extracted and returned by CreateTools
 	tools, _, skillLister, err := CreateTools(toolsConfig, ToolOptions{
 		WrapVisual: true,
 		Logger:     NewTestLogger(t),
@@ -506,12 +506,12 @@ Test skill content
 		t.Fatal("CreateTools returned no tools")
 	}
 
-	// 关键断言：skillLister 在包装前被正确提取
+	// Key Claim: The skillLister is properly extracted before packaging
 	if skillLister == nil {
 		t.Fatal("CreateTools should return non-nil skillLister for skill tool")
 	}
 
-	// 验证 ListSkills 能正常工作
+	// Verify that ListSkills works properly
 	skills, err := skillLister.ListSkills(context.Background())
 	if err != nil {
 		t.Fatalf("ListSkills failed: %v", err)
@@ -520,19 +520,19 @@ Test skill content
 		t.Fatalf("ListSkills result should contain 'test-skill', got: %s", skills)
 	}
 
-	// 验证 GetSkillInstruction 能正常工作
+	// Verify that GetSkillInstruction works properly
 	instruction := skillLister.GetSkillInstruction()
 	if instruction == "" {
 		t.Fatal("GetSkillInstruction should not return empty string")
 	}
 
-	// 验证 BuildSkillModifier 能成功构建
+	// Verify that BuildSkillModifier can be successfully built
 	modifier := BuildSkillModifier(skillLister)
 	if modifier == nil {
 		t.Fatal("BuildSkillModifier returned nil")
 	}
 
-	// 验证 MessageModifier 注入 system prompt
+	// Verify the MessageModifier injection system prompt
 	input := []*schema.Message{
 		{Role: schema.System, Content: "You are a helpful assistant."},
 		{Role: schema.User, Content: "Hello"},
@@ -543,7 +543,7 @@ Test skill content
 	}
 }
 
-// BenchmarkCreateTools 基准测试 CreateTools
+// BenchmarkCreateTools Benchmark CreateTools
 func BenchmarkCreateTools(b *testing.B) {
 	toolsConfig := []config.Tool{
 		{
@@ -572,7 +572,7 @@ func BenchmarkCreateTools(b *testing.B) {
 	}
 }
 
-// BenchmarkCreateTools_Single 基准测试单个工具创建
+// BenchmarkCreateTools_Single Benchmarking is created with a single tool
 func BenchmarkCreateTools_Single(b *testing.B) {
 	toolConfig := config.Tool{
 		Name:        "single_tool",
@@ -588,7 +588,7 @@ func BenchmarkCreateTools_Single(b *testing.B) {
 }
 
 // ============================================================================
-// MCP 工具测试
+// MCP tool testing
 // ============================================================================
 
 type testMCPProvider struct {

@@ -13,43 +13,43 @@ import (
 	"github.com/rulego/rulego/utils/el"
 )
 
-// isBase64Image 检查是否为 base64 格式图片
+// isBase64Image checks whether the image is in base64 format
 func isBase64Image(s string) bool {
 	return imageutil.IsBase64Image(s)
 }
 
-// isLocalFilePath 检查是否为本地文件路径
+// isLocalFilePath checks whether it is a local file path
 func isLocalFilePath(s string) bool {
 	return imageutil.IsLocalFilePath(s)
 }
 
-// parseBase64Image 解析 base64 图片，返回 mimeType 和 base64Data
+// parseBase64Image parses the base64 image, returning mimeType and base64Data
 func parseBase64Image(s string) (mimeType, base64Data string) {
 	return imageutil.ParseBase64Image(s)
 }
 
-// loadLocalImage 加载本地图片并转为 base64 格式（带压缩）
+// loadLocalImage Load the local image and convert it to base64 format (with compression)
 func loadLocalImage(path string) (string, error) {
 	return imageutil.LoadLocalImage(path)
 }
 
-// ChatMessageTemplate 上下文消息/用户消息模板
+// ChatMessageTemplate Contextual message/user message template
 type ChatMessageTemplate struct {
 	Role            string
 	ContentTemplate el.Template
 }
 
-// ConvertRuleMsgToAgentInput 将 RuleMsg 转换为 Eino AgentInput，支持系统提示词模板和预设消息模板
-// presetMessages: 预设消息模板列表，用于定时任务等场景，当 RuleMsg 中没有消息时使用
-// modelName: 模型名称，用于自动检测是否支持视觉能力。如果不支持视觉能力，图片会被忽略
-// agentID: 智能体 ID，用于隔离存储图片等资源。如果为空，将尝试从消息元数据中提取
-// logger: 日志器，用于输出调试信息
+// ConvertRuleMsgToAgentInput converts RuleMsg to Eino AgentInput, supporting system prompt templates and preset message templates
+// presetMessages: A preset list of message templates used for scheduled tasks and similar scenarios, used when there are no messages in the RuleMsg
+// modelName: Model name, used to automatically detect whether visual capabilities are supported. If visual abilities are not supported, images will be ignored
+// agentID: The agent ID, used to isolate and store images and other resources. If it is empty, it will attempt to extract from the message metadata
+// logger: A logger used to output debugging information
 func ConvertRuleMsgToAgentInput(ctx types.RuleContext, msg types.RuleMsg, systemPromptTemplate el.Template, hasVar bool, systemPromptRaw string, presetMessages []ChatMessageTemplate, modelName string, agentID string, logger types.Logger) (*adk.AgentInput, error) {
 	input := &adk.AgentInput{
 		Messages: make([]*schema.Message, 0),
 	}
 
-	// 检测模型是否支持视觉能力
+	// Testing whether the model supports visual capabilities
 	supportsVision := config.SupportsVision(modelName)
 
 	data := msg.GetData()
@@ -63,12 +63,12 @@ func ConvertRuleMsgToAgentInput(ctx types.RuleContext, msg types.RuleMsg, system
 		parseChatMessages(data, supportsVision, agentID, input, logger)
 	}
 
-	// 如果没有解析到消息，检查是否有预设消息模板
+	// If the message is not parsed, check if there is a preset message template
 	if len(input.Messages) == 0 {
 		appendPresetOrRawMessages(input, data, presetMessages, env)
 	}
 
-	// 添加系统提示词（System Prompt），支持动态模板变量解析
+	// Added System Prompt to support dynamic template variable parsing
 	if systemPromptRaw != "" {
 		appendSystemPrompt(input, systemPromptRaw, systemPromptTemplate, hasVar, env)
 	}
@@ -76,7 +76,7 @@ func ConvertRuleMsgToAgentInput(ctx types.RuleContext, msg types.RuleMsg, system
 	return input, nil
 }
 
-// parseChatMessages 解析对话消息并添加到 AgentInput
+// parseChatMessages parses conversation messages and adds them to AgentInput
 func parseChatMessages(data string, supportsVision bool, agentID string, input *adk.AgentInput, logger types.Logger) {
 	var chatRequest config.MultiTurnChatRequest
 	if err := json.Unmarshal([]byte(data), &chatRequest); err != nil {
@@ -86,9 +86,9 @@ func parseChatMessages(data string, supportsVision bool, agentID string, input *
 		return
 	}
 
-	// 预分配切片容量
+	// Pre-allocated slicing capacity
 	if len(chatRequest.Messages) > 0 {
-		input.Messages = make([]*schema.Message, 0, len(chatRequest.Messages)+1) // +1 为可能的 system prompt 预留
+		input.Messages = make([]*schema.Message, 0, len(chatRequest.Messages)+1) // +1 reserved for possible system prompts
 	}
 
 	for _, m := range chatRequest.Messages {
@@ -96,14 +96,14 @@ func parseChatMessages(data string, supportsVision bool, agentID string, input *
 	}
 }
 
-// processSingleMessage 处理单条消息并添加到 AgentInput
+// processSingleMessage processes a single message and adds it to AgentInput
 func processSingleMessage(m config.ChatMessage, supportsVision bool, agentID string, input *adk.AgentInput, logger types.Logger) {
 	allImages := m.GetAllImages()
 
 	if logger != nil {
 		logger.Debugf("[ConvertRuleMsgToAgentInput] message role=%s, images count=%d", m.Role, len(allImages))
 		for i, img := range allImages {
-			// 截断 base64 数据，只显示前 50 个字符
+			// Truncate base64 data and display only the first 50 characters
 			imgPreview := img
 			if len(img) > 50 {
 				imgPreview = img[:50] + "..."
@@ -114,19 +114,19 @@ func processSingleMessage(m config.ChatMessage, supportsVision bool, agentID str
 
 	content := m.GetContentAsString()
 
-	// 纯文本消息优化：直接添加
+	// Plain text message optimization: Add directly
 	if len(allImages) == 0 {
 		input.Messages = append(input.Messages, buildSchemaMessage(m, content, nil, nil))
 		return
 	}
 
-	// 处理包含图片的消息
+	// Handling messages containing images
 	finalContent, extra := processImages(allImages, content, agentID, logger)
 
 	if !supportsVision {
 		input.Messages = append(input.Messages, buildSchemaMessage(m, finalContent, extra, nil))
 	} else {
-		// 模型支持视觉能力，使用多模态格式
+		// The model supports visual capabilities using multimodal formats
 		if logger != nil {
 			logger.Debugf("[ConvertRuleMsgToAgentInput] using multimodal format (vision supported)")
 		}
@@ -137,7 +137,7 @@ func processSingleMessage(m config.ChatMessage, supportsVision bool, agentID str
 	}
 }
 
-// buildSchemaMessage 构建 schema.Message，并保留工具调用历史字段。
+// buildSchemaMessage Build schema.Message, and keep the tool call history field.
 func buildSchemaMessage(m config.ChatMessage, content string, extra map[string]any, multiContent []schema.MessageInputPart) *schema.Message {
 	msg := &schema.Message{
 		Role:    schema.RoleType(m.Role),
@@ -171,7 +171,7 @@ func buildSchemaMessage(m config.ChatMessage, content string, extra map[string]a
 	return msg
 }
 
-// normalizeToolCallArguments 确保工具调用参数始终是合法 JSON 字符串。
+// normalizeToolCallArguments ensures that the tool call argument is always a valid JSON string.
 func normalizeToolCallArguments(arguments string) string {
 	args := strings.TrimSpace(arguments)
 	if args == "" || args == "null" {
@@ -185,21 +185,21 @@ func normalizeToolCallArguments(arguments string) string {
 	return args
 }
 
-// processImages 处理图片，生成包含图片引用的文本内容和扩展字段
+// processImages processes images and generates text content containing image references and extended fields
 func processImages(allImages []string, content string, agentID string, logger types.Logger) (string, map[string]any) {
 	var imageInfo strings.Builder
-	imageInfo.Grow(len(allImages) * 64) // 预分配足够的空间
+	imageInfo.Grow(len(allImages) * 64) // Enough space is pre-allocated
 
-	// 收集图片引用，存入 Extra 字段供工具/切面访问
+	// Collect image references and store them in the Extra field for tool/facet access
 	imageRefs := make([]string, 0, len(allImages))
 
 	for _, img := range allImages {
 		if imageInfo.Len() > 0 {
 			imageInfo.WriteString("\n")
 		}
-		// 判断图片类型并格式化
+		// Determine the image type and format it
 		if isBase64Image(img) {
-			// 将 base64 图片保存到本地文件，以便模型可以通过文件路径传递给图像分析工具
+			// Save base64 images to local files so that models can be passed to image analysis tools via file paths
 			filePath, err := imageutil.SaveBase64WithContext(img, agentID)
 			if err == nil && filePath != "" {
 				imageInfo.WriteString("[图片：")
@@ -221,7 +221,7 @@ func processImages(allImages []string, content string, agentID string, logger ty
 			imageInfo.WriteString("]")
 			imageRefs = append(imageRefs, img)
 		} else {
-			// URL 格式
+			// URL format
 			imageInfo.WriteString("[图片链接：")
 			imageInfo.WriteString(img)
 			imageInfo.WriteString("]")
@@ -229,7 +229,7 @@ func processImages(allImages []string, content string, agentID string, logger ty
 		}
 	}
 
-	// 组合最终内容
+	// Combine the final content
 	finalContent := content
 	if imageInfo.Len() > 0 {
 		if content != "" {
@@ -239,7 +239,7 @@ func processImages(allImages []string, content string, agentID string, logger ty
 		}
 	}
 
-	// 将图片引用存入 Extra 字段，供工具/切面通过 metadata 访问
+	// Save image references in Extra so tools and aspects can access them through metadata.
 	var extra map[string]any
 	if len(imageRefs) > 0 {
 		extra = make(map[string]any, 1)
@@ -251,14 +251,14 @@ func processImages(allImages []string, content string, agentID string, logger ty
 	return finalContent, extra
 }
 
-// buildVisionMultiContent 构建支持视觉模型的多模态内容
+// buildVisionMultiContent builds multimodal content that supports visual models
 func buildVisionMultiContent(allImages []string, finalContent string, logger types.Logger) []schema.MessageInputPart {
 	multiContent := make([]schema.MessageInputPart, 0, len(allImages)+1)
 
-	// 添加图片
+	// Add images
 	for _, img := range allImages {
 		if isBase64Image(img) {
-			// Base64 格式图片
+			// Base64 format images
 			mimeType, base64Data := parseBase64Image(img)
 			if mimeType != "" && base64Data != "" {
 				if logger != nil {
@@ -271,16 +271,16 @@ func buildVisionMultiContent(allImages []string, finalContent string, logger typ
 				}
 			}
 		} else if isLocalFilePath(img) {
-			// 本地文件路径：读取并转为 base64
+			// Local file path: Read and convert to base64
 			base64Img, err := loadLocalImage(img)
 			if err != nil {
-				// 加载失败，跳过此图片
+				// Loading failed, skip this image
 				if logger != nil {
 					logger.Warnf("[ConvertRuleMsgToAgentInput] failed to load local image: %s, error: %v", img, err)
 				}
 				continue
 			}
-			// 解析生成的 base64 数据
+			// Parse the generated base64 data
 			mimeType, base64Data := parseBase64Image(base64Img)
 			if mimeType != "" && base64Data != "" {
 				if logger != nil {
@@ -289,11 +289,11 @@ func buildVisionMultiContent(allImages []string, finalContent string, logger typ
 				multiContent = append(multiContent, createBase64ImagePart(mimeType, base64Data))
 			}
 		} else {
-			// URL 格式图片：直接传递 URL，由大模型自行读取
+			// URL format image: Directly pass the URL, which the large model reads on its own
 			if logger != nil {
 				logger.Debugf("[ConvertRuleMsgToAgentInput] adding URL image: %s", img)
 			}
-			imgURL := img // 创建局部变量以获取安全的指针
+			imgURL := img // Create local variables to obtain secure pointers
 			multiContent = append(multiContent, schema.MessageInputPart{
 				Type: schema.ChatMessagePartTypeImageURL,
 				Image: &schema.MessageInputImage{
@@ -306,7 +306,7 @@ func buildVisionMultiContent(allImages []string, finalContent string, logger typ
 		}
 	}
 
-	// 添加文本内容（使用包含图片路径的 finalContent）
+	// Add text content (using finalContent containing image paths)
 	if finalContent != "" {
 		multiContent = append(multiContent, schema.MessageInputPart{
 			Type: schema.ChatMessagePartTypeText,
@@ -317,9 +317,9 @@ func buildVisionMultiContent(allImages []string, finalContent string, logger typ
 	return multiContent
 }
 
-// createBase64ImagePart 创建 base64 图片的 MessageInputPart
+// createBase64ImagePart Creates the MessageInputPart for the base64 image
 func createBase64ImagePart(mimeType, base64Data string) schema.MessageInputPart {
-	// 拷贝变量，防止指针共享问题
+	// Copy variables to prevent pointer sharing issues
 	mData := base64Data
 	return schema.MessageInputPart{
 		Type: schema.ChatMessagePartTypeImageURL,
@@ -333,10 +333,10 @@ func createBase64ImagePart(mimeType, base64Data string) schema.MessageInputPart 
 	}
 }
 
-// appendPresetOrRawMessages 添加预设消息或原始数据消息
+// appendPresetOrRawMessages adds a preset message or a raw data message
 func appendPresetOrRawMessages(input *adk.AgentInput, data string, presetMessages []ChatMessageTemplate, env map[string]interface{}) {
 	if len(presetMessages) > 0 {
-		// 使用预设消息模板，支持模板变量解析
+		// Uses preset message templates, supports template variable parsing
 		for _, tmpl := range presetMessages {
 			content := tmpl.ContentTemplate.ExecuteAsString(env)
 			input.Messages = append(input.Messages, &schema.Message{
@@ -345,7 +345,7 @@ func appendPresetOrRawMessages(input *adk.AgentInput, data string, presetMessage
 			})
 		}
 	} else {
-		// 没有预设消息，使用原始数据作为用户消息
+		// No preset messages; raw data is used as the user message
 		input.Messages = append(input.Messages, &schema.Message{
 			Role:    schema.User,
 			Content: data,
@@ -353,14 +353,14 @@ func appendPresetOrRawMessages(input *adk.AgentInput, data string, presetMessage
 	}
 }
 
-// appendSystemPrompt 添加系统提示词
+// appendSystemPrompt Adds a system prompt
 func appendSystemPrompt(input *adk.AgentInput, systemPromptRaw string, systemPromptTemplate el.Template, hasVar bool, env map[string]interface{}) {
 	systemPrompt := systemPromptRaw
 	if hasVar && systemPromptTemplate != nil {
 		systemPrompt = systemPromptTemplate.ExecuteAsString(env)
 	}
 
-	// 检查是否已存在系统消息
+	// Check if a system message already exists
 	hasSystemMessage := false
 	for _, m := range input.Messages {
 		if m.Role == schema.System {
@@ -369,7 +369,7 @@ func appendSystemPrompt(input *adk.AgentInput, systemPromptRaw string, systemPro
 		}
 	}
 
-	// 如果没有系统消息，则在消息列表开头添加
+	// If there is no system message, add it at the beginning of the message list
 	if !hasSystemMessage {
 		input.Messages = append([]*schema.Message{schema.SystemMessage(systemPrompt)}, input.Messages...)
 	}

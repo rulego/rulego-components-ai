@@ -1,14 +1,14 @@
-// 命令输出 token 清洗链。
+// Command output token to clean the chain.
 //
-// 处理顺序：
+// Processing sequence:
 //
-//	progress 帧（\r 重绘只留最后一帧）→ ANSI 剥离 →
-//	密钥脱敏（Bearer/JWT/AWS/GitHub/OpenAI/Anthropic/Slack/通用 api_key/PEM 块）→
-//	longline（超长行折叠）。
+//	progress frame (\r redraw leaving only the last frame) → ANSI strip →
+//	Key anonymization (Bearer/JWT/AWS/GitHub/OpenAI/Anthropic/Slack/Universal api_key/PEM blocks) →
+//	longline (extra-long line folding).
 //
-// never-worse 守卫：清洗后未变小（含裕量）则回滚原文，避免误伤合法输出；
-// 但脱敏不可逆，已发生脱敏替换时不回滚。
-// opt-out：命令含 `# nofilter` 或 `# raw` 时跳过整条链。
+// never-worse Guard: If the amount does not decrease after cleansing, roll back to the original text to avoid accidental damage and legal output;
+// However, desensitization is irreversible; once desensitization occurs, replacement does not roll back.
+// opt-out: Skips the entire chain when the command contains `# nofilter` or `# raw`.
 package bash
 
 import (
@@ -18,23 +18,23 @@ import (
 )
 
 const (
-	longlineThreshold = 1000 // 超过此长度的行触发折叠（字节；中文约 333 字）
-	longlineKeep      = 240  // 折叠时保留头部字符数
-	neverWorseMargin  = 64  // never-worse 守卫裕量
+	longlineThreshold = 1000 // Lines exceeding this length trigger a fold (byte; Chinese about 333 characters)
+	longlineKeep      = 240  // When folding, retain the number of characters in the header
+	neverWorseMargin  = 64   // never-worse guards margin
 )
 
-// pipelinePlugin 是清洗链中的一个处理插件。
+// pipelinePlugin is a processing plugin in the cleaning chain.
 type pipelinePlugin interface {
 	Name() string
 	Apply(text string) string
 }
 
-// tokenPipeline 清洗链。按顺序应用各插件，链尾做 never-worse 守卫。
+// tokenPipeline cleansing the chain. Apply each plugin in order, with never-worse guarding at the end of the chain.
 type tokenPipeline struct {
 	plugins []pipelinePlugin
 }
 
-// newTokenPipeline 构造默认的 L1 清洗链（progress → ansi → redact → longline）。
+// newTokenPipeline constructs the default L1 cleansing chain (progress → ansi → redact → longline).
 func newTokenPipeline() *tokenPipeline {
 	return &tokenPipeline{
 		plugins: []pipelinePlugin{
@@ -46,8 +46,8 @@ func newTokenPipeline() *tokenPipeline {
 	}
 }
 
-// run 顺序应用插件。脱敏不可逆，已发生脱敏替换时跳过 never-worse 守卫，
-// 避免短输入被替换为更长占位符后字节数变长而回滚脱敏。
+// Run order application plugins. Desensitization is irreversible; skipping the never-worse guard during desensitization replacement,
+// This prevents rollback and desensitization after short inputs are replaced with longer placeholders, causing longer byte counts.
 func (p *tokenPipeline) run(text string) string {
 	if text == "" {
 		return text
@@ -61,27 +61,27 @@ func (p *tokenPipeline) run(text string) string {
 		}
 		out = next
 	}
-	// 未发生脱敏时，清洗后未明显变小则回滚原文
+	// If no desensitization occurs and the reduction after washing does not significantly decrease, roll back to the original text
 	if !redacted && len(out)+neverWorseMargin >= len(text) {
 		return text
 	}
 	return out
 }
 
-// nofilterOptOut 匹配 shell 注释形式的 opt-out 标记（# 前为行首/空白/;&|），
-// 避免命令体内（如引号内）碰巧出现 "# nofilter" 字面量被误判。
+// nofilterOptOut matches the opt-out tag in shell comment format (# preceded by line header/space/; &|),
+// Avoid misreading the literal "# nofilter" within the command body (such as in quotation marks).
 var nofilterOptOut = regexp.MustCompile(`(?:^|[\s;&|])#\s*(?:nofilter|raw)\b`)
 
-// shouldFilter 命令含 # nofilter / # raw 注释时跳过清洗链。
+// shouldFilter skips the cleaning chain when the #nofilter / #raw comment is included.
 func shouldFilter(command string) bool {
 	return !nofilterOptOut.MatchString(command)
 }
 
 // ============================================================================
-// progress 帧折叠：\r 重绘只保留最后一帧
+// progress: Redraw only the last frame
 // ============================================================================
 
-// progressPlugin 对每个 \n 分隔的行，按 \r 切片只保留最后一段。
+// progressPlugin for each row separated by \n, press \r to slice and keep only the last segment.
 type progressPlugin struct{}
 
 func (progressPlugin) Name() string { return "progress" }
@@ -101,22 +101,22 @@ func (progressPlugin) Apply(text string) string {
 }
 
 // ============================================================================
-// ANSI 转义剥离：CSI / OSC / DCS / SS3 等序列 + 退格/响铃等控制字符
+// ANSI Escape Stripping: CSI / OSC / DCS / SS3 sequences + backspace/ringtone control characters
 // ============================================================================
 
 type ansiPlugin struct{}
 
 func (ansiPlugin) Name() string { return "ansi" }
 
-// ansiEscape 匹配常见 ANSI/DEC 转义序列：
+// ansiEscape matches common ANSI/DEC escape sequences:
 //
-//	CSI（含 < >=? 等参数）、OSC、DCS/SOS/PM/APC（以 ST 终止）、SS2/SS3、其它两/三字节序列
+//	CSI (including < >=? and other parameters), OSC, DCS/SOS/PM/APC (terminate at ST), SS2/SS3, and other two/three-byte sequences
 var ansiEscape = regexp.MustCompile(
 	`\x1b\[[0-9;:<=>?]*[!-/]*[@-~]` + // CSI
 		`|\x1b\][^\x07\x1b]*(?:\x07|\x1b\\)` + // OSC
 		`|\x1b[PX^_][^\x1b]*(?:\x1b\\)` + // DCS / SOS / PM / APC
-		`|\x1b[NO].` + // SS2 / SS3 + 单字节
-		`|\x1b[=>]|\x1b[()*+].`) // 其它两/三字节序列
+		`|\x1b[NO].` + // SS2 / SS3 + single bytes
+		`|\x1b[=>]|\x1b[()*+].`) // Other two/three-byte sequences
 
 func (ansiPlugin) Apply(text string) string {
 	if !strings.ContainsRune(text, 0x1b) {
@@ -126,7 +126,7 @@ func (ansiPlugin) Apply(text string) string {
 	return stripControlKeepNL(out)
 }
 
-// stripControlKeepNL 移除退格/响铃/垂直制表/换页，保留 \n \r \t。
+// stripControlKeepNL removes backspace/ring/vertical tab/page break, keeps \n \r \t.
 func stripControlKeepNL(s string) string {
 	if !strings.ContainsAny(s, "\b\a\v\f") {
 		return s
@@ -144,7 +144,7 @@ func stripControlKeepNL(s string) string {
 }
 
 // ============================================================================
-// 密钥脱敏：把已知密钥模式替换为 <redacted>，避免泄露到 agent 上下文
+// Key Anonymization: Replace known key patterns with <redacted>to avoid leaking into the agent's context
 // ============================================================================
 
 type redactPlugin struct{}
@@ -154,20 +154,20 @@ func (redactPlugin) Name() string { return "redact" }
 var (
 	redactBearer = regexp.MustCompile(`(?i)\b(Bearer|Token)\s+[A-Za-z0-9\-_\.=]{8,}`)
 	redactJWT    = regexp.MustCompile(`\beyJ[A-Za-z0-9_\-]{8,}\.[A-Za-z0-9_\-]{8,}\.[A-Za-z0-9_\-]{8,}`)
-	// AWS 访问密钥 ID：AKIA/ASIA + 恰好 16 个大写字母/数字
+	// AWS access key ID: AKIA/ASIA + exactly 16 uppercase letters/numbers
 	redactAWS = regexp.MustCompile(`\b(?:AKIA|ASIA)[0-9A-Z]{16}\b`)
-	// GitHub token：经典 PAT（gh[pousr]_）+ fine-grained（github_pat_）+ ghg_/ghd_
-	redactGitHub     = regexp.MustCompile(`\bgh[pousr]_[A-Za-z0-9]{36,251}\b|github_pat_[A-Za-z0-9_]{82,}|\bgh[gd]_[A-Za-z0-9]{20,}\b`)
-	redactOpenAI     = regexp.MustCompile(`\bsk-[A-Za-z0-9]{16,}\b`)
-	redactAnthropic  = regexp.MustCompile(`\bsk-ant-[A-Za-z0-9_\-]{16,}\b`)
-	redactSlack = regexp.MustCompile(`\bxox[abprs]-[A-Za-z0-9\-]{10,}\b`)
+	// GitHub token: Classic PAT(gh[pousr]_) + fine-grained(github_pat_) + ghg_/ghd_
+	redactGitHub    = regexp.MustCompile(`\bgh[pousr]_[A-Za-z0-9]{36,251}\b|github_pat_[A-Za-z0-9_]{82,}|\bgh[gd]_[A-Za-z0-9]{20,}\b`)
+	redactOpenAI    = regexp.MustCompile(`\bsk-[A-Za-z0-9]{16,}\b`)
+	redactAnthropic = regexp.MustCompile(`\bsk-ant-[A-Za-z0-9_\-]{16,}\b`)
+	redactSlack     = regexp.MustCompile(`\bxox[abprs]-[A-Za-z0-9\-]{10,}\b`)
 )
 
-// redactPEMBlocks 脱敏完整的 BEGIN...END PEM 块
+// redactPEMBlocks fully desensitized BEGIN...END PEM block
 var redactPEMBlocks = regexp.MustCompile(`(?s)-----BEGIN [A-Z ]+-----.*?-----END [A-Z ]+-----`)
 
-// redactPEMBeginOnly 兜底：仅有 BEGIN 无 END（被截断/损坏的 PEM），
-// 从 BEGIN 脱敏到首个空行或文末（PEM body 是不含空行的 base64）
+// redactPEMBeginOnly Guarantee: Only BEGIN No END (truncated/damaged PEM),
+// From BEGIN desensitization to the first blank line or end of the text (PEM body is base64 without blank lines)
 var redactPEMBeginOnly = regexp.MustCompile(`(?s)-----BEGIN [A-Z ]+-----.*?(?:\n\s*\n|$)`)
 
 func (redactPlugin) Apply(text string) string {
@@ -185,17 +185,17 @@ func (redactPlugin) Apply(text string) string {
 }
 
 // ============================================================================
-// longline 折叠：超长行保留头部 + 省略标记
+// Longline fold: Extra-long line preserves the head + omits marks
 // ============================================================================
 
-// longlinePlugin 对超过 longlineThreshold 字符的行保留头 longlineKeep 字符。
+// longlinePlugin reserves the header longlineKeep character for lines exceeding the longlineThreshold character.
 type longlinePlugin struct{}
 
 func (longlinePlugin) Name() string { return "longline" }
 
 func (longlinePlugin) Apply(text string) string {
 	if !strings.ContainsRune(text, '\n') {
-		// 单行无换行符的特殊情况：检查整段
+		// Special case of single-line without line breaks: Check the entire paragraph
 		if len(text) > longlineThreshold {
 			return foldLine(text)
 		}
@@ -215,7 +215,7 @@ func (longlinePlugin) Apply(text string) string {
 	return strings.Join(lines, "\n")
 }
 
-// foldLine 折叠单行：保留头部 longlineKeep 字符，余下用 <elided N chars> 标记。
+// foldLine folded single line: keep the longlineKeep character at the header, and mark the rest with <elided N chars>.
 func foldLine(ln string) string {
 	if len(ln) <= longlineThreshold {
 		return ln

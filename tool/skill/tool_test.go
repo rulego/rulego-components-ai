@@ -14,7 +14,7 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-// TestSkillTool 测试技能工具的基本功能
+// TestSkillTool Basic features of the testing skill tool
 func TestSkillTool(t *testing.T) {
 	// Setup
 	tmpDir := t.TempDir()
@@ -37,15 +37,15 @@ Hello world from skill!
 
 	ctx := context.Background()
 
-	// Test Info — 应返回稳定描述，不含具体技能列表
+	// Test Info — should return a stable description without a specific skill list
 	info, err := tTool.Info(ctx)
 	assert.NoError(t, err)
 	assert.Equal(t, "skill", info.Name)
-	assert.NotContains(t, info.Desc, "hello")        // 技能名不应出现在 tool description 中
-	assert.NotContains(t, info.Desc, "Say hello")    // 技能描述不应出现在 tool description 中
-	assert.Contains(t, info.Desc, "skills_instructions") // 应包含使用说明
+	assert.NotContains(t, info.Desc, "hello")            // Skill names should not appear in the tool description
+	assert.NotContains(t, info.Desc, "Say hello")        // Skill descriptions should not appear in the tool description
+	assert.Contains(t, info.Desc, "skills_instructions") // Instructions for use should be included
 
-	// Test ListSkills — 应返回动态技能列表
+	// Test ListSkills — should return a dynamic skill list
 	dst, ok := tTool.(*dynamicSkillTool)
 	assert.True(t, ok)
 	skillsText, err := dst.ListSkills(ctx)
@@ -66,13 +66,13 @@ Hello world from skill!
 	assert.Contains(t, output, "Hello world from skill!")
 }
 
-// TestMultiBackendBasic 测试 MultiBackend 基本功能
+// TestMultiBackendBasic Tests the basic functions of MultiBackend
 func TestMultiBackendBasic(t *testing.T) {
-	// Setup: 创建两个目录
+	// Setup: Create two directories
 	globalDir := t.TempDir()
 	userDir := t.TempDir()
 
-	// 在全局目录创建技能
+	// Create skills in the global directory
 	globalSkillDir := filepath.Join(globalDir, "global_skill")
 	err := os.MkdirAll(globalSkillDir, 0755)
 	assert.NoError(t, err)
@@ -84,7 +84,7 @@ Global skill content
 `), 0644)
 	assert.NoError(t, err)
 
-	// 在用户目录创建技能
+	// Create skills in the user directory
 	userSkillDir := filepath.Join(userDir, "user_skill")
 	err = os.MkdirAll(userSkillDir, 0755)
 	assert.NoError(t, err)
@@ -96,16 +96,16 @@ User skill content
 `), 0644)
 	assert.NoError(t, err)
 
-	// 使用 MultiBackend 创建工具
+	// Create tools using MultiBackend
 	tTool, err := NewTool(Config{
-		LocalDirs:   []string{userDir},
+		LocalDirs:  []string{userDir},
 		GlobalDirs: []string{globalDir},
 	})
 	assert.NoError(t, err)
 
 	ctx := context.Background()
 
-	// 通过 ListSkills 验证两个技能都被列出
+	// Verify with ListSkills that both skills are listed
 	dst, ok := tTool.(*dynamicSkillTool)
 	assert.True(t, ok)
 	skillsText, err := dst.ListSkills(ctx)
@@ -113,25 +113,25 @@ User skill content
 	assert.Contains(t, skillsText, "global_skill")
 	assert.Contains(t, skillsText, "user_skill")
 
-	// 测试调用全局技能
+	// Test calls global skills
 	invokable, _ := tTool.(tool.InvokableTool)
 	output, err := invokable.InvokableRun(ctx, `{"skill": "global_skill"}`)
 	assert.NoError(t, err)
 	assert.Contains(t, output, "Global skill content")
 
-	// 测试调用用户技能
+	// Test user skills
 	output, err = invokable.InvokableRun(ctx, `{"skill": "user_skill"}`)
 	assert.NoError(t, err)
 	assert.Contains(t, output, "User skill content")
 }
 
-// TestMultiBackendPriority 测试技能优先级（用户技能覆盖全局同名技能）
+// TestMultiBackendPriority (user skills cover global skills with the same name)
 func TestMultiBackendPriority(t *testing.T) {
-	// Setup: 创建两个目录
+	// Setup: Create two directories
 	globalDir := t.TempDir()
 	userDir := t.TempDir()
 
-	// 在全局目录创建同名技能
+	// Create skills with the same name in the global directory
 	globalSkillDir := filepath.Join(globalDir, "common_skill")
 	err := os.MkdirAll(globalSkillDir, 0755)
 	assert.NoError(t, err)
@@ -143,7 +143,7 @@ This is GLOBAL version
 `), 0644)
 	assert.NoError(t, err)
 
-	// 在用户目录创建同名技能
+	// Create skills with the same name in the user directory
 	userSkillDir := filepath.Join(userDir, "common_skill")
 	err = os.MkdirAll(userSkillDir, 0755)
 	assert.NoError(t, err)
@@ -155,9 +155,9 @@ This is USER version
 `), 0644)
 	assert.NoError(t, err)
 
-	// 使用 MultiBackend 创建工具，用户目录放在前面
+	// Use MultiBackend to create tools, placing the user directory at the front
 	tTool, err := NewTool(Config{
-		LocalDirs:   []string{userDir},
+		LocalDirs:  []string{userDir},
 		GlobalDirs: []string{globalDir},
 	})
 	assert.NoError(t, err)
@@ -165,36 +165,36 @@ This is USER version
 	ctx := context.Background()
 	invokable, _ := tTool.(tool.InvokableTool)
 
-	// 调用同名技能，应该返回用户版本（优先级高）
+	// When calling skills with the same name, it should return to the user version (high priority).
 	output, err := invokable.InvokableRun(ctx, `{"skill": "common_skill"}`)
 	assert.NoError(t, err)
 	assert.Contains(t, output, "USER version")
 	assert.NotContains(t, output, "GLOBAL version")
 }
 
-// TestMultiBackendEmptyDirs 测试空目录配置
+// TestMultiBackendEmptyDirs tests the configuration of empty directories
 func TestMultiBackendEmptyDirs(t *testing.T) {
-	// 创建临时目录用于默认路径
+	// Create temporary directories for default paths
 	tmpDir := t.TempDir()
 
-	// 测试空配置 - 应该使用默认目录
+	// Test empty configurations - the default directory should be used
 	backend := NewMultiBackend([]string{tmpDir})
 	ctx := context.Background()
 
-	// 空目录应该返回空列表，不报错
+	// An empty directory should return an empty list without errors
 	skills, err := backend.List(ctx)
 	assert.NoError(t, err)
 	assert.Empty(t, skills)
 }
 
-// TestMultiBackendMultipleGlobalDirs 测试多个全局目录
+// TestMultiBackendMultipleGlobalDirs tests multiple global directories
 func TestMultiBackendMultipleGlobalDirs(t *testing.T) {
-	// Setup: 创建三个目录
+	// Setup: Create three directories
 	globalDir1 := t.TempDir()
 	globalDir2 := t.TempDir()
 	userDir := t.TempDir()
 
-	// 在第一个全局目录创建技能
+	// Create skills in the first global directory
 	skillDir1 := filepath.Join(globalDir1, "skill1")
 	err := os.MkdirAll(skillDir1, 0755)
 	assert.NoError(t, err)
@@ -206,7 +206,7 @@ Content from global dir 1
 `), 0644)
 	assert.NoError(t, err)
 
-	// 在第二个全局目录创建技能
+	// Create skills in the second global directory
 	skillDir2 := filepath.Join(globalDir2, "skill2")
 	err = os.MkdirAll(skillDir2, 0755)
 	assert.NoError(t, err)
@@ -218,7 +218,7 @@ Content from global dir 2
 `), 0644)
 	assert.NoError(t, err)
 
-	// 在用户目录创建技能
+	// Create skills in the user directory
 	userSkillDir := filepath.Join(userDir, "user_only")
 	err = os.MkdirAll(userSkillDir, 0755)
 	assert.NoError(t, err)
@@ -230,16 +230,16 @@ User only content
 `), 0644)
 	assert.NoError(t, err)
 
-	// 使用多目录配置
+	// Use multi-directory configuration
 	tTool, err := NewTool(Config{
-		LocalDirs:   []string{userDir},
+		LocalDirs:  []string{userDir},
 		GlobalDirs: []string{globalDir1, globalDir2},
 	})
 	assert.NoError(t, err)
 
 	ctx := context.Background()
 
-	// 通过 ListSkills 验证所有技能都被列出
+	// Verify all skills with ListSkills when all skills are listed
 	dst, ok := tTool.(*dynamicSkillTool)
 	assert.True(t, ok)
 	skillsText, err := dst.ListSkills(ctx)
@@ -248,7 +248,7 @@ User only content
 	assert.Contains(t, skillsText, "skill2")
 	assert.Contains(t, skillsText, "user_only")
 
-	// 测试调用
+	// Test call
 	invokable, _ := tTool.(tool.InvokableTool)
 
 	output, err := invokable.InvokableRun(ctx, `{"skill": "skill1"}`)
@@ -264,8 +264,8 @@ User only content
 	assert.Contains(t, output, "User only content")
 }
 
-// TestNewTool_InjectedDefaultGlobalDirs 验证 SetDefaultGlobalSkillDirs 注入的默认目录
-// 在 GlobalDirs 未配置时生效（供宿主把自身技能目录接入 agent 运行时）。
+// TestNewTool_InjectedDefaultGlobalDirs Verify the default directory injected by SetDefaultGlobalSkillDirs
+// Effective when GlobalDirs is not configured (allowing the host to connect their skill directory to the agent during runtime).
 func TestNewTool_InjectedDefaultGlobalDirs(t *testing.T) {
 	globalDir := t.TempDir()
 	skillDir := filepath.Join(globalDir, "injected_skill")
@@ -280,7 +280,7 @@ body
 	SetDefaultGlobalSkillDirs([]string{globalDir})
 	defer SetDefaultGlobalSkillDirs(nil)
 
-	// GlobalDirs 未配置 → 使用注入的默认目录
+	// GlobalDirs does not configure→ uses the injected default directory
 	tTool, err := NewTool(Config{})
 	assert.NoError(t, err)
 
@@ -291,13 +291,13 @@ body
 	assert.Contains(t, skillsText, "injected_skill")
 }
 
-// TestMultiBackendMultipleLocalDirs 测试多个用户目录
+// TestMultiBackendMultipleLocalDirs tests multiple user directories
 func TestMultiBackendMultipleLocalDirs(t *testing.T) {
-	// Setup: 创建多个用户目录
+	// Setup: Create multiple user directories
 	userDir1 := t.TempDir()
 	userDir2 := t.TempDir()
 
-	// 在第一个用户目录创建技能
+	// Create skills in the first user directory
 	skillDir1 := filepath.Join(userDir1, "user_skill1")
 	err := os.MkdirAll(skillDir1, 0755)
 	assert.NoError(t, err)
@@ -309,7 +309,7 @@ Content from user dir 1
 `), 0644)
 	assert.NoError(t, err)
 
-	// 在第二个用户目录创建技能
+	// Create skills in the second user directory
 	skillDir2 := filepath.Join(userDir2, "user_skill2")
 	err = os.MkdirAll(skillDir2, 0755)
 	assert.NoError(t, err)
@@ -321,7 +321,7 @@ Content from user dir 2
 `), 0644)
 	assert.NoError(t, err)
 
-	// 使用多用户目录配置
+	// Configure using multi-user directories
 	tTool, err := NewTool(Config{
 		LocalDirs: []string{userDir1, userDir2},
 	})
@@ -329,7 +329,7 @@ Content from user dir 2
 
 	ctx := context.Background()
 
-	// 通过 ListSkills 验证所有技能都被列出
+	// Verify all skills with ListSkills when all skills are listed
 	dst, ok := tTool.(*dynamicSkillTool)
 	assert.True(t, ok)
 	skillsText, err := dst.ListSkills(ctx)
@@ -337,7 +337,7 @@ Content from user dir 2
 	assert.Contains(t, skillsText, "user_skill1")
 	assert.Contains(t, skillsText, "user_skill2")
 
-	// 测试调用
+	// Test call
 	invokable, _ := tTool.(tool.InvokableTool)
 
 	output, err := invokable.InvokableRun(ctx, `{"skill": "user_skill1"}`)
@@ -349,9 +349,9 @@ Content from user dir 2
 	assert.Contains(t, output, "user dir 2")
 }
 
-// TestMultiBackendSkipNonExistentDir 测试跳过不存在的目录
+// TestMultiBackendSkipNonExistentDir tests skipping directories that do not exist
 func TestMultiBackendSkipNonExistentDir(t *testing.T) {
-	// 创建一个存在的目录
+	// Create a catalog that exists
 	existingDir := t.TempDir()
 	skillDir := filepath.Join(existingDir, "existing_skill")
 	err := os.MkdirAll(skillDir, 0755)
@@ -364,7 +364,7 @@ Existing content
 `), 0644)
 	assert.NoError(t, err)
 
-	// 使用包含不存在目录的配置
+	// Use a configuration that includes directories that do not exist
 	tTool, err := NewTool(Config{
 		LocalDirs: []string{existingDir, "./non/existent/dir1", "./non/existent/dir2"},
 	})
@@ -372,21 +372,21 @@ Existing content
 
 	ctx := context.Background()
 
-	// 通过 ListSkills 验证存在的目录中的技能被正确加载
+	// ListSkills verifies that skills in the existing directory are loaded correctly
 	dst, ok := tTool.(*dynamicSkillTool)
 	assert.True(t, ok)
 	skillsText, err := dst.ListSkills(ctx)
 	assert.NoError(t, err)
 	assert.Contains(t, skillsText, "existing_skill")
 
-	// 测试调用
+	// Test call
 	invokable, _ := tTool.(tool.InvokableTool)
 	output, err := invokable.InvokableRun(ctx, `{"skill": "existing_skill"}`)
 	assert.NoError(t, err)
 	assert.Contains(t, output, "Existing content")
 }
 
-// TestDynamicSkillToolInfoStable 验证 Info() 返回稳定描述，不含具体技能列表
+// TestDynamicSkillToolInfoStable Verifies Info() returns a stable description without a specific skill list
 func TestDynamicSkillToolInfoStable(t *testing.T) {
 	tmpDir := t.TempDir()
 	skillDir := filepath.Join(tmpDir, "my_skill")
@@ -405,20 +405,20 @@ Content here
 	info, err := tTool.Info(ctx)
 	require.NoError(t, err)
 
-	// Info 应返回稳定描述
+	// The Info should return a stable description
 	assert.Equal(t, "skill", info.Name)
 	assert.Contains(t, info.Desc, "skills_instructions")
-	// 不应包含具体技能列表
+	// Specific skill lists should not be included
 	assert.NotContains(t, info.Desc, "my_skill")
 	assert.NotContains(t, info.Desc, "My skill description")
 	assert.NotContains(t, info.Desc, "<available_skills>")
 }
 
-// TestDynamicSkillToolListSkills 验证 ListSkills() 返回动态技能列表
+// TestDynamicSkillToolListSkills Verifies ListSkills() returns a dynamic skill list
 func TestDynamicSkillToolListSkills(t *testing.T) {
 	tmpDir := t.TempDir()
 
-	// 创建两个技能
+	// Create two skills
 	for _, name := range []string{"skill_a", "skill_b"} {
 		skillDir := filepath.Join(tmpDir, name)
 		require.NoError(t, os.MkdirAll(skillDir, 0755))
@@ -440,7 +440,7 @@ Content of %s
 	skillsText, err := dst.ListSkills(ctx)
 	require.NoError(t, err)
 
-	// 应包含 <available_skills> 格式
+	// should include <available_skills> the format
 	assert.Contains(t, skillsText, "<available_skills>")
 	assert.Contains(t, skillsText, "skill_a")
 	assert.Contains(t, skillsText, "skill_b")
@@ -448,11 +448,11 @@ Content of %s
 	assert.Contains(t, skillsText, "Description of skill_b")
 }
 
-// TestDynamicSkillToolHotReload 验证热更新：运行时新增/修改/删除技能文件后 ListSkills 能感知变化
+// TestDynamicSkillToolHotReload verifies hot updates: After adding/modifying/deleting skill files during runtime, ListSkills can detect changes
 func TestDynamicSkillToolHotReload(t *testing.T) {
 	tmpDir := t.TempDir()
 
-	// 初始技能
+	// Starting skills
 	skillDir := filepath.Join(tmpDir, "original_skill")
 	require.NoError(t, os.MkdirAll(skillDir, 0755))
 	require.NoError(t, os.WriteFile(filepath.Join(skillDir, "SKILL.md"), []byte(`---
@@ -468,14 +468,14 @@ Original content
 	dst := tTool.(*dynamicSkillTool)
 	ctx := context.Background()
 
-	// 1. 初始状态：只有 original_skill
+	// 1. Initial state: Only original_skill
 	skillsText, err := dst.ListSkills(ctx)
 	require.NoError(t, err)
 	assert.Contains(t, skillsText, "original_skill")
 	assert.NotContains(t, skillsText, "new_skill")
 
-	// 2. 新增技能文件
-	time.Sleep(10 * time.Millisecond) // 确保修改时间不同
+	// 2. Added skill files
+	time.Sleep(10 * time.Millisecond) // Make sure the modification times are different
 	newSkillDir := filepath.Join(tmpDir, "new_skill")
 	require.NoError(t, os.MkdirAll(newSkillDir, 0755))
 	require.NoError(t, os.WriteFile(filepath.Join(newSkillDir, "SKILL.md"), []byte(`---
@@ -490,7 +490,7 @@ New content
 	assert.Contains(t, skillsText, "original_skill")
 	assert.Contains(t, skillsText, "new_skill")
 
-	// 3. 修改已有技能内容
+	// 3. Modify existing skill content
 	time.Sleep(10 * time.Millisecond)
 	require.NoError(t, os.WriteFile(filepath.Join(skillDir, "SKILL.md"), []byte(`---
 name: original_skill
@@ -504,7 +504,7 @@ Updated content
 	assert.Contains(t, skillsText, "Updated description")
 	assert.NotContains(t, skillsText, "Original skill")
 
-	// 4. 删除技能
+	// 4. Removal of skills
 	require.NoError(t, os.RemoveAll(newSkillDir))
 	skillsText, err = dst.ListSkills(ctx)
 	require.NoError(t, err)
@@ -512,7 +512,7 @@ Updated content
 	assert.NotContains(t, skillsText, "new_skill")
 }
 
-// TestDynamicSkillToolGetSkillInstruction 验证 GetSkillInstruction 返回技能系统使用说明
+// TestDynamicSkillToolGetSkillInstruction Verifies GetSkillInstruction Returns the skill system usage instructions
 func TestDynamicSkillToolGetSkillInstruction(t *testing.T) {
 	tmpDir := t.TempDir()
 	tTool, err := NewTool(Config{LocalDirs: []string{tmpDir}})
@@ -526,14 +526,14 @@ func TestDynamicSkillToolGetSkillInstruction(t *testing.T) {
 	assert.Contains(t, instruction, "Skill")
 }
 
-// TestRenderSkillList 验证 renderSkillList 边界情况
+// TestRenderSkillList verifies the boundary status of renderSkillList
 func TestRenderSkillList(t *testing.T) {
-	// 空列表
+	// Empty list
 	result, err := renderSkillList(nil)
 	assert.NoError(t, err)
 	assert.Empty(t, result)
 
-	// 单个技能
+	// Single skills
 	result, err = renderSkillList([]einoskill.FrontMatter{
 		{Name: "test", Description: "Test skill"},
 	})
@@ -542,7 +542,7 @@ func TestRenderSkillList(t *testing.T) {
 	assert.Contains(t, result, "test")
 	assert.Contains(t, result, "Test skill")
 
-	// 多个技能
+	// Multiple skills
 	result, err = renderSkillList([]einoskill.FrontMatter{
 		{Name: "a", Description: "Skill A"},
 		{Name: "b", Description: "Skill B"},

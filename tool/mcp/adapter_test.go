@@ -9,7 +9,7 @@ import (
 	"github.com/rulego/rulego/api/types"
 )
 
-// mockProvider 实现 types.MCPToolProvider 接口
+// mockProvider implements types.MCPToolProvider interface
 type mockProvider struct {
 	tools       []types.MCPToolDefinition
 	calls       []callRecord
@@ -42,7 +42,7 @@ func TestCreateToolsFromProvider_All(t *testing.T) {
 		},
 	}
 
-	// nil 表示加载全部
+	// nil means load all
 	tools, err := CreateToolsFromProvider(provider, nil)
 	if err != nil {
 		t.Fatalf("CreateToolsFromProvider failed: %v", err)
@@ -61,7 +61,7 @@ func TestCreateToolsFromProvider_Filter(t *testing.T) {
 		},
 	}
 
-	// 只加载 2 个
+	// Only 2 loaded
 	tools, err := CreateToolsFromProvider(provider, []string{"save_rule_chain", "execute_rule_chain"})
 	if err != nil {
 		t.Fatalf("CreateToolsFromProvider failed: %v", err)
@@ -79,7 +79,7 @@ func TestCreateToolsFromProvider_Wildcard(t *testing.T) {
 		},
 	}
 
-	// ["*"] 表示全部
+	// ["*"] indicates all
 	tools, err := CreateToolsFromProvider(provider, []string{"*"})
 	if err != nil {
 		t.Fatalf("CreateToolsFromProvider failed: %v", err)
@@ -96,7 +96,7 @@ func TestCreateToolsFromProvider_Empty(t *testing.T) {
 		},
 	}
 
-	// 空过滤器也表示全部
+	// The empty filter also means all
 	tools, err := CreateToolsFromProvider(provider, []string{})
 	if err != nil {
 		t.Fatalf("CreateToolsFromProvider failed: %v", err)
@@ -224,7 +224,7 @@ func TestMCPToolAdapter_InvokableRun_EmptyArgs(t *testing.T) {
 		t.Fatalf("CreateToolsFromProvider failed: %v", err)
 	}
 
-	// 空参数
+	// Null parameters
 	invokable := tools[0].(tool.InvokableTool)
 	result, err := invokable.InvokableRun(context.Background(), "")
 	if err != nil {

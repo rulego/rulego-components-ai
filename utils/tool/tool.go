@@ -11,7 +11,7 @@ import (
 	aitool "github.com/rulego/rulego-components-ai/tool"
 )
 
-// ParseToolParameters 解析工具参数 JSON Schema
+// ParseToolParameters parsing tool parameters JSON Schema
 func ParseToolParameters(parameters string) (*schema.ParamsOneOf, error) {
 	var jsonSchema jsonschema.Schema
 	if parameters != "" {
@@ -20,7 +20,7 @@ func ParseToolParameters(parameters string) (*schema.ParamsOneOf, error) {
 			return nil, err
 		}
 	} else {
-		// 空参数，默认为空对象
+		// Null parameters, default is empty objects
 		jsonSchema = jsonschema.Schema{
 			Type: "object",
 		}
@@ -28,7 +28,7 @@ func ParseToolParameters(parameters string) (*schema.ParamsOneOf, error) {
 	return schema.NewParamsOneOfByJSONSchema(&jsonSchema), nil
 }
 
-// NewToolInfoFromConfig 根据配置创建 ToolInfo
+// NewToolInfoFromConfig creates a ToolInfo based on the configuration
 func NewToolInfoFromConfig(toolConfig config.Tool) (*schema.ToolInfo, error) {
 	if toolConfig.Type == config.ToolTypeRuleChain {
 		paramsOneOf, err := ParseToolParameters(toolConfig.Parameters)
@@ -41,7 +41,7 @@ func NewToolInfoFromConfig(toolConfig config.Tool) (*schema.ToolInfo, error) {
 			ParamsOneOf: paramsOneOf,
 		}, nil
 	} else if toolConfig.Type == config.ToolTypeBuiltin {
-		// 内置工具
+		// Built-in tools
 		if t, ok := aitool.Registry.Get(toolConfig.Name); ok {
 			info, err := t.Info(context.Background())
 			if err != nil {
@@ -49,7 +49,7 @@ func NewToolInfoFromConfig(toolConfig config.Tool) (*schema.ToolInfo, error) {
 			}
 			return info, nil
 		}
-		// 尝试通过工厂创建实例（如 browser_use 等没有预注册实例的工具）
+		// Attempting to create instances through factories (such as browser_use and other tools without pre-registered instances)
 		if def, okDef := aitool.Registry.GetDef(toolConfig.Name); okDef && def.Factory != nil {
 			if instance, err := def.Factory(map[string]interface{}{}); err == nil {
 				info, infoErr := instance.Info(context.Background())

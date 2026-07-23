@@ -21,33 +21,33 @@ import (
 	"sync"
 )
 
-// globalEmitterRegistry 全局 Emitter 注册表
-// 用于定时任务等场景下获取 emitter（当 context 中没有时）
+// globalEmitterRegistry Global Emitter registry
+// Used to obtain emitters in scenarios such as scheduled tasks (when not present in context)
 var globalEmitterRegistry = &EmitterRegistry{
 	emitters: make(map[string]EventEmitter),
 }
 
-// EmitterRegistry Emitter 注册表
+// EmitterRegistry Emitter registry
 type EmitterRegistry struct {
 	mu       sync.RWMutex
 	emitters map[string]EventEmitter // chainId -> emitter
 }
 
-// RegisterEmitter 注册 emitter 到全局注册表
+// RegisterEmitter Registers emitters into the global registry
 func RegisterEmitter(chainId string, emitter EventEmitter) {
 	globalEmitterRegistry.mu.Lock()
 	defer globalEmitterRegistry.mu.Unlock()
 	globalEmitterRegistry.emitters[chainId] = emitter
 }
 
-// UnregisterEmitter 从全局注册表注销 emitter
+// UnregisterEmitter Deletes an emitter from the global registry
 func UnregisterEmitter(chainId string) {
 	globalEmitterRegistry.mu.Lock()
 	defer globalEmitterRegistry.mu.Unlock()
 	delete(globalEmitterRegistry.emitters, chainId)
 }
 
-// GetEmitterFromRegistry 从全局注册表获取 emitter
+// GetEmitterFromRegistry Retrieves emitters from the global registry
 func GetEmitterFromRegistry(chainId string) (EventEmitter, bool) {
 	globalEmitterRegistry.mu.RLock()
 	defer globalEmitterRegistry.mu.RUnlock()
@@ -55,13 +55,13 @@ func GetEmitterFromRegistry(chainId string) (EventEmitter, bool) {
 	return emitter, ok
 }
 
-// GetEmitterWithFallback 优先从 context 获取 emitter，如果没有则从全局注册表获取
-// chainId 用于从全局注册表查找
+// GetEmitterWithFallback first retrieves emitters from the context; if not, they get them from the global registry
+// chainId is used to search from the global registry
 func GetEmitterWithFallback(ctx context.Context, chainId string) (EventEmitter, bool) {
-	// 首先尝试从 context 获取
+	// First, try to get it from the context
 	if emitter, ok := GetEmitter(ctx); ok {
 		return emitter, true
 	}
-	// 然后从全局注册表获取
+	// Then retrieve it from the global registry
 	return GetEmitterFromRegistry(chainId)
 }

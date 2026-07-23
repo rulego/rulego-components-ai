@@ -5,8 +5,8 @@ import (
 	"strings"
 )
 
-// GenerateSessionKey 生成会话键
-// 格式: agent:{agentId}:channel:{channel}:scope:{scopeType}:{scopeId}
+// GenerateSessionKey generates the session key
+// Format: agent:{agentId}:channel:{channel}:scope:{scopeType}:{scopeId}
 func GenerateSessionKey(agentId, channel string, scope SessionScope, scopeId string) string {
 	if scopeId == "" {
 		scopeId = "default"
@@ -14,12 +14,12 @@ func GenerateSessionKey(agentId, channel string, scope SessionScope, scopeId str
 	return fmt.Sprintf("agent:%s:channel:%s:scope:%s:%s", agentId, channel, scope, scopeId)
 }
 
-// ParseSessionKey 解析会话键
-// 格式: agent:{agentId}:channel:{channel}:scope:{scopeType}:{scopeId}
+// ParseSessionKey parses the session key
+// Format: agent:{agentId}:channel:{channel}:scope:{scopeType}:{scopeId}
 func ParseSessionKey(key string) (agentId, channel string, scope SessionScope, scopeId string, err error) {
 	parts := strings.Split(key, ":")
-	// 格式: agent:{agentId}:channel:{channel}:scope:{scopeType}:{scopeId}
-	// 这会生成 7 个部分
+	// Format: agent:{agentId}:channel:{channel}:scope:{scopeType}:{scopeId}
+	// This generates 7 parts
 	if len(parts) != 7 || parts[0] != "agent" || parts[2] != "channel" || parts[4] != "scope" {
 		err = fmt.Errorf("invalid session key format: %s (expected 7 parts, got %d)", key, len(parts))
 		return
@@ -31,7 +31,7 @@ func ParseSessionKey(key string) (agentId, channel string, scope SessionScope, s
 	return
 }
 
-// SessionKeyFromRequest 从请求生成会话键
+// SessionKeyFromRequest Generates a session key from the request
 func SessionKeyFromRequest(req *SessionRequest) string {
 	return GenerateSessionKey(req.AgentID, req.Channel, req.Scope, req.ScopeID)
 }

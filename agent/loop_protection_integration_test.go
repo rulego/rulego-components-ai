@@ -13,8 +13,8 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-// recordingModel 可控 mock：前 toolCallSeq 次 Generate 返回相同的 echo tool_call，
-// 之后返回纯文本结束。记录每次收到的 messages（用于验证 dedup 是否折叠了重复 tool_call）。
+// recordingModel controllable mock: before toolCallSeq and Generate each time, the same echo tool_call is returned,
+// Then return to plain text to finish. Records each received message (used to verify whether dedup has folded duplicate tool_call).
 type recordingModel struct {
 	mu            sync.Mutex
 	callCount     int
@@ -54,7 +54,7 @@ func (m *recordingModel) WithTools(_ []*schema.ToolInfo) (model.ToolCallingChatM
 	return m, nil
 }
 
-// echoTool 简单回显，记录实际执行次数（验证 doom 是否在第 3 次起拒绝执行）。
+// echoTool simply displays and records the actual number of executions (verifying whether doom rejects execution from the third attempt).
 type echoTool struct {
 	runs int32
 }
@@ -74,8 +74,8 @@ func (e *echoTool) InvokableRun(_ context.Context, args string, _ ...tool.Option
 	return "echo: " + args, nil
 }
 
-// maxConsecutiveSameEcho 数 messages 里连续相同 echo tool_call 的最大长度。
-// 中间的 tool result 不算打断（与 dedup 的「紧邻」判定一致）。
+// maxConsecutiveSameEcho counts the maximum length of consecutive identical echo tool_call in messages.
+// The intermediate tool result is not considered an interrupt (consistent with the "adjacent" determination of dedup).
 func maxConsecutiveSameEcho(msgs []*schema.Message) int {
 	maxRun, run := 0, 0
 	prevArgs := ""
@@ -99,10 +99,10 @@ func maxConsecutiveSameEcho(msgs []*schema.Message) int {
 	return maxRun
 }
 
-// 集成测试：dedup（MessageRewriter）在真实 agent 链里折叠连续重复的 tool_call，
-// 使发往 model 的 history 不连续堆积同名同参调用（避免触发 provider 死循环护栏）。
+// Integration testing: dedup (MessageRewriter) folds continuous and repeated tool_call in the real agent chain,
+// Causes the history sent to the model to be discontinuously, with the same name and same parameters (avoiding triggering the provider deadloop guardrail).
 func TestIntegration_DedupFoldsRepetitiveToolCalls(t *testing.T) {
-	m := &recordingModel{toolCallSeq: 5} // 前 5 次 echo tool_call(相同 args)，第 6 次 done
+	m := &recordingModel{toolCallSeq: 5} // The first 5 times echo tool_call (same args), the 6th time done
 	echo := &echoTool{}
 
 	agent, err := CreateReactAgent(context.Background(), m, AgentOptions{
@@ -114,7 +114,7 @@ func TestIntegration_DedupFoldsRepetitiveToolCalls(t *testing.T) {
 	_, err = agent.Generate(context.Background(), []*schema.Message{schema.UserMessage("test")})
 	require.NoError(t, err)
 
-	// 模型连续输出 5 次相同 echo，dedup 应把发往 model 的历史折叠到 ≤ keepLast(2)
+	// If the model outputs the same echo five times in a row, the dedup should fold the history sent to the model to ≤ keepLast(2)
 	for i, msgs := range m.received {
 		if c := maxConsecutiveSameEcho(msgs); c > 2 {
 			t.Fatalf("model call #%d: dedup should fold repetitive echo, found %d consecutive identical", i, c)
@@ -123,9 +123,9 @@ func TestIntegration_DedupFoldsRepetitiveToolCalls(t *testing.T) {
 	t.Logf("dedup ok: model called %d times, echo actually ran %d times", m.callCount, atomic.LoadInt32(&echo.runs))
 }
 
-// 集成测试：doom 在工具层拒绝连续重复调用。用 VisualToolWrapper 包装 echo、ctx 注入 detector，
-// 模型连续输出相同 echo 时第 3 次起被拒绝执行（echo 实际执行 ≤2 次）。
-// 同时验证 detector 能否通过 ctx 传到工具层——之前静态分析的不确定性在此一锤定音。
+// Integration testing: Doom rejects repeated calls at the tool layer. Wrap echo and ctx with VisualToolWrapper and inject detectors,
+// When the model outputs the same echo consecutively, execution is rejected starting from the third attempt (echo actually runs ≤ twice).
+// At the same time, it was verified whether the detector could be transmitted to the tool layer via CTX—the uncertainty of previous static analysis was finally settled here.
 func TestIntegration_DoomBlocksRepetitiveToolCalls(t *testing.T) {
 	m := &recordingModel{toolCallSeq: 5}
 	echo := &echoTool{}
@@ -144,7 +144,7 @@ func TestIntegration_DoomBlocksRepetitiveToolCalls(t *testing.T) {
 	})
 	require.NoError(t, err)
 
-	// 注入 doom detector + stepCounter（模拟 ReactAgentNode.buildRunContext）
+	// Inject doom detector + stepCounter (simulate ReactAgentNode.buildRunContext)
 	ctx := context.Background()
 	stepCounter := int32(0)
 	ctx = WithStepCounter(ctx, &stepCounter)
@@ -155,7 +155,7 @@ func TestIntegration_DoomBlocksRepetitiveToolCalls(t *testing.T) {
 
 	runs := atomic.LoadInt32(&echo.runs)
 	if runs > 2 {
-		t.Fatalf("doom should block echo from 3rd call: echo ran %d times (expect ≤2) — detector 可能没传到工具层", runs)
+		t.Fatalf("doom should block echo from 3rd call: echo ran %d times (expect ≤2) — detector Maybe it hasn't reached the tool layer", runs)
 	}
 	t.Logf("doom ok: model called %d times, echo actually ran %d times (rest blocked by doom)", m.callCount, runs)
 }

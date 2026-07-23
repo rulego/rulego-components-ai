@@ -23,14 +23,14 @@ import (
 )
 
 // ============================================================
-// Agent Lifecycle Aspects / 智能体生命周期切面
+// Agent Lifecycle Aspects
 // ============================================================
 
 // AgentStartAspect defines the interface for aspects executed when an agent starts processing.
 // Similar to RuleGo's StartAspect, this is called before any agent processing begins.
 //
-// AgentStartAspect 定义智能体开始处理时执行的切面接口。
-// 类似于 RuleGo 的 StartAspect，在任何智能体处理开始之前调用。
+// AgentStartAspect defines the interface of the interface executed when the agent begins processing.
+// Similar to RuleGo's StartAspect, it is called before any agent starts processing.
 type AgentStartAspect interface {
 	Aspect
 	PointCut
@@ -38,33 +38,33 @@ type AgentStartAspect interface {
 	// OnStart is executed when the agent starts processing a message.
 	// Called before any agent processing begins.
 	//
-	// OnStart 在智能体开始处理消息时执行。
-	// 在任何智能体处理开始之前调用。
+	// OnStart is executed when the agent begins processing messages.
+	// Call before any agent begins processing.
 	//
 	// Use cases:
-	// 用例：
-	//   - Initialize session / 初始化会话
-	//   - Send start events for visualization / 发送可视化开始事件
-	//   - Validate input / 验证输入
+	// Use Cases:
+	//   - Initialize session
+	//   - Send start events for visualization
+	//   - Validate input
 	//
 	// Parameters:
-	// 参数：
-	//   - ctx: Execution context / 执行上下文
-	//   - point: Agent execution point information / 智能体执行点信息
-	//   - input: Agent input / 智能体输入
+	// Parameters:
+	//   - ctx: Execution context
+	//   - point: Agent execution point information
+	//   - input: Agent input
 	//
 	// Returns:
-	// 返回：
-	//   - *AgentInput: Modified input / 修改后的输入
-	//   - error: Error to terminate execution, nil to continue / 终止执行的错误，nil 表示继续
+	// Returns:
+	//   - *AgentInput: Modified input
+	//   - error: Error to terminate execution, nil to continue
 	OnStart(ctx context.Context, point *AgentPoint, input *AgentInput) (*AgentInput, error)
 }
 
 // AgentCompletedAspect defines the interface for aspects executed when an agent completes processing.
 // Similar to RuleGo's CompletedAspect, this is called when all processing is finished.
 //
-// AgentCompletedAspect 定义智能体完成处理时执行的切面接口。
-// 类似于 RuleGo 的 CompletedAspect，在所有处理完成时调用。
+// AgentCompletedAspect defines the interface executed when the agent completes processing.
+// Similar to RuleGo's CompletedAspect, it is called when all processing is complete.
 type AgentCompletedAspect interface {
 	Aspect
 	PointCut
@@ -72,32 +72,32 @@ type AgentCompletedAspect interface {
 	// OnCompleted is executed when the agent completes processing (success or failure).
 	// Called after all agent processing is finished.
 	//
-	// OnCompleted 在智能体完成处理时执行（无论成功或失败）。
-	// 在所有智能体处理完成后调用。
+	// OnCompleted executes when the agent completes its processing (whether successful or failed).
+	// Called after all agents have finished processing.
 	//
 	// Use cases:
-	// 用例：
-	//   - Send completion events for visualization / 发送可视化完成事件
-	//   - Collect performance metrics / 收集性能指标
-	//   - Clean up resources / 清理资源
+	// Use Cases:
+	//   - Send completion events for visualization
+	//   - Collect performance metrics
+	//   - Clean up resources
 	//
 	// Parameters:
-	// 参数：
-	//   - ctx: Execution context / 执行上下文
-	//   - point: Agent execution point information / 智能体执行点信息
-	//   - output: Agent output / 智能体输出
+	// Parameters:
+	//   - ctx: Execution context
+	//   - point: Agent execution point information
+	//   - output: Agent output
 	OnCompleted(ctx context.Context, point *AgentPoint, output *AgentOutput)
 }
 
 // ============================================================
-// Agent Execution Aspects / 智能体执行切面
+// Agent Execution Aspects
 // ============================================================
 
 // AgentBeforeAspect defines the interface for aspects executed before agent execution.
 // Similar to RuleGo's BeforeAspect, this is called before the agent's main execution.
 //
-// AgentBeforeAspect 定义智能体执行前执行的切面接口。
-// 类似于 RuleGo 的 BeforeAspect，在智能体主执行之前调用。
+// AgentBeforeAspect defines the interface of the interface executed before the agent executes.
+// Similar to RuleGo's BeforeAspect, it is called before the agent executes its main function.
 type AgentBeforeAspect interface {
 	Aspect
 	PointCut
@@ -105,33 +105,33 @@ type AgentBeforeAspect interface {
 	// Before is executed before the agent's main execution.
 	// The returned input will be used for agent processing.
 	//
-	// Before 在智能体主执行之前执行。
-	// 返回的输入将用于智能体处理。
+	// Before the agent executes before the main agent executes.
+	// The returned input will be used for agent processing.
 	//
 	// Use cases:
-	// 用例：
-	//   - Load conversation history / 加载会话历史
-	//   - Inject context / 注入上下文
-	//   - Modify input messages / 修改输入消息
+	// Use Cases:
+	//   - Load conversation history
+	//   - Inject context
+	//   - Modify input messages
 	//
 	// Parameters:
-	// 参数：
-	//   - ctx: Execution context / 执行上下文
-	//   - point: Agent execution point information / 智能体执行点信息
-	//   - input: Original agent input / 原始智能体输入
+	// Parameters:
+	//   - ctx: Execution context
+	//   - point: Agent execution point information
+	//   - input: Original agent input
 	//
 	// Returns:
-	// 返回：
-	//   - *AgentInput: Modified input for agent processing / 用于智能体处理的修改后输入
-	//   - error: Error to terminate execution, nil to continue / 终止执行的错误，nil 表示继续
+	// Returns:
+	//   - *AgentInput: Modified input for agent processing
+	//   - error: Error to terminate execution, nil to continue
 	Before(ctx context.Context, point *AgentPoint, input *AgentInput) (*AgentInput, error)
 }
 
 // AgentAfterAspect defines the interface for aspects executed after agent execution.
 // Similar to RuleGo's AfterAspect, this is called after the agent's main execution.
 //
-// AgentAfterAspect 定义智能体执行后执行的切面接口。
-// 类似于 RuleGo 的 AfterAspect，在智能体主执行之后调用。
+// AgentAfterAspect defines the interface that the agent executes after execution.
+// Similar to RuleGo's AfterAspect, it is called after the agent executes the main function.
 type AgentAfterAspect interface {
 	Aspect
 	PointCut
@@ -139,33 +139,33 @@ type AgentAfterAspect interface {
 	// After is executed after the agent's main execution completes.
 	// The returned output will be used for subsequent processing.
 	//
-	// After 在智能体主执行完成后执行。
-	// 返回的输出将用于后续处理。
+	// After: executes after the agent has completed its main execution.
+	// The returned output will be used for subsequent processing.
 	//
 	// Use cases:
-	// 用例：
-	//   - Save conversation history / 保存会话历史
-	//   - Process output / 处理输出
-	//   - Collect metrics / 收集指标
+	// Use Cases:
+	//   - Save conversation history
+	//   - Process output
+	//   - Collect metrics
 	//
 	// Parameters:
-	// 参数：
-	//   - ctx: Execution context / 执行上下文
-	//   - point: Agent execution point information / 智能体执行点信息
-	//   - output: Agent output from execution / 来自执行的智能体输出
+	// Parameters:
+	//   - ctx: Execution context
+	//   - point: Agent execution point information
+	//   - output: Agent output from execution
 	//
 	// Returns:
-	// 返回：
-	//   - *AgentOutput: Modified output for subsequent processing / 用于后续处理的修改后输出
-	//   - error: Error (non-terminating), nil to continue / 错误（非终止），nil 表示继续
+	// Returns:
+	//   - *AgentOutput: Modified output for subsequent processing
+	//   - error: Error (non-terminating), nil to continue
 	After(ctx context.Context, point *AgentPoint, output *AgentOutput) (*AgentOutput, error)
 }
 
 // AgentAroundAspect defines the interface for aspects that wrap around agent execution.
 // Similar to RuleGo's AroundAspect, this provides complete control over agent execution.
 //
-// AgentAroundAspect 定义包裹智能体执行的切面接口。
-// 类似于 RuleGo 的 AroundAspect，提供对智能体执行的完全控制。
+// AgentAroundAspect defines the interface where the package agent executes.
+// Similar to RuleGo's AroundAspect, it provides complete control over agent execution.
 type AgentAroundAspect interface {
 	Aspect
 	PointCut
@@ -173,37 +173,37 @@ type AgentAroundAspect interface {
 	// Around wraps the agent execution, providing complete control over the execution flow.
 	// The aspect can decide whether to call the next executor or skip it.
 	//
-	// Around 包裹智能体执行，提供对执行流程的完全控制。
-	// 切面可以决定是否调用下一个执行器或跳过它。
+	// Around parcel agent execution, providing complete control over the execution process.
+	// The facet can decide whether to call the next actuator or skip it.
 	//
 	// Use cases:
-	// 用例：
-	//   - Implement timeout / 实现超时
-	//   - Implement retry logic / 实现重试逻辑
-	//   - Cache results / 缓存结果
-	//   - Completely override execution / 完全覆盖执行
+	// Use Cases:
+	//   - Implement timeout
+	//   - Implement retry logic
+	//   - Cache results
+	//   - Completely override execution
 	//
 	// Parameters:
-	// 参数：
-	//   - ctx: Execution context / 执行上下文
-	//   - point: Agent execution point information / 智能体执行点信息
-	//   - input: Agent input / 智能体输入
-	//   - next: Next executor in the chain (call to continue execution) / 链中的下一个执行器（调用以继续执行）
+	// Parameters:
+	//   - ctx: Execution context
+	//   - point: Agent execution point information
+	//   - input: Agent input
+	//   - next: Next executor in the chain (call to continue execution)
 	//
 	// Returns:
-	// 返回：
-	//   - *AgentOutput: Agent output / 智能体输出
-	//   - error: Execution error / 执行错误
+	// Returns:
+	//   - *AgentOutput: Agent output
+	//   - error: Execution error
 	Around(ctx context.Context, point *AgentPoint, input *AgentInput, next AgentExecutor) (*AgentOutput, error)
 }
 
 // ============================================================
-// Message Processing Aspects / 消息处理切面
+// Message Processing Aspects
 // ============================================================
 
 // MessageBeforeAspect defines the interface for aspects executed before LLM calls.
 //
-// MessageBeforeAspect 定义 LLM 调用前执行的切面接口。
+// MessageBeforeAspect defines the faceted interface executed before the LLM is called.
 type MessageBeforeAspect interface {
 	Aspect
 	PointCut
@@ -211,31 +211,31 @@ type MessageBeforeAspect interface {
 	// BeforeLLM is executed before LLM generates a response.
 	// The returned messages will be used for the LLM call.
 	//
-	// BeforeLLM 在 LLM 生成响应之前执行。
-	// 返回的消息将用于 LLM 调用。
+	// BeforeLLM executes before the LLM generates a response.
+	// The returned message will be used for LLM calls.
 	//
 	// Use cases:
-	// 用例：
-	//   - Add system messages / 添加系统消息
-	//   - Trim context window / 修剪上下文窗口
-	//   - Filter messages / 过滤消息
+	// Use Cases:
+	//   - Add system messages
+	//   - Trim context window
+	//   - Filter messages
 	//
 	// Parameters:
-	// 参数：
-	//   - ctx: Execution context / 执行上下文
-	//   - point: Agent execution point information / 智能体执行点信息
-	//   - messages: Original messages to send to LLM / 发送到 LLM 的原始消息
+	// Parameters:
+	//   - ctx: Execution context
+	//   - point: Agent execution point information
+	//   - messages: Original messages to send to LLM
 	//
 	// Returns:
-	// 返回：
-	//   - []*schema.Message: Modified messages for LLM / 用于 LLM 的修改后消息
-	//   - error: Error to terminate execution, nil to continue / 终止执行的错误，nil 表示继续
+	// Returns:
+	//   - []*schema.Message: Modified messages for LLM
+	//   - error: Error to terminate execution, nil to continue
 	BeforeLLM(ctx context.Context, point *AgentPoint, messages []*schema.Message) ([]*schema.Message, error)
 }
 
 // MessageAfterAspect defines the interface for aspects executed after LLM calls.
 //
-// MessageAfterAspect 定义 LLM 调用后执行的切面接口。
+// MessageAfterAspect defines the faceted interface executed after the LLM calls.
 type MessageAfterAspect interface {
 	Aspect
 	PointCut
@@ -243,35 +243,35 @@ type MessageAfterAspect interface {
 	// AfterLLM is executed after LLM generates a response.
 	// The returned message will be used for subsequent processing.
 	//
-	// AfterLLM 在 LLM 生成响应之后执行。
-	// 返回的消息将用于后续处理。
+	// AfterLLM executes after the LLM generates a response.
+	// The returned messages will be used for subsequent processing.
 	//
 	// Use cases:
-	// 用例：
-	//   - Filter or modify response / 过滤或修改响应
-	//   - Log response / 记录响应
-	//   - Extract metadata / 提取元数据
+	// Use Cases:
+	//   - Filter or modify response
+	//   - Log response
+	//   - Extract metadata
 	//
 	// Parameters:
-	// 参数：
-	//   - ctx: Execution context / 执行上下文
-	//   - point: Agent execution point information / 智能体执行点信息
-	//   - response: LLM response message / LLM 响应消息
+	// Parameters:
+	//   - ctx: Execution context
+	//   - point: Agent execution point information
+	//   - response: LLM response message / LLM response message
 	//
 	// Returns:
-	// 返回：
-	//   - *schema.Message: Modified response message / 修改后的响应消息
-	//   - error: Error (non-terminating), nil to continue / 错误（非终止），nil 表示继续
+	// Returns:
+	//   - *schema.Message: Modified response message
+	//   - error: Error (non-terminating), nil to continue
 	AfterLLM(ctx context.Context, point *AgentPoint, response *schema.Message) (*schema.Message, error)
 }
 
 // ============================================================
-// Stream Processing Aspects / 流式处理切面
+// Stream Processing Aspects
 // ============================================================
 
 // StreamChunkAspect defines the interface for aspects executed on each stream chunk.
 //
-// StreamChunkAspect 定义在每个流式块上执行的切面接口。
+// StreamChunkAspect defines the interface of the facet executed on each streaming block.
 type StreamChunkAspect interface {
 	Aspect
 	PointCut
@@ -279,34 +279,34 @@ type StreamChunkAspect interface {
 	// OnChunk is executed for each streaming chunk from the agent.
 	// This allows real-time processing of streaming output.
 	//
-	// OnChunk 对来自智能体的每个流式块执行。
-	// 这允许实时处理流式输出。
+	// OnChunk executes every stream block from the agent.
+	// This allows real-time processing of streaming output.
 	//
 	// Use cases:
-	// 用例：
-	//   - Send visualization events / 发送可视化事件
-	//   - Real-time logging / 实时日志记录
-	//   - Accumulate content / 累积内容
+	// Use Cases:
+	//   - Send visualization events
+	//   - Real-time logging
+	//   - Accumulate content
 	//
 	// Parameters:
-	// 参数：
-	//   - ctx: Execution context / 执行上下文
-	//   - point: Agent execution point information / 智能体执行点信息
-	//   - chunk: Stream chunk information / 流式块信息
+	// Parameters:
+	//   - ctx: Execution context
+	//   - point: Agent execution point information
+	//   - chunk: Stream chunk information
 	//
 	// Returns:
-	// 返回：
-	//   - error: Error to terminate streaming, nil to continue / 终止流式输出的错误，nil 表示继续
+	// Returns:
+	//   - error: Error to terminate streaming, nil to continue
 	OnChunk(ctx context.Context, point *AgentPoint, chunk *StreamChunk) error
 }
 
 // ============================================================
-// Tool Call Aspects / 工具调用切面
+// Tool Call Aspects
 // ============================================================
 
 // ToolCallBeforeAspect defines the interface for aspects executed before tool calls.
 //
-// ToolCallBeforeAspect 定义工具调用前执行的切面接口。
+// ToolCallBeforeAspect defines the interface to be executed before the tool is called.
 type ToolCallBeforeAspect interface {
 	Aspect
 	PointCut
@@ -314,32 +314,32 @@ type ToolCallBeforeAspect interface {
 	// BeforeToolCall is executed before a tool is called.
 	// The returned call info will be used for the tool execution.
 	//
-	// BeforeToolCall 在工具调用之前执行。
-	// 返回的调用信息将用于工具执行。
+	// BeforeToolCall is executed before the tool is called.
+	// The returned call information will be used for tool execution.
 	//
 	// Use cases:
-	// 用例：
-	//   - Log tool calls / 记录工具调用
-	//   - Send start events for visualization / 发送可视化开始事件
-	//   - Intercept or modify tool calls / 拦截或修改工具调用
-	//   - Validate tool arguments / 验证工具参数
+	// Use Cases:
+	//   - Log tool calls
+	//   - Send start events for visualization
+	//   - Intercept or modify tool calls
+	//   - Validate tool arguments
 	//
 	// Parameters:
-	// 参数：
-	//   - ctx: Execution context / 执行上下文
-	//   - point: Agent execution point information / 智能体执行点信息
-	//   - call: Tool call information / 工具调用信息
+	// Parameters:
+	//   - ctx: Execution context
+	//   - point: Agent execution point information
+	//   - call: Tool call information
 	//
 	// Returns:
-	// 返回：
-	//   - *ToolCallInfo: Modified call info / 修改后的调用信息
-	//   - error: Error to prevent tool call, nil to continue / 阻止工具调用的错误，nil 表示继续
+	// Returns:
+	//   - *ToolCallInfo: Modified call info
+	//   - error: Error to prevent tool call, nil to continue
 	BeforeToolCall(ctx context.Context, point *AgentPoint, call *ToolCallInfo) (*ToolCallInfo, error)
 }
 
 // ToolCallAfterAspect defines the interface for aspects executed after tool calls.
 //
-// ToolCallAfterAspect 定义工具调用后执行的切面接口。
+// ToolCallAfterAspect defines the faceted interface executed after the tool is called.
 type ToolCallAfterAspect interface {
 	Aspect
 	PointCut
@@ -347,25 +347,25 @@ type ToolCallAfterAspect interface {
 	// AfterToolCall is executed after a tool call completes.
 	// This allows processing of tool results.
 	//
-	// AfterToolCall 在工具调用完成后执行。
-	// 这允许处理工具结果。
+	// AfterToolCall is executed after the tool call is completed.
+	// This allows for the processing of tool results.
 	//
 	// Use cases:
-	// 用例：
-	//   - Log tool results / 记录工具结果
-	//   - Send completion events for visualization / 发送可视化完成事件
-	//   - Process tool errors / 处理工具错误
-	//   - Collect tool call metrics / 收集工具调用指标
+	// Use Cases:
+	//   - Log tool results
+	//   - Send completion events for visualization
+	//   - Process tool errors
+	//   - Collect tool call metrics
 	//
 	// Parameters:
-	// 参数：
-	//   - ctx: Execution context / 执行上下文
-	//   - point: Agent execution point information / 智能体执行点信息
-	//   - call: Original tool call information / 原始工具调用信息
-	//   - result: Tool call result / 工具调用结果
+	// Parameters:
+	//   - ctx: Execution context
+	//   - point: Agent execution point information
+	//   - call: Original tool call information
+	//   - result: Tool call result
 	//
 	// Returns:
-	// 返回：
-	//   - error: Error (non-terminating), nil to continue / 错误（非终止），nil 表示继续
+	// Returns:
+	//   - error: Error (non-terminating), nil to continue
 	AfterToolCall(ctx context.Context, point *AgentPoint, call *ToolCallInfo, result *ToolCallResult) error
 }

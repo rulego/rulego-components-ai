@@ -100,13 +100,13 @@ func (p *SSEServerPool) Delete(id string) {
 
 // Config defines the configuration for McpServer
 type Config struct {
-	Server     string `json:"server" label:"Server Address" desc:"Address to listen on, e.g. :8080" required:"true"`
-	CertFile   string `json:"certFile" label:"Cert File" desc:"TLS certificate file path"`
+	Server      string `json:"server" label:"Server Address" desc:"Address to listen on, e.g. :8080" required:"true"`
+	CertFile    string `json:"certFile" label:"Cert File" desc:"TLS certificate file path"`
 	CertKeyFile string `json:"certKeyFile" label:"Cert Key File" desc:"TLS private key file path"`
-	AllowCors  bool   `json:"allowCors" label:"Allow CORS" desc:"Enable Cross-Origin Resource Sharing"`
-	Name       string `json:"name" label:"Server Name" desc:"MCP server name. Defaults to RuleChain name"`
-	Version    string `json:"version" label:"Server Version" desc:"MCP server version. Defaults to RuleChain version"`
-	BasePath   string `json:"basePath" label:"Base Path" desc:"Root path for MCP endpoints. Defaults to /api/v1/rules/{ruleChain.id}/mcp"`
+	AllowCors   bool   `json:"allowCors" label:"Allow CORS" desc:"Enable Cross-Origin Resource Sharing"`
+	Name        string `json:"name" label:"Server Name" desc:"MCP server name. Defaults to RuleChain name"`
+	Version     string `json:"version" label:"Server Version" desc:"MCP server version. Defaults to RuleChain version"`
+	BasePath    string `json:"basePath" label:"Base Path" desc:"Root path for MCP endpoints. Defaults to /api/v1/rules/{ruleChain.id}/mcp"`
 }
 
 // McpServer implements the Model Context Protocol (MCP) server endpoint.
@@ -524,7 +524,7 @@ func (s *McpServer) ruleChainToolHandler(chainId, startNodeId string, pool types
 		// Using OnMsg + WaitGroup allows us to capture the result in the callback closure.
 		ruleEngine.OnMsg(types.NewMsgWithJsonData(msg), opts...)
 
-		// 使用带超时的等待，防止永久阻塞
+		// Use timeout waits to prevent permanent blockages
 		done := make(chan struct{})
 		go func() {
 			wg.Wait()
@@ -533,7 +533,7 @@ func (s *McpServer) ruleChainToolHandler(chainId, startNodeId string, pool types
 
 		select {
 		case <-done:
-			// 正常完成
+			// Completed normally
 		case <-ctx.Done():
 			return nil, ctx.Err()
 		}

@@ -35,7 +35,7 @@ func init() {
 	_ = rulego.Registry.Register(&IntentNode{})
 }
 
-// 意图识别结果在 metadata 中的键名
+// Intent recognition results are keynames in metadata
 const IntentMetadataKey = "intent"
 
 // IntentConfiguration LLM-based intent recognition configuration
@@ -57,7 +57,7 @@ type Intent struct {
 	Description string `json:"description" label:"Description" desc:"Intent description for prompt generation" required:"true"`
 }
 
-// IntentNode 意图识别节点
+// IntentNode Intent Identification Node
 type IntentNode struct {
 	Config               IntentConfiguration
 	Client               *openai.Client
@@ -66,12 +66,12 @@ type IntentNode struct {
 	hasVar               bool
 }
 
-// Type 组件类型
+// Type returns the component type
 func (x *IntentNode) Type() string {
 	return "ai/intent"
 }
 
-// New 创建新的组件实例
+// New: Create a new component instance
 func (x *IntentNode) New() types.Node {
 	return &IntentNode{
 		Config: IntentConfiguration{
@@ -90,7 +90,7 @@ func (x *IntentNode) New() types.Node {
 	}
 }
 
-// Init 初始化
+// Init initializes the component
 func (x *IntentNode) Init(ruleConfig types.Config, configuration types.Configuration) error {
 	err := maps.Map2Struct(configuration, &x.Config)
 	if err != nil {
@@ -111,12 +111,12 @@ func (x *IntentNode) Init(ruleConfig types.Config, configuration types.Configura
 		return fmt.Errorf("at least one intent must be defined")
 	}
 
-	// 初始化 OpenAI 兼容客户端
+	// Initialize OpenAI-compatible clients
 	c := openai.DefaultConfig(x.Config.Key)
 	c.BaseURL = x.Config.Url
 	x.Client = openai.NewClientWithConfig(c)
 
-	// 初始化系统提示词模板
+	// Initialize the system prompt template
 	if x.Config.SystemPrompt != "" {
 		x.systemPromptTemplate, err = el.NewTemplate(x.Config.SystemPrompt)
 		if err != nil {
@@ -127,7 +127,7 @@ func (x *IntentNode) Init(ruleConfig types.Config, configuration types.Configura
 		}
 	}
 
-	// 初始化用户输入模板
+	// Initialize the user input template
 	x.Config.Input = strings.TrimSpace(x.Config.Input)
 	if x.Config.Input != "" {
 		if tmpl, err := el.NewTemplate(x.Config.Input); err != nil {
@@ -143,14 +143,14 @@ func (x *IntentNode) Init(ruleConfig types.Config, configuration types.Configura
 	return nil
 }
 
-// OnMsg 处理消息
+// OnMsg processes a message
 func (x *IntentNode) OnMsg(ctx types.RuleContext, msg types.RuleMsg) {
 	var evn map[string]interface{}
 	if x.hasVar {
 		evn = base.NodeUtils.GetEvnAndMetadata(ctx, msg)
 	}
 
-	// 获取用户输入文本
+	// Retrieves user input text
 	var userInput string
 	if x.userInputTemplate != nil {
 		if v, err := x.userInputTemplate.Execute(evn); err != nil {
@@ -169,17 +169,17 @@ func (x *IntentNode) OnMsg(ctx types.RuleContext, msg types.RuleMsg) {
 		return
 	}
 
-	// 进行意图识别
+	// Intent recognition
 	intentName, err := x.recognizeIntent(userInput, evn)
 	if err != nil {
 		ctx.TellFailure(msg, err)
 		return
 	}
 
-	// 将识别结果写入 metadata
+	// Write the recognition results into metadata
 	msg.GetMetadata().PutValue(IntentMetadataKey, intentName)
 
-	// 根据识别出的意图路由：匹配到预定义意图用意图名，否则用默认关系类型
+	// Routing based on the recognized intent: matches to the predefined intent map name; otherwise, use the default relationship type
 	if x.isValidIntent(intentName) {
 		ctx.TellNext(msg, intentName)
 	} else {
@@ -187,7 +187,7 @@ func (x *IntentNode) OnMsg(ctx types.RuleContext, msg types.RuleMsg) {
 	}
 }
 
-// recognizeIntent 调用大模型识别意图，只返回意图名称
+// recognizeIntent calls the large model to recognize intent, returning only the intent name
 func (x *IntentNode) recognizeIntent(userInput string, evn map[string]interface{}) (string, error) {
 	var prompt string
 	if x.systemPromptTemplate != nil {
@@ -196,7 +196,7 @@ func (x *IntentNode) recognizeIntent(userInput string, evn map[string]interface{
 		prompt = x.buildDefaultPrompt()
 	}
 
-	// 构建请求
+	// Build the request
 	req := openai.ChatCompletionRequest{
 		Model: x.Config.Model,
 		Messages: []openai.ChatCompletionMessage{
@@ -218,10 +218,10 @@ func (x *IntentNode) recognizeIntent(userInput string, evn map[string]interface{
 		return x.Config.DefaultIntent, nil
 	}
 
-	// 提取意图名称：清理响应，只取意图名
+	// Extract intent name: Clean up responses, only take intent names
 	content := cleanIntentResponse(resp.Choices[0].Message.Content)
 
-	// 验证意图是否在预定义列表中
+	// Verify whether intent is in a predefined list
 	if !x.isValidIntent(content) {
 		return x.Config.DefaultIntent, nil
 	}
@@ -229,25 +229,25 @@ func (x *IntentNode) recognizeIntent(userInput string, evn map[string]interface{
 	return content, nil
 }
 
-// cleanIntentResponse 清理模型响应，提取意图名称
+// cleanIntentResponse: Cleans model responses and extracts intent names
 func cleanIntentResponse(content string) string {
 	content = strings.TrimSpace(content)
-	// 提取 markdown 代码块内的内容：```xxx\ncontent\n```
+	// Extract the contents of the markdown code block: ''`xxx\ncontent\n`''
 	if match := reCodeBlockContent.FindStringSubmatch(content); len(match) > 1 {
 		content = match[1]
 	}
 	content = strings.TrimSpace(content)
-	// 去除引号
+	// Remove quotation marks
 	content = strings.Trim(content, "\"'`")
 	content = strings.TrimSpace(content)
-	// 只取第一行
+	// Only the first line is taken
 	if idx := strings.Index(content, "\n"); idx >= 0 {
 		content = content[:idx]
 	}
 	return strings.TrimSpace(content)
 }
 
-// buildDefaultPrompt 构建默认提示词（简洁，只要求返回意图名称）
+// buildDefaultPrompt Constructs a default prompt (concise, only requires the intent name)
 func (x *IntentNode) buildDefaultPrompt() string {
 	var intentNames []string
 	var intentDetails []string
@@ -266,7 +266,7 @@ func (x *IntentNode) buildDefaultPrompt() string {
 - 无法判断时输出：%s`, strings.Join(intentDetails, "\n"), strings.Join(intentNames, "、"), x.Config.DefaultIntent)
 }
 
-// isValidIntent 检查意图是否有效
+// isValidIntent checks whether the intent is valid
 func (x *IntentNode) isValidIntent(intent string) bool {
 	for _, definedIntent := range x.Config.Intents {
 		if definedIntent.Name == intent {
@@ -276,9 +276,9 @@ func (x *IntentNode) isValidIntent(intent string) bool {
 	return false
 }
 
-// Destroy 销毁资源
+// Destroy resources
 func (x *IntentNode) Destroy() {
-	// 清理资源
+	// Release resources
 }
 
 // Desc returns the component description
@@ -286,5 +286,5 @@ func (x *IntentNode) Desc() string {
 	return "Classify user intent via LLM and route to matching connection. Sends user input with predefined intent list to LLM, routes to matched intent name or default"
 }
 
-// 正则：提取 markdown 代码块内的内容
+// Regex: extracting content from the markdown code block
 var reCodeBlockContent = regexp.MustCompile("(?s)```(?:\\w+)?\\s*\\n?(.*?)\\n?```")

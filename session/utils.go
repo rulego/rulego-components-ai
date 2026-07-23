@@ -9,17 +9,17 @@ import (
 	"github.com/google/uuid"
 )
 
-// GenerateMessageID 生成消息ID
+// GenerateMessageID generates the message ID
 func GenerateMessageID() string {
 	return fmt.Sprintf("msg_%s_%d", uuid.New().String()[:8], time.Now().UnixNano())
 }
 
-// GenerateToolCallID 生成工具调用ID
+// GenerateToolCallID generates the tool call ID
 func GenerateToolCallID() string {
 	return fmt.Sprintf("call_%s_%d", uuid.New().String()[:8], time.Now().UnixNano())
 }
 
-// NewSessionMessage 创建新的会话消息
+// NewSessionMessage creates a new session message
 func NewSessionMessage(role, content string) *SessionMessage {
 	return &SessionMessage{
 		ID:          GenerateMessageID(),
@@ -31,7 +31,7 @@ func NewSessionMessage(role, content string) *SessionMessage {
 	}
 }
 
-// NewSessionMessageWithTokens 创建带Token计数的会话消息
+// NewSessionMessageWithTokens creates session messages with a Token count
 func NewSessionMessageWithTokens(role, content string, tokenCount int) *SessionMessage {
 	return &SessionMessage{
 		ID:          GenerateMessageID(),
@@ -43,7 +43,7 @@ func NewSessionMessageWithTokens(role, content string, tokenCount int) *SessionM
 	}
 }
 
-// NewToolCall 创建新的工具调用
+// NewToolCall creates a new tool call
 func NewToolCall(name, arguments string) *ToolCall {
 	return &ToolCall{
 		ID:          GenerateToolCallID(),
@@ -55,7 +55,7 @@ func NewToolCall(name, arguments string) *ToolCall {
 	}
 }
 
-// IsExecutableToolCallArgs 判断工具调用参数是否满足最基本的执行条件。
+// IsExecutableToolCallArgs checks whether the tool call parameters meet the most basic execution conditions.
 func IsExecutableToolCallArgs(toolName, arguments string) bool {
 	if strings.TrimSpace(toolName) == "" {
 		return false
@@ -89,7 +89,7 @@ func IsExecutableToolCallArgs(toolName, arguments string) bool {
 	}
 }
 
-// hasNonEmptyStringField 判断对象中指定字段是否为非空字符串。
+// hasNonEmptyStringField checks whether the specified field in the object is a non-empty string.
 func hasNonEmptyStringField(params map[string]any, field string) bool {
 	value, ok := params[field]
 	if !ok {

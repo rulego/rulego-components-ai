@@ -12,19 +12,19 @@ import (
 	rulegoReflect "github.com/rulego/rulego/utils/reflect"
 )
 
-// DynamicSkillLister 支持动态获取技能列表的工具接口。
-// 实现此接口的工具会在每次请求时通过 MessageModifier 将最新技能列表注入 system prompt，
-// 而不是在初始化时将技能列表固化到 tool description 中。
+// DynamicSkillLister supports a tool interface for dynamically retrieving skill lists.
+// The tool implementing this interface injects the latest skill list into the system prompt via MessageModifier with each request,
+// Instead of fixing the skill list into the tool description at initialization.
 type DynamicSkillLister interface {
 	tool.BaseTool
-	// ListSkills 获取当前可用技能列表，渲染为可注入 system prompt 的文本。
-	// 每次调用应检查底层数据源是否有变化（如文件指纹）。
+	// ListSkills retrieves the current list of available skills and renders it as text that can be injected into system prompts.
+	// Each call should check whether the underlying data source has changed (such as file fingerprints).
 	ListSkills(ctx context.Context) (string, error)
-	// GetSkillInstruction 返回技能系统的使用说明（如"如何使用 Skill"的指引文本）。
+	// GetSkillInstruction returns instructions for using the skill system (such as the guidance text for "How to use Skill").
 	GetSkillInstruction() string
 }
 
-// GetToolFromConfig 从 rulego Config 中获取 AI 工具
+// GetToolFromConfig Retrieves AI tools from rulego Config
 func GetToolFromConfig(c types.Config, name string) (tool.BaseTool, bool) {
 	if t := c.GetUdf(name, types.AiTool); t != nil {
 		if toolInstance, ok := t.(tool.BaseTool); ok {
@@ -35,17 +35,17 @@ func GetToolFromConfig(c types.Config, name string) (tool.BaseTool, bool) {
 }
 
 var (
-	// Registry 全局工具注册表
+	// Registry global tool registry
 	Registry = &ToolRegistry{
 		tools: make(map[string]tool.BaseTool),
 		defs:  make(map[string]ToolDefinition),
 	}
 )
 
-// ToolFactory 工具工厂
+// ToolFactory
 type ToolFactory func(config map[string]interface{}) (tool.BaseTool, error)
 
-// ToolDefinition 工具定义
+// ToolDefinition Tool definition
 type ToolDefinition struct {
 	Name string
 	Desc string
@@ -86,14 +86,14 @@ func RegisterTool[T any](name, desc string, defaultCfg T, factory func(T) (tool.
 	return Registry.RegisterDef(def)
 }
 
-// ToolRegistry 工具注册表
+// ToolRegistry
 type ToolRegistry struct {
 	tools map[string]tool.BaseTool
 	defs  map[string]ToolDefinition
 	mu    sync.RWMutex
 }
 
-// Register 注册工具
+// Register registration tool
 func (r *ToolRegistry) Register(t tool.BaseTool) error {
 	r.mu.Lock()
 	defer r.mu.Unlock()
@@ -106,7 +106,7 @@ func (r *ToolRegistry) Register(t tool.BaseTool) error {
 	return nil
 }
 
-// RegisterDef 注册工具定义
+// RegisterDef Definition of the registration tool
 func (r *ToolRegistry) RegisterDef(def ToolDefinition) error {
 	r.mu.Lock()
 	defer r.mu.Unlock()
@@ -126,7 +126,7 @@ func (r *ToolRegistry) RegisterDef(def ToolDefinition) error {
 	return nil
 }
 
-// Range 遍历工具
+// Range traversal tool
 func (r *ToolRegistry) Range(f func(name string, t tool.BaseTool) bool) {
 	r.mu.RLock()
 	defer r.mu.RUnlock()
@@ -137,7 +137,7 @@ func (r *ToolRegistry) Range(f func(name string, t tool.BaseTool) bool) {
 	}
 }
 
-// RangeDef 遍历工具定义
+// RangeDef traversal tool definition
 func (r *ToolRegistry) RangeDef(f func(name string, def ToolDefinition) bool) {
 	r.mu.RLock()
 	defer r.mu.RUnlock()
@@ -148,7 +148,7 @@ func (r *ToolRegistry) RangeDef(f func(name string, def ToolDefinition) bool) {
 	}
 }
 
-// Get 获取工具
+// Get the tool to get it
 func (r *ToolRegistry) Get(name string) (tool.BaseTool, bool) {
 	r.mu.RLock()
 	defer r.mu.RUnlock()
@@ -156,7 +156,7 @@ func (r *ToolRegistry) Get(name string) (tool.BaseTool, bool) {
 	return t, ok
 }
 
-// GetDef 获取工具定义
+// GetDef Retrieves the tool definition
 func (r *ToolRegistry) GetDef(name string) (ToolDefinition, bool) {
 	r.mu.RLock()
 	defer r.mu.RUnlock()
@@ -164,7 +164,7 @@ func (r *ToolRegistry) GetDef(name string) (ToolDefinition, bool) {
 	return def, ok
 }
 
-// List 获取所有工具信息
+// List to get all tool information
 func (r *ToolRegistry) List() []*schema.ToolInfo {
 	r.mu.RLock()
 	defer r.mu.RUnlock()
@@ -180,7 +180,7 @@ func (r *ToolRegistry) List() []*schema.ToolInfo {
 	return infos
 }
 
-// Builtins 获取内置工具列表
+// Builtins to get a list of built-in tools
 func (r *ToolRegistry) Builtins() map[string]interface{} {
 	infos := r.List()
 	return map[string]interface{}{
@@ -188,7 +188,7 @@ func (r *ToolRegistry) Builtins() map[string]interface{} {
 	}
 }
 
-// ToolForm 扩展 ComponentForm，增加 ParamsOneOf
+// ToolForm extends ComponentForm by adding ParamsOneOf
 type ToolForm struct {
 	types.ComponentForm
 	ParamsOneOf interface{} `json:"paramsOneOf,omitempty"`
@@ -213,27 +213,27 @@ func getFieldsFromConfig(config interface{}) []types.ComponentFormField {
 	return rulegoReflect.GetFields(dummyField, configValue)
 }
 
-// GetToolForms 获取工具表单列表（包含参数定义）
+// GetToolForms Retrieves a list of tool forms (including parameter definitions)
 func (r *ToolRegistry) GetToolForms() []ToolForm {
 	r.mu.RLock()
 	defer r.mu.RUnlock()
 	var forms []ToolForm
 	ctx := context.Background()
 
-	// 遍历所有工具实例
+	// Traverse all tool instances
 	for name, t := range r.tools {
 		form := ToolForm{}
 		form.Type = name
 		form.Label = name
 		form.Category = "AI Tool"
 
-		// 获取运行时信息
+		// Obtain runtime information
 		if info, err := t.Info(ctx); err == nil {
 			form.ParamsOneOf = info.ParamsOneOf
 			form.Desc = info.Desc
 		}
 
-		// 尝试获取定义中的配置字段
+		// Try to get the configuration field from the definition
 		if def, ok := r.defs[name]; ok && def.Config != nil {
 			if form.Desc == "" {
 				form.Desc = def.Desc
@@ -244,9 +244,9 @@ func (r *ToolRegistry) GetToolForms() []ToolForm {
 		forms = append(forms, form)
 	}
 
-	// 遍历只有定义但没有实例的工具（如 browseruse，避免创建重量级实例）
+	// Traversing tools that only define but no instances (such as browseruse, to avoid creating heavyweight instances)
 	for name, def := range r.defs {
-		// 跳过已有实例的工具
+		// Tools that skip existing instances
 		if _, hasInstance := r.tools[name]; hasInstance {
 			continue
 		}

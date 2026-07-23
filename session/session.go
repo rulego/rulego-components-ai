@@ -21,7 +21,7 @@ import (
 	"time"
 )
 
-// Session 会话
+// Session
 type Session struct {
 	Key              string
 	AgentID          string
@@ -39,22 +39,22 @@ type Session struct {
 	mu sync.Mutex `json:"-"`
 }
 
-// SessionMessage 会话消息
+// SessionMessage
 type SessionMessage struct {
 	ID          string
 	Role        string
 	Content     string
-	Images      []string // 图片 URL 列表，只存储 URL，不存储 base64
+	Images      []string // Image URL list, storing only URLs, not base64
 	TokenCount  int
 	IsCompacted bool
 	CreatedAt   time.Time
 
-	// 工具调用相关
-	ToolCalls  []ToolCallInfo // assistant 消息的工具调用
-	ToolCallID string         // tool 消息关联的调用 ID
+	// Tool call-related
+	ToolCalls  []ToolCallInfo // Assistant message tool call
+	ToolCallID string         // tool message associated with the call ID
 }
 
-// AddMessage 添加消息到会话
+// AddMessage Adds a message to a session
 func (s *Session) AddMessage(msg *SessionMessage) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -65,17 +65,17 @@ func (s *Session) AddMessage(msg *SessionMessage) {
 	s.LastActivityAt = time.Now()
 }
 
-// GetMessageCount 获取消息数量
+// GetMessageCount retrieves the number of messages
 func (s *Session) GetMessageCount() int {
 	return len(s.Messages)
 }
 
-// GetTotalTokenCount 获取总Token数
+// GetTotalTokenCount retrieves the total number of tokens
 func (s *Session) GetTotalTokenCount() int {
 	return s.Metadata.TotalTokenCount
 }
 
-// SetState 设置会话状态
+// SetState sets the session state
 func (s *Session) SetState(state SessionState) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -83,7 +83,7 @@ func (s *Session) SetState(state SessionState) {
 	s.UpdatedAt = time.Now()
 }
 
-// UpdateActivity 更新活动时间
+// UpdateActivity: Update the event time
 func (s *Session) UpdateActivity() {
 	s.mu.Lock()
 	defer s.mu.Unlock()

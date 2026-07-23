@@ -7,12 +7,12 @@ import (
 	"os/exec"
 )
 
-// setSysProcAttr 在 Windows 上不做额外设置
+// setSysProcAttr does not make any additional settings on Windows
 func setSysProcAttr(cmd *exec.Cmd) {
 }
 
-// killProcessGroup 在 Windows 上终止进程。
-// Windows 无进程组机制，只能 kill 直接进程；孙进程可能残留（OS 限制）。
+// killProcessGroup terminates processes on Windows.
+// Windows has a no-process group mechanism, so you can only kill processes directly; Grandchild processes may remain (OS limitations).
 func killProcessGroup(pid int) {
 	if pid <= 0 {
 		return

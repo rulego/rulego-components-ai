@@ -1,4 +1,4 @@
-// Package grep 提供文件内容搜索工具，ripgrep 优先 + Go 兜底。
+// Package grep provides a file content search tool, with ripgrep prioritized + Go as a backup.
 package grep
 
 import (
@@ -24,10 +24,10 @@ import (
 
 const ToolName = "grep"
 
-// 单行截断长度上限，避免输出超长行污染上下文。
+// Single-line truncation length limit to avoid over-long lines from polluting context.
 const maxLineLength = 2000
 
-// 默认/硬上限。
+// Default/Hard Limit.
 const (
 	defaultMaxResults = 100
 	hardMaxResults    = 500
@@ -54,8 +54,8 @@ type grepTool struct {
 	cache  *common.ResolverCache
 }
 
-// grepPathSecurity 与 read 一致：允许隐藏文件（代码审查需访问 .env/vendor 等），
-// 排除目录读全局默认（未设则不排除）。仅 Resolve 层生效，不影响 walk 内部遍历。
+// grepPathSecurity is the same as read: allows hidden files (code review requires access to.env/vendor, etc.),
+// Excluding directory reading by global default (if not set, it is not excluded). Only the Resolve layer is effective, does not affect internal traversal of walk.
 func grepPathSecurity() common.PathSecurityConfig {
 	cfg := common.DefaultPathSecurityConfig()
 	cfg.AllowHiddenFiles = true
@@ -157,16 +157,16 @@ func (t *grepTool) Info(ctx context.Context) (*schema.ToolInfo, error) {
 
 // Params holds search parameters.
 type Params struct {
-	Pattern      string `json:"pattern"`
-	Path         string `json:"path"`
-	Include      string `json:"include"`
-	Exclude      string `json:"exclude"`
-	OutputMode   string `json:"output_mode"`
-	ContextAfter int    `json:"-A"`
-	ContextBefore int   `json:"-B"`
-	Context      int    `json:"-C"`
-	HeadLimit    int    `json:"head_limit"`
-	SortByMtime  *bool  `json:"sort_by_mtime"`
+	Pattern       string `json:"pattern"`
+	Path          string `json:"path"`
+	Include       string `json:"include"`
+	Exclude       string `json:"exclude"`
+	OutputMode    string `json:"output_mode"`
+	ContextAfter  int    `json:"-A"`
+	ContextBefore int    `json:"-B"`
+	Context       int    `json:"-C"`
+	HeadLimit     int    `json:"head_limit"`
+	SortByMtime   *bool  `json:"sort_by_mtime"`
 }
 
 // InvokableRun executes the search.
@@ -187,7 +187,7 @@ func (t *grepTool) InvokableRun(ctx context.Context, arguments string, opts ...t
 		return common.ErrRegexInvalid(err.Error()).Error(), nil
 	}
 
-	// 解析输出模式
+	// Parse output mode
 	outputMode := params.OutputMode
 	if outputMode == "" {
 		outputMode = "content"
@@ -198,14 +198,14 @@ func (t *grepTool) InvokableRun(ctx context.Context, arguments string, opts ...t
 		outputMode = "content"
 	}
 
-	// 上下文行：-C 同时设置则覆盖 -A/-B
+	// Context line: -C is set simultaneously to override -A/-B
 	before, after := params.ContextBefore, params.ContextAfter
 	if params.Context > 0 {
 		before = params.Context
 		after = params.Context
 	}
 
-	// head_limit 解析与硬上限
+	// head_limit Analysis and hard upper limits
 	headLimit := params.HeadLimit
 	if headLimit <= 0 {
 		headLimit = t.config.MaxResults
@@ -214,14 +214,14 @@ func (t *grepTool) InvokableRun(ctx context.Context, arguments string, opts ...t
 		headLimit = t.config.HardMaxLimit
 	}
 
-	// 取本次调用的有效 resolver（ctx 注入的 workDir/allowDirs/cross 优先，仿 read）。
+	// Take the valid resolver used this time (ctx injection workDir/allowDirs/cross preferred, simulating read).
 	r, err := t.cache.GetWithAllowDirs(common.WorkDirFromCtx(ctx), common.AllowDirsFromCtx(ctx), common.AllowCrossDirFromCtx(ctx))
 	if err != nil {
 		return common.ErrPathInvalid(err.Error()).Error(), nil
 	}
 	ws := r.Workspace()
 
-	// 解析搜索根：目录或单文件
+	// Parse and search the root: directory or single file
 	searchPath := ws
 	if params.Path != "" {
 		resolved, err := r.Resolve(params.Path)
@@ -238,9 +238,9 @@ func (t *grepTool) InvokableRun(ctx context.Context, arguments string, opts ...t
 		return "", fmt.Errorf("access path: %w", err)
 	}
 
-	// 优先 ripgrep（仅目录场景）；单文件或 rg 缺失走 Go 兜底
-	// displayBase 用 searchPath（非 ws）：结果路径相对"本次搜索根"而非固定 workspace，
-	// 避免 cross/allowDirs 搜索工作区外目录时出现 ../../ 丑陋相对路径；与 rg 默认行为一致。
+	// Prioritize ripgrep (directory only scene); If a single file or rg is missing, Go is the backup
+	// displayBase uses searchPath (not ws): the result path is relative to the "current search root" rather than a fixed workspace,
+	// Prevents cross/allowDirs from appearing when searching directories outside the workspace: /.. / Ugly relative path; Consistent with RG's default behavior.
 	var matches []fileMatch
 	if common.HasRipgrep() && info.IsDir() {
 		matches, err = execRipgrep(ctx, searchPath, params.Pattern, params.Include, params.Exclude, outputMode == "content")
@@ -251,7 +251,7 @@ func (t *grepTool) InvokableRun(ctx context.Context, arguments string, opts ...t
 		return common.NewErrorf(common.ErrCodeSearchFailed, "%v", err).Error(), nil
 	}
 
-	// mtime 排序（默认 true）
+	// mtime sort (default true by default)
 	sortByMtime := true
 	if params.SortByMtime != nil {
 		sortByMtime = *params.SortByMtime
@@ -263,16 +263,16 @@ func (t *grepTool) InvokableRun(ctx context.Context, arguments string, opts ...t
 	return t.format(matches, outputMode, before, after, headLimit), nil
 }
 
-// fileMatch 单个文件的匹配结果。
+// fileMatch: The result of matching a single file.
 type fileMatch struct {
 	relPath string
 	lines   []string
-	matched []int // 命中的 1-indexed 行号
+	matched []int // Hit 1-indexed line number
 	mtime   int64
 }
 
-// execRipgrep 调用系统 rg 获取命中行号；needLines=true（content 模式）时读文件行用于渲染，
-// files_with_matches/count 跳过避免全量读。
+// execRipgrep calls the system rg to get the line number hit; When needLines=true(content mode) is used, the file line is read for rendering,
+// files_with_matches/count skips to avoid full read.
 func execRipgrep(ctx context.Context, searchPath, pattern, include, exclude string, needLines bool) ([]fileMatch, error) {
 	args := []string{
 		"--line-number", "--color=never", "--no-heading",
@@ -295,7 +295,7 @@ func execRipgrep(ctx context.Context, searchPath, pattern, include, exclude stri
 		return nil, err
 	}
 
-	// 按绝对路径聚合命中行号
+	// Aggregate hit line numbers by absolute path
 	byFile := map[string]*fileMatch{}
 	order := []string{}
 
@@ -321,7 +321,7 @@ func execRipgrep(ctx context.Context, searchPath, pattern, include, exclude stri
 		}
 		fm.matched = append(fm.matched, lineNo)
 	}
-	// 忽略退出码：rg 在无匹配时返回 1，视为正常
+	// Ignore exit code: rg returns 1 when there is no match, considered normal
 	_ = cmd.Wait()
 
 	result := make([]fileMatch, 0, len(order))
@@ -335,7 +335,7 @@ func execRipgrep(ctx context.Context, searchPath, pattern, include, exclude stri
 	return result, nil
 }
 
-// readLines 读取文件全部行（失败返回 nil，格式化阶段会跳过）。
+// readLines reads all lines of the file (returns nil on failure, which will skip the formatting phase).
 func readLines(path string) []string {
 	f, err := os.Open(path)
 	if err != nil {
@@ -351,17 +351,17 @@ func readLines(path string) []string {
 	return lines
 }
 
-// splitRipgrepLine 解析 rg 单行输出 "path:line:text"。
-// 从右向左定位两个冒号分隔符，兼容 Windows 盘符路径（C:/dir:5:text）。
+// splitRipgrepLine parses rg single-line output "path:line:text".
+// Positions two colon separators from right to left, compatible with Windows drive letter paths (C:/dir:5:text).
 func splitRipgrepLine(line string) (path string, lineNo int, text string, ok bool) {
-	// 找最后一个冒号（text 起点）
+	// Find the last colon (text, starting point)
 	idx2 := strings.LastIndex(line, ":")
 	if idx2 < 0 {
 		return "", 0, "", false
 	}
 	rest := line[:idx2]
 	text = line[idx2+1:]
-	// rest 形如 "path:line"
+	// rest is as in "path:line"
 	idx1 := strings.LastIndex(rest, ":")
 	if idx1 < 0 {
 		return "", 0, "", false
@@ -378,19 +378,19 @@ func splitRipgrepLine(line string) (path string, lineNo int, text string, ok boo
 	return path, n, text, true
 }
 
-// goGrep 纯 Go 实现：WalkDir + regexp + 自实现 ** glob 匹配。
-// 参考 tool/read/tool.go 的 matchWithDoubleStar/matchParts。
-// relPath 相对 searchPath 渲染（即"本次搜索根"），与 rg 兜底路径输出一致。
+// goGrep pure Go implementation: WalkDir + regexp + self-implementing ** glob matching.
+// Refer to matchWithDoubleStar/matchParts in tool/read/tool.go.
+// relPath renders relative to searchPath (i.e., "this search root"), and matches the output of the rg backup path.
 func goGrep(ctx context.Context, searchPath string, re *regexp.Regexp, include, exclude string) ([]fileMatch, error) {
-	// 预解析 glob 模式
+	// Pre-parse glob mode
 	hasInclude := include != ""
 	hasExclude := exclude != ""
 	hasDoubleStarInc := strings.Contains(include, "**")
 	hasDoubleStarExc := strings.Contains(exclude, "**")
-	// .gitignore（仅目录有效；单文件路径读取失败返回 nil）
+	// .gitignore (valid only for directories; Single file path read failure returns nil)
 	gitignore := common.LoadGitignore(searchPath)
 
-	// 判断 searchPath 是文件还是目录
+	// Determine whether searchPath is a file or a directory
 	info, err := os.Stat(searchPath)
 	if err != nil {
 		return nil, err
@@ -407,13 +407,13 @@ func goGrep(ctx context.Context, searchPath string, re *regexp.Regexp, include, 
 		if err != nil {
 			return nil
 		}
-		// 相对 searchPath 根的路径用于 gitignore + glob 匹配
+		// The path relative to the searchPath root is used for gitignore + glob matching
 		rel, rerr := filepath.Rel(searchPath, path)
 		if rerr != nil {
 			return nil
 		}
 		relSlash := filepath.ToSlash(rel)
-		// .gitignore：目录整个跳过（SkipDir），文件跳过
+		// .gitignore: Skips the entire directory (SkipDir), skips the file
 		if gitignore != nil && gitignore.Ignored(relSlash, d.IsDir()) {
 			if d.IsDir() {
 				return filepath.SkipDir
@@ -424,7 +424,7 @@ func goGrep(ctx context.Context, searchPath string, re *regexp.Regexp, include, 
 			return nil
 		}
 
-		// include/exclude 匹配（对完整 rel 路径）
+		// include/exclude matching (for full rel paths)
 		if hasInclude && !matchGlob(include, relSlash, hasDoubleStarInc) {
 			return nil
 		}
@@ -432,13 +432,13 @@ func goGrep(ctx context.Context, searchPath string, re *regexp.Regexp, include, 
 			return nil
 		}
 
-		// 读取并按行匹配
+		// Read and match by line
 		f, ferr := os.Open(path)
 		if ferr != nil {
 			return nil
 		}
 		defer f.Close()
-		// 二进制检测：前 1024 字节含 NUL 视为二进制，跳过（对齐 rg，避免乱码）
+		// Binary check: The first 1024 bytes containing NUL are considered binary, skip (align with RG to avoid garbled text)
 		if isBinaryFile(f) {
 			return nil
 		}
@@ -458,7 +458,7 @@ func goGrep(ctx context.Context, searchPath string, re *regexp.Regexp, include, 
 			return nil
 		}
 
-		// relPath：相对 searchPath 的展示路径（本次搜索根）
+		// relPath: Display path relative to searchPath (this search root)
 		relPath, _ := filepath.Rel(searchPath, path)
 		relPath = filepath.ToSlash(relPath)
 		mtime := int64(0)
@@ -477,16 +477,16 @@ func goGrep(ctx context.Context, searchPath string, re *regexp.Regexp, include, 
 	if info.IsDir() {
 		err = filepath.WalkDir(searchPath, walkFn)
 	} else {
-		// 单文件：直接调用 walkFn（伪造 rel 为文件名）
+		// Single file: Directly call walkFn (forge rel as the filename)
 		walkFn(searchPath, dirEntryFromFile(searchPath), nil)
 	}
 	if err != nil && err != context.Canceled && err != context.DeadlineExceeded {
-		// 忽略遍历过程中的单文件错误，继续返回已收集结果
+		// Single-file errors during traversal are ignored, and the collected results are returned
 	}
 	return result, nil
 }
 
-// isBinaryFile 读前 1024 字节检测 NUL（二进制标志），Seek 回 0。
+// isBinaryFile reads the first 1024 bytes to detect the NUL (binary flag), and seeks to return 0.
 func isBinaryFile(f *os.File) bool {
 	buf := make([]byte, 1024)
 	n, _ := f.Read(buf)
@@ -494,7 +494,7 @@ func isBinaryFile(f *os.File) bool {
 	return bytes.IndexByte(buf[:n], 0) >= 0
 }
 
-// format 渲染最终输出，按 output_mode 分支，head_limit 截断，统一截断兜底。
+// format renders the final output, branches output_mode, head_limit truncation, and uniformly truncates as a backup.
 func (t *grepTool) format(matches []fileMatch, outputMode string, before, after, headLimit int) string {
 	var b strings.Builder
 	totalFiles := len(matches)
@@ -506,11 +506,11 @@ func (t *grepTool) format(matches []fileMatch, outputMode string, before, after,
 		return "No matches found.\n"
 	}
 
-	// 计数与截断
+	// Counting and truncating
 	truncated := false
 	switch outputMode {
 	case "content":
-		// 按"匹配行总数"计 head_limit
+		// head_limit is calculated based on the "total number of matching rows."
 		allowedLines := headLimit
 		b.WriteString(fmt.Sprintf("Found %d match(es) in %d file(s)", totalMatches, totalFiles))
 		used := 0
@@ -530,7 +530,7 @@ func (t *grepTool) format(matches []fileMatch, outputMode string, before, after,
 			}
 		}
 	case "files_with_matches":
-		// 按文件数计 head_limit
+		// head_limit counted by number of documents
 		b.WriteString(fmt.Sprintf("Found %d match(es) in %d file(s)", totalMatches, totalFiles))
 		limit := headLimit
 		if len(matches) > limit {
@@ -562,7 +562,7 @@ func (t *grepTool) format(matches []fileMatch, outputMode string, before, after,
 	}
 	b.WriteString("\n")
 
-	// 最终输出过统一截断兜底
+	// In the end, the damage was taken over by the unified cutoff to secure the bottom
 	maxLines := common.TruncateDefaultMaxLines
 	tr := common.Truncate(b.String(), common.TruncateOptions{
 		MaxLines:  &maxLines,
@@ -571,7 +571,7 @@ func (t *grepTool) format(matches []fileMatch, outputMode string, before, after,
 	return tr.Content
 }
 
-// writeMatchWithCtx 写入一行匹配及其上下文（-A/-B/-C 语义，类似 grep 输出）。
+// writeMatchWithCtx writes a line of matching and its context (-A/-B/-C semantics, similar to grep output).
 func writeMatchWithCtx(w *strings.Builder, lines []string, lineNo, before, after int) {
 	start := lineNo - before
 	if start < 1 {
@@ -597,17 +597,17 @@ func writeMatchWithCtx(w *strings.Builder, lines []string, lineNo, before, after
 	}
 }
 
-// sortMatchesByMtime 按文件 mtime 降序（最近修改在前）。
+// sortMatchesByMtime descends by file mtime (most recent modifications come first).
 func sortMatchesByMtime(matches []fileMatch) {
 	sort.SliceStable(matches, func(i, j int) bool {
 		return matches[i].mtime > matches[j].mtime
 	})
 }
 
-// matchGlob 自实现 glob 匹配（支持 **），grep include/exclude 语义。
-// grep include 采用 ripgrep 语义：pattern 无 /（如 "*.go"）时匹配任意层级文件名，
-// 与 glob 工具的"仅顶层"语义不同——因为 rg -g '*.go' 在所有目录递归生效。
-// pattern 与 path 都已标准化为正斜杠。
+// matchGlob self-implements glob matching (supports **), grep include/exclude semantics.
+// grep include uses ripgrep semantics: pattern matches any level filename when /(e.g., "*.go") is missing,
+// Unlike the "top-only" semantics of the glob tool—because rg -g '*.go' recuts recursively across all directories.
+// Both pattern and path have been standardized to positive slashes.
 func matchGlob(pattern, relPath string, hasDoubleStar bool) bool {
 	if pattern == "" || pattern == "*" {
 		return true
@@ -615,7 +615,7 @@ func matchGlob(pattern, relPath string, hasDoubleStar bool) bool {
 	if hasDoubleStar {
 		return common.MatchWithDoubleStar(pattern, relPath)
 	}
-	// 无 ** 时优先匹配文件名；若 pattern 含 /，则匹配完整 rel 路径
+	// If there is no **, the file name is matched first; If the pattern contains /, it matches the complete rel path
 	if strings.Contains(pattern, "/") {
 		matched, _ := filepath.Match(pattern, relPath)
 		return matched
@@ -624,8 +624,7 @@ func matchGlob(pattern, relPath string, hasDoubleStar bool) bool {
 	return matched
 }
 
-
-// dirEntryFromFile 用 os.Stat 伪造一个 DirEntry，供单文件场景复用 walkFn。
+// dirEntryFromFile using os.Stat forges a DirEntry to allow single-file scenarios to reuse walkFn.
 type statDirEntry struct {
 	info os.FileInfo
 }

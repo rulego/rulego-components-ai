@@ -10,37 +10,37 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-// TestAllowDirsCtx 验证 WithAllowDirs 注入 / AllowDirsFromCtx 读取（含 nil 情况）。
+// TestAllowDirsCtx verifies with WithAllowDirs injection / AllowDirsFromCtx reads (including nil cases).
 func TestAllowDirsCtx(t *testing.T) {
-	// 未注入 → nil
+	// Not injected → nil
 	if got := AllowDirsFromCtx(context.Background()); got != nil {
-		t.Fatalf("未注入 ctx 应返回 nil，got %v", got)
+		t.Fatalf("Uninjected ctx should return nil got %v", got)
 	}
 
-	// 注入 → 读回相同切片
+	// Inject → Read back the same slice
 	dirs := []string{"/tmp/a", "/tmp/b"}
 	ctx := WithAllowDirs(context.Background(), dirs)
 	got := AllowDirsFromCtx(ctx)
 	assert.Equal(t, dirs, got, "注入后应读回相同的 allowDirs 切片")
 
-	// 注入空切片（非 nil）→ 读回 len=0 切片（GetWithAllowDirs 用 len 退化为 Get）
+	// Inject empty slice (non-nil)→ Read back slice len=0 (GetWithAllowDirs degenerates to get with len)
 	emptyCtx := WithAllowDirs(context.Background(), []string{})
 	if got := AllowDirsFromCtx(emptyCtx); len(got) != 0 {
-		t.Fatalf("空切片应读回 len=0，got %v", got)
+		t.Fatalf("The empty slice should be read back len=0,got %v", got)
 	}
 }
 
-// TestSecurePathResolver_AllowDirs 验证多根判定：path 在 workDir 主根 OR 任一 allowDir 内放行，越界拒。
+// TestSecurePathResolver_AllowDirs Verify multi-root determination: The path allows passage OR within either the main root OR any allowDir of the workDir and rejects it AND crosses the boundary.
 func TestSecurePathResolver_AllowDirs(t *testing.T) {
-	A := t.TempDir() // 主根 workDir
-	B := t.TempDir() // 额外允许目录（allowDir）
-	C := t.TempDir() // 越界目标（A/B 之外）
+	A := t.TempDir() // Root workDir
+	B := t.TempDir() // allowDir
+	C := t.TempDir() // Cross-boundary Goals (Beyond A/B)
 
-	// 在 B 下放一个文件，用于测绝对路径放行
+	// Send a file to B to test absolute path release
 	bFile := filepath.Join(B, "in-b.txt")
 	require.NoError(t, os.WriteFile(bFile, []byte("x"), 0644))
 
-	// 在 C 下放一个文件，用于测越界拒
+	// A file is placed in C for measuring boundary crossing
 	cFile := filepath.Join(C, "in-c.txt")
 	require.NoError(t, os.WriteFile(cFile, []byte("x"), 0644))
 
@@ -50,42 +50,42 @@ func TestSecurePathResolver_AllowDirs(t *testing.T) {
 		r, err := NewSecurePathResolver(A, cfg)
 		require.NoError(t, err)
 
-		// 主根 A 内：相对路径 a.txt → 解析到 A/a.txt，放行
+		// Inside the primary root A: Relative path a.txt → parses to A/a.txt, then released
 		got, err := r.Resolve("a.txt")
 		assert.NoError(t, err, "主根 A 内的相对路径应放行")
 		assert.Equal(t, filepath.Join(A, "a.txt"), got)
 
-		// allowDir B 内：绝对路径 bFile 放行
+		// allowDir B: Absolute path bFile release
 		got, err = r.Resolve(bFile)
 		assert.NoError(t, err, "allowDir B 内的绝对路径应放行")
 		assert.Equal(t, bFile, got)
 
-		// path == allowDir 本身（B）放行
+		// path == allowDir itself (B) is released
 		got, err = r.Resolve(B)
 		assert.NoError(t, err, "path == allowDir 本身应放行")
 		assert.Equal(t, B, got)
 
-		// 越界：C 内绝对路径拒（C 在 A/B 之外）
+		// Out-of-bounds: absolute path denial within C (C outside A/B)
 		_, err = r.Resolve(cFile)
 		assert.Error(t, err, "C 在 A/B 之外，应拒绝")
 	})
 
 	t.Run("allowDirs 空 → 仅 workDir，越界拒（原行为）", func(t *testing.T) {
-		cfg := DefaultPathSecurityConfig() // AllowDirs 为 nil
+		cfg := DefaultPathSecurityConfig() // AllowDirs is nil
 		r, err := NewSecurePathResolver(A, cfg)
 		require.NoError(t, err)
 
-		// 主根内放行
+		// Release within the main root
 		_, err = r.Resolve("a.txt")
 		assert.NoError(t, err, "主根 A 内应放行")
 
-		// B 此刻不在允许范围 → 拒
+		// B is not within the allowed range at this moment→ refuse
 		_, err = r.Resolve(bFile)
 		assert.Error(t, err, "allowDirs 空，B 外部路径应拒")
 	})
 }
 
-// TestResolverCache_GetWithAllowDirs 验证多根 resolver 的缓存与退化行为。
+// TestResolverCache_GetWithAllowDirs Verify the caching and degradation behavior of multiple resolvers.
 func TestResolverCache_GetWithAllowDirs(t *testing.T) {
 	wd := t.TempDir()
 	allow1 := t.TempDir()
@@ -101,14 +101,14 @@ func TestResolverCache_GetWithAllowDirs(t *testing.T) {
 		require.NoError(t, err)
 
 		if r1 == r2 {
-			t.Fatal("不同 allowDirs 应返回不同 resolver 实例")
+			t.Fatal("Different allowDirs should return different resolver instances")
 		}
 		assert.Equal(t, r1.Workspace(), r2.Workspace(), "Workspace 应相同（同 workDir）")
 		require.Len(t, r1.allowedDirs, 1, "r1 应解析出 1 个 allowDir")
 		require.Len(t, r2.allowedDirs, 1, "r2 应解析出 1 个 allowDir")
 		assert.NotEqual(t, r1.allowedDirs[0], r2.allowedDirs[0], "allowedDirs 应不同")
 
-		// 功能验证：r1 能放行 allow1 内文件、拒 allow2 内文件（证明 allowedDirs 真生效，不只是字段不同）
+		// Function verification: r1 can allow files inside allow1 and deny files inside allow2 (proves allowedDirs is truly effective, not just field differences)
 		r1File := filepath.Join(allow1, "x.txt")
 		require.NoError(t, os.WriteFile(r1File, []byte("x"), 0644))
 		_, err = r1.Resolve(r1File)
@@ -120,7 +120,7 @@ func TestResolverCache_GetWithAllowDirs(t *testing.T) {
 	})
 
 	t.Run("allowDirs 空 → 退化为 Get（返回 byDir 同一实例）", func(t *testing.T) {
-		// 同一 wd 的 Get 结果作为基准（byDir[wd]）
+		// Use the Get result of the same WD as the benchmark (byDir[wd])
 		base, err := c.Get(wd)
 		require.NoError(t, err)
 
@@ -142,7 +142,7 @@ func TestResolverCache_GetWithAllowDirs(t *testing.T) {
 	})
 }
 
-// TestIsPathInside 验证 path_security.go 的未导出 helper（同包测试可直接调）。
+// TestIsPathInside verifies the path_security.go unexported helper (can be directly called for the same package test).
 func TestIsPathInside(t *testing.T) {
 	base := t.TempDir()
 	sub := filepath.Join(base, "sub")

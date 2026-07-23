@@ -16,26 +16,26 @@ import (
 )
 
 const (
-	// DefaultSkillsPath 默认技能存储相对路径
+	// DefaultSkillsPath The default skill stores relative paths
 	DefaultSkillsPath = ".agents/skills"
 )
 
-// defaultGlobalSkillDirs 可注入的默认全局技能目录；非空时覆盖默认的 ~/.agents/skills。
-// 供宿主应用把自身技能目录接入 agent 运行时，使宿主管理的技能对 agent 可见。
-// 应在进程启动阶段（加载 agent 之前）调用 SetDefaultGlobalSkillDirs 设置一次。
+// defaultGlobalSkillDirs can be injected into the default global skill directory; Overrides the default ~/.agents/skills when not null.
+// Allows the host to access its own skill directory into the agent runtime, making the skills managed by the host visible to the agent.
+// You should call SetDefaultGlobalSkillDirs once during the process startup phase (before loading the agent).
 var defaultGlobalSkillDirs []string
 
-// SetDefaultGlobalSkillDirs 覆盖 agent 未配置 GlobalDirs 时的默认全局技能目录。
-// 传 nil/空切片恢复默认行为（~/.agents/skills）。
+// SetDefaultGlobalSkillDirs overrides the default global skill directory when the agent is not configured with GlobalDirs.
+// Send nil/empty slice to restore default behavior (~/.agents/skills).
 func SetDefaultGlobalSkillDirs(dirs []string) {
 	defaultGlobalSkillDirs = dirs
 }
 
-// 以下常量基于 eino adk/middlewares/skill/prompt.go 中的未导出常量修改。
-// 与 eino 原版的区别：去掉了 <available_skills> 动态技能列表段落。
-// 原因：技能列表改由 MessageModifier 在每次请求时动态注入 system prompt，
-// 避免 tool description 中的静态快照与 system prompt 中的动态列表不一致。
-// 如果 eino 更新了工具描述格式，此处需要同步维护。
+// The following constants are based on modifications from unexported constants in eino adk/middlewares/skill/prompt.go.
+// Difference from the original Eino: Removed the <available_skills> dynamic skill list paragraph.
+// Reason: The skill list is now dynamically injected into the system prompt by MessageModifier with each request,
+// Prevents inconsistencies between static snapshots in tool descriptions and dynamic lists in system prompts.
+// If eino updates the tool description format, synchronized maintenance is required here.
 
 const toolDescBase = `Execute a skill within the main conversation
 
@@ -82,7 +82,7 @@ const toolDescBaseChinese = `在主对话中执行 Skill（技能）
 
 `
 
-// skillListTmpl 技能列表模板，与 eino prompt.go 中 toolDescriptionTemplate 格式一致
+// skillListTmpl is a skill list template, which matches the toolDescriptionTemplate format in eino prompt.go
 var skillListTmpl = template.Must(template.New("skills").Parse(`
 <available_skills>
 {{- range . }}
@@ -99,11 +99,11 @@ var skillListTmpl = template.Must(template.New("skills").Parse(`
 `))
 
 type Config struct {
-	// GlobalDirs 全局技能目录列表，所有用户共享的技能
+	// GlobalDirs global skill catalog list, skills shared by all users
 	GlobalDirs []string `json:"globalDirs" label:"全局技能目录" desc:"全局技能目录列表，所有用户共享的技能，多个目录用逗号分隔"`
-	// LocalDirs 本地技能目录列表，当前智能体专属的技能，优先级高于全局技能
+	// LocalDirs Local Skill Directory List, currently exclusive to the agent, with priority over global skills
 	LocalDirs []string `json:"localDirs" label:"本地技能目录" desc:"本地技能目录列表，当前智能体专属的技能，优先级高于全局技能"`
-	// DisabledSkills 禁用的技能名称列表，仅对当前智能体生效
+	// List of disabled skill names in DisabledSkills, effective only for the current agent
 	DisabledSkills []string `json:"disabledSkills" label:"禁用的技能" desc:"该智能体禁用的技能名称列表，仅对当前智能体生效"`
 	// UseChinese controls prompt language
 	UseChinese bool `json:"useChinese" label:"使用中文" desc:"是否使用中文提示"`
@@ -112,20 +112,20 @@ type Config struct {
 	Backend einoskill.Backend `json:"-"`
 }
 
-// dynamicSkillTool 包装 eino skillTool，支持动态技能列表热更新。
-// 通过覆写 Info() 返回稳定的 tool description（不含具体技能列表），
-// 技能列表改由 MessageModifier 在每次请求时动态注入 system prompt。
+// dynamicSkillTool wraps eino skillTool and supports dynamic skill list hot updates.
+// Return a stable tool description (excluding specific skill lists) by overwriting Info(),
+// The skill list is now dynamically injected by MessageModifier into the system prompt at each request.
 type dynamicSkillTool struct {
-	tool.BaseTool                   // 嵌入 eino skillTool（通过 InvokableRun 委托执行）
-	backend     einoskill.Backend   // MultiBackend 引用，ListSkills 时调用以触发指纹检查
-	toolName    string              // 工具名称
-	useChinese  bool                // 是否使用中文
-	instruction string              // eino middleware 的 AdditionalInstruction（技能系统使用说明）
+	tool.BaseTool                   // Embedding eino skillTool (executed via InvokableRun)
+	backend       einoskill.Backend // MultiBackend references and ListSkills are called to trigger fingerprint checks
+	toolName      string            // Tool name
+	useChinese    bool              // Is it in Chinese?
+	instruction   string            // eino middleware's AdditionalInstruction (skill system usage guide)
 }
 
-// Info 覆写：返回稳定描述，不含具体技能列表。
-// 原始 skillTool.Info() 会在 Desc 中嵌入初始化时的技能列表快照，
-// 如果不覆写，genToolInfos() 会把快照绑定到 chat model，导致两份列表不一致。
+// Info Override: Returns a stable description without a specific skill list.
+// The original skillTool.Info() embeds a snapshot of the skill list at initialization in Desc,
+// If not overridden, genToolInfos() will bind the snapshot to the chat model, causing the two lists to be inconsistent.
 func (d *dynamicSkillTool) Info(ctx context.Context) (*schema.ToolInfo, error) {
 	descBase := toolDescBase
 	paramDesc := "The skill name (no arguments). E.g., \"pdf\" or \"xlsx\""
@@ -146,8 +146,8 @@ func (d *dynamicSkillTool) Info(ctx context.Context) (*schema.ToolInfo, error) {
 	}, nil
 }
 
-// ListSkills 获取当前可用技能列表，渲染为 <available_skills> 格式文本。
-// 每次调用通过 backend.List() 触发 MultiBackend 指纹检查，实现热更新。
+// ListSkills retrieves the currently available skill list and renders it <available_skills> as formatted text.
+// Each call is made through the backend.List() triggers MultiBackend fingerprint checks to enable hot updates.
 func (d *dynamicSkillTool) ListSkills(ctx context.Context) (string, error) {
 	skills, err := d.backend.List(ctx)
 	if err != nil {
@@ -156,13 +156,13 @@ func (d *dynamicSkillTool) ListSkills(ctx context.Context) (string, error) {
 	return renderSkillList(skills)
 }
 
-// GetSkillInstruction 返回技能系统的使用说明。
+// GetSkillInstruction returns instructions for using the skill system.
 func (d *dynamicSkillTool) GetSkillInstruction() string {
 	return d.instruction
 }
 
-// InvokableRun 委托给嵌入的 eino skillTool 执行技能。
-// 嵌入 tool.BaseTool 接口不会提升 InvokableTool 的方法，需要显式委托。
+// InvokableRun delegates the skill to the embedded eino skillTool to execute the skill.
+// Embedding tool.BaseTool interfaces does not improve the method of InvokableTool; it requires explicit delegation.
 func (d *dynamicSkillTool) InvokableRun(ctx context.Context, argumentsInJSON string, opts ...tool.Option) (string, error) {
 	invokable, ok := d.BaseTool.(tool.InvokableTool)
 	if !ok {
@@ -171,8 +171,8 @@ func (d *dynamicSkillTool) InvokableRun(ctx context.Context, argumentsInJSON str
 	return invokable.InvokableRun(ctx, argumentsInJSON, opts...)
 }
 
-// renderSkillList 将技能列表渲染为 <available_skills> XML 格式。
-// 格式与 eino prompt.go 中 toolDescriptionTemplate 一致。
+// renderSkillList renders the skill list in <available_skills> XML format.
+// The format matches the toolDescriptionTemplate in eino prompt.go.
 func renderSkillList(skills []einoskill.FrontMatter) (string, error) {
 	if len(skills) == 0 {
 		return "", nil
@@ -184,20 +184,20 @@ func renderSkillList(skills []einoskill.FrontMatter) (string, error) {
 	return buf.String(), nil
 }
 
-// NewTool 创建一个新的技能工具
+// NewTool creates a new skill tool
 func NewTool(config Config) (tool.BaseTool, error) {
 	var backend einoskill.Backend = config.Backend
 	if backend == nil {
-		// 收集所有目录：优先级为 LocalDirs > GlobalDirs > 默认目录
+		// Collect all directories: prioritize LocalDirs > GlobalDirs > default directory
 		var dirs []string
 
-		// 添加本地目录（高优先级，放在前面）
+		// Add local directories (high priority, placed at the front)
 		dirs = append(dirs, config.LocalDirs...)
 
-		// 添加全局目录
+		// Add a global directory
 		dirs = append(dirs, config.GlobalDirs...)
 
-		// 如果 globalDirs 未配置，优先用注入的默认目录，否则回退 ~/.agents/skills
+		// If globalDirs is not configured, prioritize using the default directory for injection; otherwise, rollback ~/.agents/skills
 		if len(config.GlobalDirs) == 0 {
 			if len(defaultGlobalSkillDirs) > 0 {
 				dirs = append(dirs, defaultGlobalSkillDirs...)
@@ -236,7 +236,7 @@ func NewTool(config Config) (tool.BaseTool, error) {
 	}, nil
 }
 
-// Register 注册一个技能工具
+// Register a skill tool
 func Register(config Config) error {
 	t, err := NewTool(config)
 	if err != nil {
@@ -245,7 +245,7 @@ func Register(config Config) error {
 	return aitool.Registry.Register(t)
 }
 
-// RegisterDefault 注册默认配置的技能工具
+// RegisterDefault: Registers the default configuration of skill tools
 func RegisterDefault() error {
 	return aitool.Registry.RegisterDef(aitool.ToolDefinition{
 		Name:   "skill",

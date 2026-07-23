@@ -16,7 +16,7 @@ import (
 )
 
 // ==========================================
-// 单元测试（不需要真实 MCP 服务器）
+// Unit testing (no real MCP server required)
 // ==========================================
 
 func TestRemoteMCPToolAdapter_Info(t *testing.T) {
@@ -62,7 +62,7 @@ func TestRemoteMCPToolAdapter_Info_InvalidSchema(t *testing.T) {
 	info, err := adapter.Info(context.Background())
 	require.NoError(t, err)
 
-	// 无效 schema 应回退到空 object
+	// An invalid schema should be rolled back to an empty object
 	assert.Equal(t, "bad_schema", info.Name)
 	assert.NotNil(t, info.ParamsOneOf)
 }
@@ -148,16 +148,16 @@ func TestCreateToolsFromRemote_InvalidServer(t *testing.T) {
 }
 
 // ==========================================
-// 集成测试（启动本地 MCP 服务器）
+// Integration testing (starting the local MCP server)
 // ==========================================
 
-// startTestMCPServer 启动一个带测试工具的本地 MCP 服务器，返回 URL 和 shutdown 函数。
+// startTestMCPServer starts a local MCP server with testing tools, returning the URL and shutdown function.
 func startTestMCPServer(t *testing.T) (string, func()) {
 	t.Helper()
 
 	s := server.NewMCPServer("test-server", "1.0.0")
 
-	// 注册 echo 工具
+	// Register for the Echo tool
 	s.AddTool(mcp.Tool{
 		Name:        "echo",
 		Description: "Echoes back the input message",
@@ -181,7 +181,7 @@ func startTestMCPServer(t *testing.T) (string, func()) {
 		}, nil
 	})
 
-	// 注册 add 工具
+	// Register for the add tool
 	s.AddTool(mcp.Tool{
 		Name:        "add",
 		Description: "Adds two numbers",
@@ -204,7 +204,7 @@ func startTestMCPServer(t *testing.T) (string, func()) {
 		}, nil
 	})
 
-	// 注册 error_tool 工具（模拟工具执行错误）
+	// Register error_tool tool (simulation tool execution error)
 	s.AddTool(mcp.Tool{
 		Name:        "error_tool",
 		Description: "Always returns an error",
@@ -222,7 +222,7 @@ func startTestMCPServer(t *testing.T) (string, func()) {
 
 	httpServer := server.NewStreamableHTTPServer(s)
 
-	// 使用端口 0 让系统自动分配可用端口
+	// Use port 0 to have the system automatically allocate available ports
 	listener, err := net.Listen("tcp", "127.0.0.1:0")
 	require.NoError(t, err)
 
@@ -342,12 +342,12 @@ func TestCreateToolsFromRemote_SharedClient(t *testing.T) {
 	addr, shutdown := startTestMCPServer(t)
 	defer shutdown()
 
-	// 创建多个工具，它们应该共享同一个底层 MCP 客户端连接
+	// Create multiple tools that should share the same underlying MCP client connection
 	tools, err := CreateToolsFromRemote(addr, nil)
 	require.NoError(t, err)
 	require.Len(t, tools, 3)
 
-	// 连续调用不同工具，验证共享连接工作正常
+	// Continuously call different tools to verify that the shared connection is working properly
 	for _, tl := range tools {
 		info, err := tl.Info(context.Background())
 		require.NoError(t, err)

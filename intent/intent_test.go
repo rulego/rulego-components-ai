@@ -163,7 +163,7 @@ func TestIntentRecognitionNode_Init(t *testing.T) {
 		if err != nil {
 			assert.True(t, strings.Contains(err.Error(), "invalid input expression"))
 		} else {
-			t.Log("该表达式可能被解析器接受了，跳过此测试")
+			t.Log("The expression may be accepted by the parser, so this test is skipped")
 		}
 	})
 }
@@ -219,9 +219,9 @@ func TestIntentRecognitionNode_CleanIntentResponse(t *testing.T) {
 	}
 }
 
-// getTestConfig 获取测试配置（从环境变量读取）
-// 注意：请设置环境变量 LLM_API_KEY 来运行测试
-// 示例：
+// getTestConfig Retrieves test configuration (read from environment variables)
+// Note: Please set the environment variable LLM_API_KEY to run the test
+// Example:
 //
 //	export LLM_BASE_URL="https://token-plan-cn.xiaomimimo.com/v1"
 //	export LLM_API_KEY="your-api-key"
@@ -236,7 +236,7 @@ func getEnvOrDefault(key, defaultValue string) string {
 
 func getTestConfig() (baseURL, apiKey, model string) {
 	baseURL = getEnvOrDefault("LLM_BASE_URL", "https://token-plan-cn.xiaomimimo.com/v1")
-	apiKey = os.Getenv("LLM_API_KEY") // 必须通过环境变量设置，不提供默认值
+	apiKey = os.Getenv("LLM_API_KEY") // It must be set through environment variables; default values are not provided
 	model = getEnvOrDefault("LLM_MODEL", "mimo-v2.5-pro")
 	return
 }
@@ -311,11 +311,11 @@ func TestIntentNode_OnMsg_Integration(t *testing.T) {
 			select {
 			case <-done:
 				elapsed := time.Since(startTime)
-				t.Logf("  耗时: %v", elapsed)
-				t.Logf("  路由: %s", resultRelationType)
-				t.Logf("  错误: %v", resultErr)
+				t.Logf("Duration: %v", elapsed)
+				t.Logf("Route: %s", resultRelationType)
+				t.Logf("Mistake: %v", resultErr)
 				t.Logf("  metadata.intent: %s", resultMsg.GetMetadata().GetValue(IntentMetadataKey))
-				t.Logf("  原始数据是否保留: data=%s", resultMsg.GetData())
+				t.Logf("Whether the original data is retained: data = %s", resultMsg.GetData())
 
 				if resultErr != nil {
 					errStr := resultErr.Error()
@@ -338,7 +338,7 @@ func TestIntentNode_OnMsg_Integration(t *testing.T) {
 				assert.Equal(t, tc.input, resultMsg.GetData(), "原始输入应该被保留，不被覆盖")
 
 			case <-time.After(60 * time.Second):
-				t.Fatal("测试超时（60秒）")
+				t.Fatal("Test timeout (60 seconds)")
 			}
 		})
 	}

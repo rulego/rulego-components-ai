@@ -32,13 +32,13 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-// startTestMCPServer 启动带测试工具的本地 MCP 服务器，返回 URL 和关闭函数
+// startTestMCPServer starts the local MCP server with testing tools, returns the URL, and closes the function
 func startTestMCPServer(t *testing.T) (string, func()) {
 	t.Helper()
 
 	s := server.NewMCPServer("test-server", "1.0.0")
 
-	// echo 工具
+	// Echo tool
 	s.AddTool(mcp.Tool{
 		Name:        "echo",
 		Description: "Echoes back the input message",
@@ -62,7 +62,7 @@ func startTestMCPServer(t *testing.T) (string, func()) {
 		}, nil
 	})
 
-	// add 工具
+	// add tools
 	s.AddTool(mcp.Tool{
 		Name:        "add",
 		Description: "Adds two numbers",
@@ -85,7 +85,7 @@ func startTestMCPServer(t *testing.T) (string, func()) {
 		}, nil
 	})
 
-	// error_tool 工具
+	// error_tool tools
 	s.AddTool(mcp.Tool{
 		Name:        "error_tool",
 		Description: "Always returns an error",
@@ -110,7 +110,7 @@ func startTestMCPServer(t *testing.T) (string, func()) {
 }
 
 // ==========================================
-// 单元测试
+// Unit testing
 // ==========================================
 
 func TestClient_Type(t *testing.T) {
@@ -146,7 +146,7 @@ func TestClient_Init_ValidConfig(t *testing.T) {
 }
 
 // ==========================================
-// 集成测试（启动本地 MCP 服务器）
+// Integration testing (starting the local MCP server)
 // ==========================================
 
 func TestClient_StartAndDiscover(t *testing.T) {
@@ -454,7 +454,7 @@ func TestClient_Destroy(t *testing.T) {
 
 func TestClient_Destroy_NotStarted(t *testing.T) {
 	c := &Client{}
-	c.Destroy() // 不应 panic
+	c.Destroy() // Don't panic
 }
 
 func TestClient_Start_Idempotent(t *testing.T) {
@@ -471,7 +471,7 @@ func TestClient_Start_Idempotent(t *testing.T) {
 	err = c.Start()
 	require.NoError(t, err)
 
-	// 重复调用 Start 不应报错
+	// Repeatedly calling Start should not cause errors
 	err = c.Start()
 	require.NoError(t, err)
 
@@ -489,7 +489,7 @@ func TestClient_Start_InvalidServer(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 
-	_ = ctx // Start 内部使用 context.Background()
+	_ = ctx // Start uses context.Background()
 	err = c.Start()
 	assert.Error(t, err)
 }
@@ -509,14 +509,14 @@ func TestClient_AsMCPToolProvider(t *testing.T) {
 	require.NoError(t, err)
 	defer c.Destroy()
 
-	// Client 本身实现了 MCPToolProvider 接口
+	// The client itself implements the MCPToolProvider interface
 	var provider types.MCPToolProvider = c
 
 	defs, err := provider.ListToolDefinitions()
 	require.NoError(t, err)
 	assert.NotEmpty(t, defs)
 
-	// 通过 MCPToolProvider 接口调用工具
+	// Calling the tool through the MCPToolProvider interface
 	result, err := provider.CallTool(context.Background(), "echo", map[string]interface{}{
 		"message": "via provider",
 	})
