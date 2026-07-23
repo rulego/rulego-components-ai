@@ -107,9 +107,9 @@ func TestEmptyPath(t *testing.T) {
 }
 
 func TestFileNotExist(t *testing.T) {
-	// 用临时工作目录内的相对路径触发“文件不存在”分支。避免写死绝对路径：
-	// Linux 上绝对路径（/nonexistent/...）会被路径安全检查判为逃逸工作区而提前报错，
-	// 到不了文件存在性检查；Windows 上绝对路径无盘符不触发，导致本地通过、CI 失败。
+	// Trigger the "File Does Not Exist" branch using the relative path in the temporary working directory. Avoid writing absolute paths in a dead end:
+	// Absolute path (/nonexistent/... on Linux)) will be classified as an escape zone by path security check and will report an error in advance,
+	// Unable to reach document presence checks; On Windows, absolute paths without drive letters do not trigger, causing local pass and CI failure.
 	config := Config{WorkDir: t.TempDir()}
 
 	tTool, err := NewTool(config)

@@ -12,44 +12,44 @@ import (
 	"github.com/rulego/rulego/api/types"
 )
 
-// ===== 主端点熔断器 =====
+// ===== Primary endpoint fuse =====
 
-// maxCircuitCooldown 探测退避上限：half-open 探测失败后冷却逐次翻倍，封顶至此值，
-// 避免主端点长时间故障时冷却无限增长导致恢复后迟迟切不回主。
+// maxCircuitCooldown detection evasion limit: After a half-open detection fails, the cooldown is gradually doubled, capped at this value.
+// This avoids the incessant cooling growth during prolonged master terminal failures, which can cause delays in switching to the master after recovery.
 const maxCircuitCooldown = 10 * time.Minute
 
-// circuitState 熔断状态机：closed（正常）→ open（熔断）→ half-open（半开试探）。
+// circuitState Fuse State Machine: closed→ open→ half-open (half-open probability).
 type circuitState int32
 
 const (
-	circuitClosed   circuitState = iota // 正常，允许试主端点
-	circuitOpen                         // 熔断，跳过主直接用备用
-	circuitHalfOpen                     // 半开，试探主一次
+	circuitClosed   circuitState = iota // Normal, allowing the main endpoint to be tested
+	circuitOpen                         // Fuse is skipped, skip the main one, and use it as a backup
+	circuitHalfOpen                     // Half-open, test the master once
 )
 
-// circuitBreaker 保护主端点的熔断器。主端点已是 RetryChatModelWrapper，故"一次失败"即代表
-// 同模型 retry 耗尽，熔断无需累计阈值——closed 下主失败一次直接转 open。
+// circuitBreaker protects the fuse at the main endpoint. The primary endpoint is already RetryChatModelWrapper, so "one failure" means
+// For the same model, retry exhaustion is exhausted, and circuit breaks do not require a cumulative threshold—if closed, the main failure after one failure directly switches to open.
 //
-// 行为：
-//   - closed：主端点失败（retry 已耗尽）→ 转 open（用基础冷却 cooldown）。
-//     主成功 → 保持 closed。
-//   - open：allowPrimary 返回 false（跳过主直接用备用）。冷却到期（now > openUntil）→ 转 half-open。
-//   - half-open：allowPrimary 只放行"一个"请求试探主（halfOpenProbing 占用），其余返回 false 走备用，
-//     避免冷却到期瞬间并发请求全打主。试探成功 → closed（冷却重置回基础值）；失败 → 重新 open，
-//     且探测冷却翻倍封顶 maxCircuitCooldown（持续故障时探测频率逐次降低，减少坏主期间的无谓探测）。
-//     recordSuccess/recordFailure 释放试探权。
+// Behavior:
+//   - closed: The master endpoint fails (retry is exhausted) → opens (cooldown with base cooldown).
+//     Main success → keeps closed.
+//   - open: allowPrimary returns false (skips the main and uses the backup directly). When the cooldown expires (now > openUntil), → switch to half-open.
+//   - half-open: allowPrimary only allows "one" request to probe the main (halfOpenProbing occupiance), while the rest return false and goes as a backup.
+//     Avoid triggering concurrent requests when cooldown expires to go all-in on the main character. Probing successfully: → closed (cooldown resets to base value); Failure → reopening,
+//     Additionally, detection cooling is doubled and capped at maxCircuitCooldown (during continuous faults, detection frequency decreases sequentially to reduce unnecessary detection during the bad owner).
+//     recordSuccess/recordFailure releases the tendency to do so.
 //
-// 线程安全。
+// Thread safety.
 type circuitBreaker struct {
 	mu              sync.Mutex
 	state           circuitState
-	cooldown        time.Duration // 基础冷却（用户配置值）
-	currentCooldown time.Duration // 当前实际冷却：随探测失败翻倍增长，探测成功重置回 cooldown
+	cooldown        time.Duration // Basic cooling (user-configured values)
+	currentCooldown time.Duration // Current actual cooldown: doubles as detection fails, resets after successful detection and cooldown
 	openUntil       time.Time
-	halfOpenProbing bool // half-open 时：true=已有请求在试探主，其余请求走备用
+	halfOpenProbing bool // When half-open: true=Existing requests are testing the master, while other requests go to the standby
 }
 
-// newCircuitBreaker 创建熔断器。cooldown <=0 时用默认值（60s）。
+// newCircuitBreaker creates a fuse. When cooldown <=0, use the default value (60s).
 func newCircuitBreaker(cooldown time.Duration) *circuitBreaker {
 	if cooldown <= 0 {
 		cooldown = 60 * time.Second
@@ -57,9 +57,9 @@ func newCircuitBreaker(cooldown time.Duration) *circuitBreaker {
 	return &circuitBreaker{cooldown: cooldown, currentCooldown: cooldown}
 }
 
-// allowPrimary 是否允许尝试主端点。open 到期会自动转 half-open。
-// half-open 下只放行一个请求试探主（halfOpenProbing），其余返回 false 走备用，
-// 避免冷却到期瞬间并发请求全打主。试探结果由 recordSuccess/recordFailure 释放试探权。
+// Does allowPrimary allow attempts on the primary endpoint? When the open expires, it will automatically switch to half-open.
+// Under half-open, only one request is allowed to probe the master (halfOpenProbing), while the rest return false as a standby.
+// Avoid triggering concurrent requests when cooldown expires to go all-in on the main character. The heuring result is released by recordSuccess/recordFailure.
 func (c *circuitBreaker) allowPrimary() bool {
 	c.mu.Lock()
 	defer c.mu.Unlock()
@@ -68,12 +68,12 @@ func (c *circuitBreaker) allowPrimary() bool {
 		return true
 	case circuitOpen:
 		if !time.Now().After(c.openUntil) {
-			return false // 熔断中，跳过主
+			return false // During circuit breaking, skip the main one
 		}
-		c.state = circuitHalfOpen // 冷却到期，转半开
+		c.state = circuitHalfOpen // When the cooldown ends, switch to half open
 		fallthrough
 	case circuitHalfOpen:
-		// 只放行一个请求试探主，其余走备用
+		// Only one request was allowed to test the master; the rest were kept on standby
 		if !c.halfOpenProbing {
 			c.halfOpenProbing = true
 			return true
@@ -83,34 +83,34 @@ func (c *circuitBreaker) allowPrimary() bool {
 	return true
 }
 
-// recordSuccess 主端点成功 → 恢复 closed，退避冷却重置回基础值，并释放 half-open 试探权。
+// recordSuccess The master endpoint succeeds → restores closed, resets cooldown to base values, and releases half-open testing rights.
 func (c *circuitBreaker) recordSuccess() {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	c.state = circuitClosed
-	c.currentCooldown = c.cooldown // 探测成功 → 退避归位
+	c.currentCooldown = c.cooldown // Detection successful→ retreat and return to position
 	c.halfOpenProbing = false
 }
 
-// recordFailure 主端点失败（retry 已耗尽）。
-// half-open 探测失败：冷却翻倍封顶后重新 open（并释放试探权）。
-// closed 下主失败：首次熔断，用基础冷却转 open。
+// recordFailure: The master endpoint failed (retry has been exhausted).
+// half-open probe failure: After the cooldown doubles and caps, reopen (and release the probing right).
+// Closed main failure below: First circuit break, use base cooling to switch to open.
 func (c *circuitBreaker) recordFailure() {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	if c.state == circuitHalfOpen {
-		c.currentCooldown = c.nextCooldown() // 探测失败 → 冷却翻倍封顶
+		c.currentCooldown = c.nextCooldown() // Detection failure → Cooldown doubles at cap
 		c.state = circuitOpen
 		c.openUntil = time.Now().Add(c.currentCooldown)
-		c.halfOpenProbing = false // 释放试探权，重新熔断
+		c.halfOpenProbing = false // Release the right to test and re-circuit breaking
 		return
 	}
 	c.state = circuitOpen
-	c.currentCooldown = c.cooldown // 首次熔断用基础冷却
+	c.currentCooldown = c.cooldown // The first circuit breaker uses foundation cooling
 	c.openUntil = time.Now().Add(c.currentCooldown)
 }
 
-// nextCooldown 计算探测失败后的下一次冷却：当前冷却翻倍，封顶 maxCircuitCooldown。
+// nextCooldown calculates the next cooldown after detection failure: current cooldown doubles and maxCircuitCooldown is capped.
 func (c *circuitBreaker) nextCooldown() time.Duration {
 	if doubled := c.currentCooldown * 2; doubled < maxCircuitCooldown {
 		return doubled
@@ -118,31 +118,31 @@ func (c *circuitBreaker) nextCooldown() time.Duration {
 	return maxCircuitCooldown
 }
 
-// onPrimaryNonFailoverError 主端点返回非 failover 错误（如 400 请求格式错）时的处理。
-// closed 态：不熔断（客户端类错误不代表主端点不可用）。
-// half-open 态：探测未成功，必须推进状态机——释放探测权并重新 open（走备用），
-// 否则 halfOpenProbing 永不释放、状态永久卡 half-open（主端点被冻结）。冷却维持当前值不额外翻倍。
+// onPrimaryNonFailoverError Handling when the primary endpoint returns a non-failover error (such as a 400 request formatting error).
+// Closed state: not fused (a client-side class error does not mean the main endpoint is unavailable).
+// half-open state: detection fails, must advance the state machine—release detection rights and reopen (use backup),
+// Otherwise, halfOpenProbing will never be released, and the state will permanently be stuck at half-open (the main endpoint will be frozen). Cooldown does not double the current value separately.
 func (c *circuitBreaker) onPrimaryNonFailoverError() {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	if c.state != circuitHalfOpen {
-		return // closed 态：客户端错误不熔断
+		return // Closed state: Client errors are not circuited
 	}
 	c.state = circuitOpen
 	c.openUntil = time.Now().Add(c.currentCooldown)
-	c.halfOpenProbing = false // 释放试探权，重新 open 走备用
+	c.halfOpenProbing = false // Release the right to probe, reopen and go for backup
 }
 
-// getState 返回当前状态（日志/测试用）。
+// getState returns the current state (for log/test purposes).
 func (c *circuitBreaker) getState() circuitState {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	return c.state
 }
 
-// IsFailoverError 判断错误是否应触发故障转移（切备用端点）。
-// 比 IsRetryableError 更宽松：除可重试错误外，认证/授权类错误（401/403/invalid_api_key）也触发——
-// 备用端点用不同 key/url，认证可能成功；而 retry 重试同一模型对认证错误无意义，故二者判断分离。
+// IsFailoverError determines whether the error should trigger failover (cuts to the standby endpoint).
+// More lenient than IsRetryableError: In addition to retry errors, authentication/authorization errors (401/403/invalid_api_key) are also triggered—
+// Backup endpoints using different keys/URLs may succeed in authentication; Retry, on the other hand, is meaningless for authentication errors when retrying the same model, so the two judgments are separated.
 func IsFailoverError(err error) bool {
 	if err == nil {
 		return false
@@ -163,27 +163,27 @@ func IsFailoverError(err error) bool {
 
 // ===== FailoverChatModelWrapper =====
 
-// FailoverChatModelWrapper 故障转移包装器：主端点失败（可重试错误或 401/403 认证错误）后依次切换备用端点。
+// FailoverChatModelWrapper: After the primary endpoint fails (retry error or 401/403 authentication error), the alternate endpoint is switched sequentially.
 //
-// primary 与 failovers 通常各自已是 *RetryChatModelWrapper（先在同模型内重试，耗尽后才触发 failover），
-// 从而组合出 "retry（同模型）→ failover（切模型）" 的完整链路。
+// Primary and failovers are usually each already *RetryChatModelWrapper (retries within the same model first, and failovers are triggered only after exhaustion).
+// This creates a complete chain of "retry (same model) → failover (cut model)."
 //
-// 可选熔断器（WithCircuit 启用）：主连续失败达阈值后熔断，冷却期内跳过主直接用备用，
-// 避免主长时间故障时每个请求都等主 retry 耗尽。
+// Optional fuse (WithCircuit enabled): Fuse blows after master fails consecutively and reaches the threshold; during cooldown, skip the main and use it directly as a backup.
+// This prevents each request from waiting for the master retry to exhaust during long-term master failures.
 //
-// 行为与流式模式相关：
-//   - Generate：任一端点返回可重试错误或认证错误 → 切下一个；请求格式等不可切换错误直接返回。
-//   - Stream（off 模式）：端点 Stream 返回错误（建立失败 / 探测窗口内重试耗尽）→ 切下一个；
-//     一旦某端点 Stream 成功返回 reader，后续 mid-stream 错误由该 reader 透传，不再 failover。
-//   - Stream（full 模式）：端点 Stream 内部完整缓冲重试，mid-stream 断流耗尽才返回错误 → 切下一个。
+// Behavior is related to streaming patterns:
+//   - Generate: Any endpoint returns a retry error or authentication error → Cut off one; Requests and formats that cannot be switched are directly returned.
+//   - Stream(off mode): The endpoint stream returns an error (establishment failed).
+//     Once a stream on an endpoint successfully returns to the reader, subsequent mid-stream errors are propagated by that reader and no longer failover.
+//   - Stream (full mode): The endpoint stream is fully buffered and retries internally; mid-stream returns an error only when the stream is exhausted → cuts to the next one.
 type FailoverChatModelWrapper struct {
 	primary   model.ToolCallingChatModel
 	failovers []model.ToolCallingChatModel
-	circuit   *circuitBreaker // 主端点熔断器，nil 表示不启用（每次都试主）
+	circuit   *circuitBreaker // Primary endpoint fuse, nil means disabled (test the main each time)
 	logger    types.Logger
 }
 
-// NewFailoverChatModelWrapper 创建故障转移包装器。failovers 为空时等价于直接用 primary。
+// NewFailoverChatModelWrapper creates a failover wrapper. failovers is the equivalent of using a primary when empty.
 func NewFailoverChatModelWrapper(primary model.ToolCallingChatModel, failovers []model.ToolCallingChatModel, logger ...types.Logger) *FailoverChatModelWrapper {
 	var log types.Logger
 	if len(logger) > 0 && logger[0] != nil {
@@ -192,7 +192,7 @@ func NewFailoverChatModelWrapper(primary model.ToolCallingChatModel, failovers [
 	return &FailoverChatModelWrapper{primary: primary, failovers: failovers, logger: log}
 }
 
-// WithCircuit 启用主端点熔断器（builder 模式）。cooldown 冷却时长；<=0 用默认（60s）。
+// WithCircuit enables the master endpoint fuse (builder mode). cooldown: Cooling duration; <=0 uses the default (60s).
 func (w *FailoverChatModelWrapper) WithCircuit(cooldown time.Duration) *FailoverChatModelWrapper {
 	w.circuit = newCircuitBreaker(cooldown)
 	return w
@@ -204,7 +204,7 @@ func (w *FailoverChatModelWrapper) logf(format string, v ...interface{}) {
 	}
 }
 
-// models 按优先级返回主 + 备用端点模型。
+// models: Returns the primary + backup endpoint model by priority.
 func (w *FailoverChatModelWrapper) models() []model.ToolCallingChatModel {
 	all := make([]model.ToolCallingChatModel, 0, 1+len(w.failovers))
 	all = append(all, w.primary)
@@ -212,8 +212,8 @@ func (w *FailoverChatModelWrapper) models() []model.ToolCallingChatModel {
 	return all
 }
 
-// startIdx 计算本次应从第几个端点开始尝试（熔断开启且主 open 时跳过主）。
-// 返回 (startIdx, triedPrimary)。triedPrimary 表示是否实际尝试了主（用于熔断计数）。
+// startIdx calculation should start from which endpoint (skip the main when the circuit breaker is on and the master is open).
+// Returns (startIdx, triedPrimary). triedPrimary indicates whether the main (used for fuse count) was actually tested.
 func (w *FailoverChatModelWrapper) startIdx() (int, bool) {
 	if w.circuit == nil {
 		return 0, true
@@ -225,7 +225,7 @@ func (w *FailoverChatModelWrapper) startIdx() (int, bool) {
 	return 0, true
 }
 
-// Generate 同步生成：按优先级尝试各端点，可重试错误触发 failover；主端点成功/失败反馈给熔断器。
+// Generate synchronous generation: tries each endpoint by priority, allowing retry errors to trigger failover; The master endpoint's success/failure feedback is sent to the fuse.
 func (w *FailoverChatModelWrapper) Generate(ctx context.Context, input []*schema.Message, opts ...model.Option) (*schema.Message, error) {
 	models := w.models()
 	idx, tryPrimary := w.startIdx()
@@ -248,13 +248,13 @@ func (w *FailoverChatModelWrapper) Generate(ctx context.Context, input []*schema
 		isFailover := IsFailoverError(err)
 		if i == 0 && tryPrimary && w.circuit != nil {
 			if isFailover {
-				w.circuit.recordFailure() // failover 错误：熔断/退避
+				w.circuit.recordFailure() // Failover error: Circuit break/ejection
 			} else {
-				w.circuit.onPrimaryNonFailoverError() // half-open 释放探测权重新 open；closed 不熔断
+				w.circuit.onPrimaryNonFailoverError() // half-open: release detection rights and reopen again; closed, not fused
 			}
 		}
 		if !isFailover {
-			return nil, err // 非故障转移类错误（如请求格式错误）直接返回，不切换
+			return nil, err // Non-failover errors (such as request format errors) are returned directly without switching
 		}
 		lastErr = err
 		w.logf("[FailoverChatModel] Generate endpoint #%d failed: %v, trying next...", i, err)
@@ -265,8 +265,8 @@ func (w *FailoverChatModelWrapper) Generate(ctx context.Context, input []*schema
 	return nil, fmt.Errorf("Generate failed over all endpoints: %w", lastErr)
 }
 
-// Stream 流式生成：按优先级尝试各端点。端点 Stream 返回错误（含 retry 耗尽）才切换；
-// 返回 reader 即视为该端点已承担本次流，后续 mid-stream 错误透传。
+// Stream generation: Try each endpoint in priority. The endpoint stream returns an error (including retry exhaustion) before switching;
+// Returning reader means the endpoint has already taken over the current stream, and subsequent mid-stream errors are propagated.
 func (w *FailoverChatModelWrapper) Stream(ctx context.Context, input []*schema.Message, opts ...model.Option) (*schema.StreamReader[*schema.Message], error) {
 	models := w.models()
 	idx, tryPrimary := w.startIdx()
@@ -289,13 +289,13 @@ func (w *FailoverChatModelWrapper) Stream(ctx context.Context, input []*schema.M
 		isFailover := IsFailoverError(err)
 		if i == 0 && tryPrimary && w.circuit != nil {
 			if isFailover {
-				w.circuit.recordFailure() // failover 错误：熔断/退避
+				w.circuit.recordFailure() // Failover error: Circuit break/ejection
 			} else {
-				w.circuit.onPrimaryNonFailoverError() // half-open 释放探测权重新 open；closed 不熔断
+				w.circuit.onPrimaryNonFailoverError() // half-open: release detection rights and reopen again; closed, not fused
 			}
 		}
 		if !isFailover {
-			return nil, err // 非故障转移类错误直接返回，不切换
+			return nil, err // Non-failover errors are returned directly without switching
 		}
 		lastErr = err
 		w.logf("[FailoverChatModel] Stream endpoint #%d failed: %v, trying next...", i, err)
@@ -306,8 +306,8 @@ func (w *FailoverChatModelWrapper) Stream(ctx context.Context, input []*schema.M
 	return nil, fmt.Errorf("Stream failed over all endpoints: %w", lastErr)
 }
 
-// WithTools 为所有端点绑定工具，返回保持 failover 结构的新包装器。
-// 熔断器指针共享，跨 WithTools 持续累计失败——避免每次绑工具都重置导致熔断形同虚设。
+// WithTools binds tools for all endpoints and returns a new wrapper that maintains the failover structure.
+// Fuse pointer sharing allows continuous failure accumulation across WithTools—avoiding the hassle of resetting every tool binding that renders the fuse useless.
 func (w *FailoverChatModelWrapper) WithTools(tools []*schema.ToolInfo) (model.ToolCallingChatModel, error) {
 	newPrimary, err := w.primary.WithTools(tools)
 	if err != nil {
@@ -322,24 +322,24 @@ func (w *FailoverChatModelWrapper) WithTools(tools []*schema.ToolInfo) (model.To
 		newFailovers[i] = nf
 	}
 	fo := NewFailoverChatModelWrapper(newPrimary, newFailovers, w.logger)
-	fo.circuit = w.circuit // 共享熔断器状态
+	fo.circuit = w.circuit // Shared fuse status
 	return fo, nil
 }
 
 // Ensure FailoverChatModelWrapper implements model.ToolCallingChatModel
 var _ model.ToolCallingChatModel = (*FailoverChatModelWrapper)(nil)
 
-// fixedModelWrapper 固定模型名包装器：强制用配置的 model 名，忽略上层传入的 WithModel 覆盖
-// （如会话级 session_model）。用于 failover 备用端点——会话级模型是用户针对主 provider 选的，
-// 备用 provider 未必支持同一个模型名，强行带过去会触发 "Model does not exist"。
-// 备用固定用自己的配置 model 名，保证 failover 可用。
+// fixedModelWrapper: Forces the configured model name and ignores the WithModel override passed from the upper layer
+// (For example, session-level session_model). For failover backup endpoints—session-level models are selected by users for the main provider,
+// The backup provider may not support the same model name; forcibly bringing it over will trigger "Model does not exist".
+// Backup fixes using your own configuration model name to ensure failover is available.
 type fixedModelWrapper struct {
 	base       model.ToolCallingChatModel
 	fixedModel string
 }
 
-// append WithModel(fixedModel) 到末尾：apply 按顺序执行，后写的 WithModel 覆盖先写的
-// （即覆盖上层注入的 session_model），使底层用 fixedModel。
+// append WithModel (fixedModel) to the end: apply executes in order, and the WithModel written later overrides the one written first
+// (i.e., override the session_model injected in the upper layer), so that the underlying layer uses fixedModel.
 func (w *fixedModelWrapper) Generate(ctx context.Context, input []*schema.Message, opts ...model.Option) (*schema.Message, error) {
 	return w.base.Generate(ctx, input, append(opts, model.WithModel(w.fixedModel))...)
 }

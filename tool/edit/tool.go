@@ -16,9 +16,9 @@ import (
 	"github.com/cloudwego/eino/components/tool"
 	"github.com/cloudwego/eino/schema"
 	"github.com/eino-contrib/jsonschema"
+	"github.com/rulego/rulego-components-ai/session"
 	aitool "github.com/rulego/rulego-components-ai/tool"
 	"github.com/rulego/rulego-components-ai/tool/common"
-	"github.com/rulego/rulego-components-ai/session"
 	"github.com/rulego/rulego/utils/maps"
 	orderedmap "github.com/wk8/go-ordered-map/v2"
 )
@@ -31,12 +31,12 @@ const (
 	MaxRegexLength = 1000
 )
 
-// fileLocks 提供按文件路径的互斥锁，防止并发编辑同一文件时相互覆盖。
-// TODO(审查C3): 当前按路径常驻、无 LRU/无清理，长驻 server 编辑海量不同路径会缓慢增长。
-// 短期不影响（单次会话编辑路径有限）；长期需加上限 + LRU 淘汰（container/list）或弱引用。
+// fileLocks provide mutex locks by file path to prevent overlapping when editing the same file concurrently.
+// TODO (Review C3): Currently resident by path, no LRU/no cleanup, and the server is always edited with a large number of different paths, which will slowly grow.
+// No short-term impact (limited editing path for a single session); Long-term need to add limits + LRU elimination (container/list) or weak references.
 var fileLocks sync.Map // map[string]*sync.Mutex
 
-// lockFile 锁定指定路径的编辑操作，返回解锁函数。
+// lockFile locks the edit operation at the specified path and returns the unlock function.
 func lockFile(path string) func() {
 	actual, _ := fileLocks.LoadOrStore(path, &sync.Mutex{})
 	mu := actual.(*sync.Mutex)
@@ -44,7 +44,7 @@ func lockFile(path string) func() {
 	return mu.Unlock
 }
 
-// isWriteOp 判断是否为写操作（line/search/insert/delete）。
+// isWriteOp checks whether a write operation is (line/search/insert/delete).
 func isWriteOp(op string) bool {
 	switch op {
 	case "line", "search", "insert", "delete":
@@ -53,25 +53,25 @@ func isWriteOp(op string) bool {
 	return false
 }
 
-// readBeforeEditScanWindow 扫描最近 N 条 session 消息用于 read-before-edit 检查。
+// readBeforeEditScanWindow scans the most recent N session messages for read-before-edit checks.
 const readBeforeEditScanWindow = 20
 
-// checkReadBeforeEdit 检查 ctx 内 session 最近消息中是否有针对 path 的 read 工具调用。
-// 返回非空字符串表示应阻止本次编辑（提示先读取）；返回空串表示放行（含 session 缺失/无法判定的情况）。
+// checkReadBeforeEdit checks whether the recent messages of the session in ctx have a call to the read tool for the path.
+// Returning a non-empty string means the current edit should be blocked (prompt to read first); Returning an empty string indicates release (including cases where sessions are missing or cannot be determined).
 func checkReadBeforeEdit(ctx context.Context, targetPath string) string {
 	if targetPath == "" {
 		return ""
 	}
 	sess, ok := session.SessionFromContext(ctx)
 	if !ok || sess == nil {
-		// 无 session 上下文（如独立测试/直接调用），跳过强制，不阻塞。
+		// No session context (such as independent testing/direct call), skipping enforcement, and no blocking.
 		return ""
 	}
 	msgs := sess.Messages
 	if len(msgs) == 0 {
 		return ""
 	}
-	// 只扫最近 N 条，避免长会话开销
+	// Only scan the most recent N messages to avoid long conversation overhead
 	start := len(msgs) - readBeforeEditScanWindow
 	if start < 0 {
 		start = 0
@@ -90,7 +90,7 @@ func checkReadBeforeEdit(ctx context.Context, targetPath string) string {
 			if p == "" {
 				continue
 			}
-			// 路径规范化后比较，宽松匹配 basename 或全路径
+			// After normalizing paths, the comparison is loosely matched with either basename or full path
 			if sameReadPath(p, target) {
 				return ""
 			}
@@ -99,7 +99,7 @@ func checkReadBeforeEdit(ctx context.Context, targetPath string) string {
 	return fmt.Sprintf("Error: READ_BEFORE_EDIT - read the file '%s' first (use the read tool with op=file) before editing it, so you can verify current content.", targetPath)
 }
 
-// extractPathFromReadArgs 从 read 工具调用的 JSON arguments 中提取 path 字段。
+// extractPathFromReadArgs extracts the path field from the JSON arguments called by the read tool.
 type readArgsShape struct {
 	Path      string `json:"path"`
 	Operation string `json:"operation"`
@@ -116,8 +116,8 @@ func extractPathFromReadArgs(arguments string) string {
 	return strings.TrimSpace(a.Path)
 }
 
-// sameReadPath 比较两个路径是否指向同一文件（归一化后全路径相等）。
-// 注意：不用 basename 比较——同名不同目录（如两个 main.go）会绕过 read-before-edit 保护（审查 C4）。
+// sameReadPath compares whether two paths point to the same file (all normalized paths are equal).
+// Note: Do not use basename for comparison—directories with the same name but different ones (e.g., two main.go) will bypass read-before-edit protection (review C4).
 func sameReadPath(a, b string) bool {
 	a = strings.TrimSpace(a)
 	b = strings.TrimSpace(b)
@@ -127,7 +127,7 @@ func sameReadPath(a, b string) bool {
 	if a == b {
 		return true
 	}
-	// 归一化（清理 ./ ../ 等）；相对/绝对路径不一致时判不同（宁严勿松，避免 basename 绕过）
+	// Normalization (cleanup)./.. / etc.); Different judgments when relative or absolute paths are inconsistent (better to be strict than relaxed, avoid bypassing basenames)
 	return filepath.Clean(a) == filepath.Clean(b)
 }
 
@@ -150,12 +150,12 @@ type editTool struct {
 	cache  *common.ResolverCache
 }
 
-// editPathSecurity 编辑操作的路径安全策略：隐藏文件 + 排除目录均读全局默认（tpclaw config.yaml fileAccess）。
-// AllowHiddenFiles = !denyHidden（默认 false→允许编辑隐藏，不限制 agent）；ExcludeDirs 默认版本库元数据。
+// editPathSecurity: Path security policy for the edit operation: hide files + exclude directory reads by global default (tpclaw config.yaml fileAccess).
+// AllowHiddenFiles =!denyHidden (default false→ allows editing to hide, does not restrict agent); ExcludeDirs: Default version repository metadata.
 func editPathSecurity() common.PathSecurityConfig {
 	cfg := common.DefaultPathSecurityConfig()
 	cfg.AllowHiddenFiles = !common.GetDefaultDenyHidden()
-	cfg.ExcludeDirs = common.GetDefaultExcludeDirs() // 读全局；未设返回 nil（不排除），默认值由 config.yaml fileAccess 给
+	cfg.ExcludeDirs = common.GetDefaultExcludeDirs() // Read the big picture; No return nil is set (not excluded); the default value is provided by config.yaml fileAccess
 	return cfg
 }
 
@@ -289,13 +289,13 @@ func (t *editTool) InvokableRun(ctx context.Context, arguments string, opts ...t
 		return common.ErrPathEmpty().Error(), nil
 	}
 
-	// 取本次调用的有效 resolver + workDir（ctx 注入优先，否则 config 默认）。
+	// Take the valid resolver + workDir used this time (ctx injection first, otherwise config defaults).
 	r, err := t.cache.GetWithAllowDirs(common.WorkDirFromCtx(ctx), common.AllowDirsFromCtx(ctx), common.AllowCrossDirFromCtx(ctx))
 	if err != nil {
 		return common.ErrPathInvalid(err.Error()).Error(), nil
 	}
 	effWd := r.Workspace()
-	// backup 按 effWd 构造（NewBackupManager 无后台协程，per-call 构造廉价）。
+	// Backup is constructed according to effWd (NewBackupManager has no background coroutine, and per-call construction is cheap).
 	backup := common.NewBackupManager(effWd, t.config.MaxHistory)
 
 	path, err := r.Resolve(params.Path)
@@ -306,16 +306,16 @@ func (t *editTool) InvokableRun(ctx context.Context, arguments string, opts ...t
 	// Get session key from context for session-isolated backups
 	sessionKey, _ := session.SessionKeyFromContext(ctx)
 
-	// 修改类操作按文件加锁，防止并发编辑同一文件相互覆盖（list_backups 只读不需锁）
+	// Modify operations lock by file to prevent overlapping the same file during concurrent editing (list_backups read-only, no lock)
 	if params.Operation != "list_backups" {
 		defer lockFile(path)()
 	}
 
-	// 先 Read 强制（read-before-edit）：对写操作，若能从 ctx 取到 session 且其最近 N 条消息中
-	// 未发现针对该 path 的 read 工具调用，则提示 "Read the file first"。
-	// 限制：仅在能确认 session 上下文时校验；session 缺失或无法判定 path 时跳过，不阻塞执行。
-	// TODO(session)：当前依赖 SessionMessage.ToolCalls + Arguments JSON 反推 path，
-	// 跨工具约定较弱；后续若 session 包提供结构化的"已读文件集合"状态，改为查表即可。
+	// Read Before Edit: Write operation if a session can be retrieved from ctx and its most recent N messages
+	// If no read tool call is found for this path, prompt "Read the file first".
+	// Limitation: Validation only when the session context can be acknowledged; Skips when a session is missing or cannot determine the path, without blocking execution.
+	// TODO(session): Currently depends on SessionMessage.ToolCalls + Arguments JSON to reverse the path,
+	// Weak cross-tool agreements; If the session package later provides a structured "Collection of Read" states, you can switch to lookup tables.
 	if isWriteOp(params.Operation) {
 		if msg := checkReadBeforeEdit(ctx, params.Path); msg != "" {
 			return msg, nil
@@ -364,9 +364,9 @@ func (t *editTool) InvokableRun(ctx context.Context, arguments string, opts ...t
 
 // atomicWriteFile writes content to a file atomically using temp file + rename.
 // This prevents data corruption if the write operation is interrupted.
-// 写入前会嗅探旧文件（若存在）的原生行尾，把新内容统一为该行尾，避免 Windows CRLF 文件被破坏。
+// Before writing, it sniffs the native line endings of old files (if they exist), unifying the new content to those lines to prevent Windows CRLF files from being corrupted.
 func atomicWriteFile(path string, content []byte) error {
-	// 嗅探原生行尾：旧文件存在则按旧文件，否则按 content 自身
+	// Sniff native line tailers: If an old file exists, use the old file; otherwise, use the content itself
 	eol := "\n"
 	if old, err := os.ReadFile(path); err == nil && len(old) > 0 {
 		eol = detectLineEnding(old)
@@ -433,8 +433,8 @@ func (t *editTool) editLine(path string, params OperationParams, sessionId strin
 		backupPath, version), nil
 }
 
-// locateMatches 返回 search 在 content 中前 limit 处匹配所在行号与行预览，
-// 用于唯一性失败时帮助 agent 看清匹配位置，从而决定是提供更长 context 还是重新读取核对。
+// locateMatches returns search matching the row number to the row preview at the first limit in the content,
+// Used to help agents clearly see match positions when uniqueness fails, deciding whether to provide a longer context or reread verification.
 func locateMatches(content, search string, limit int) string {
 	if search == "" || limit <= 0 {
 		return ""
@@ -454,14 +454,14 @@ func locateMatches(content, search string, limit int) string {
 	return strings.Join(found, "\n")
 }
 
-// suggestReread 返回"建议重新读取文件"的提示，用于编辑失败时引导 agent 先核对实际内容再重试。
+// suggestReread returns the prompt "Suggest rereading the file" to guide the agent to verify the actual content before trying again when editing fails.
 func suggestReread() string {
 	return " Suggestion: the file may have changed since you last read it, or the search string does not match exactly (whitespace/indentation/line-endings). Re-read the file (read op=file) to verify actual content before retrying."
 }
 
-// findClosestMatch 在 0 匹配时扫描文件，找出与 search 最相似的 1-3 行作为提示。
-// 仅作错误信息增强（Did you mean），不影响 apply。相似度用大小写不敏感的子串重叠长度近似（无需 Levenshtein 库）。
-// search 会按非空白 token 拆分，对每行累计命中 token 的总长度作为相似得分。
+// findClosestMatch scans the file when it matches 0, finding the 1-3 rows most similar to search as a hint.
+// Only for error information amplification (Did you mean) does not affect apply. Similarity is approximated by the overlap length of case-insensitive substrings (no need for the Levenshtein library).
+// Search splits the tokens by non-blank tokens, and the total length of each line of tokens hit is used as a similar score.
 func findClosestMatch(content, search string) []string {
 	const maxHits = 3
 	const minScore = 3
@@ -491,7 +491,7 @@ func findClosestMatch(content, search string) []string {
 			cands = append(cands, cand{lineNo: i + 1, text: trimmed, score: score})
 		}
 	}
-	// 取得分最高的前 3 个（稳定排序：先按分数降序，再按行号升序）
+	// Top 3 highest scores (stable sort: descending by score, then ascending by line number)
 	for i := 1; i < len(cands); i++ {
 		for j := i; j > 0 && (cands[j].score > cands[j-1].score); j-- {
 			cands[j], cands[j-1] = cands[j-1], cands[j]
@@ -507,7 +507,7 @@ func findClosestMatch(content, search string) []string {
 	return out
 }
 
-// tokenizeForMatch 把搜索串拆成用于相似度匹配的小写 token（保留长度>=2 的字母数字片段）。
+// tokenizeForMatch splits the search string into lowercase tokens for similarity matching (retaining a length>=2 alphanumeric fragment).
 func tokenizeForMatch(s string) []string {
 	var toks []string
 	for _, field := range strings.Fields(s) {
@@ -519,7 +519,7 @@ func tokenizeForMatch(s string) []string {
 	return toks
 }
 
-// closestMatchHint 把 findClosestMatch 结果格式化成 "Did you mean" 提示串。
+// closestMatchHint formats the findClosestMatch result into a "Did you mean" prompt string.
 func closestMatchHint(content, search string) string {
 	hits := findClosestMatch(content, search)
 	if len(hits) == 0 {
@@ -528,11 +528,11 @@ func closestMatchHint(content, search string) string {
 	return " Did you mean around:\n  " + strings.Join(hits, "\n  ")
 }
 
-// detectLineEnding 嗅探文件原生行尾：CRLF 占优返回 "\r\n"，否则 "\n"。
-// 用于写入时保持文件原生行尾，避免 Windows CRLF 文件被破坏成 LF。
+// detectLineEnding detects the native line tail of the sniff file: CRLF preferentially returns "\r\n", otherwise "\n".
+// Used to keep the file's native line ending during writing to prevent Windows CRLF files from being corrupted to LF.
 func detectLineEnding(content []byte) string {
-	// 按真正行尾位置统计：\n 的前一字节是否为 \r。
-	// 不能用 bytes.Count(content, []byte("\r\n"))——它会误判字面字符串（如源码/文档里的 "\r\n" 文本）。
+	// Count based on the actual line stub: Is the byte before \n \r?
+	// You can't use bytes.Count(content, []byte("\r\n")))—it will misinterpret literal strings (such as the "\r\n" text in source code/documentation).
 	crlf := 0
 	lf := 0
 	for i := 0; i < len(content); i++ {
@@ -550,18 +550,18 @@ func detectLineEnding(content []byte) string {
 	return "\n"
 }
 
-// normalizeLineEndings 把 text 的行尾统一为 target（CRLF 或 LF）。
+// normalizeLineEndings unifies the line endings of text as the target (CRLF or LF).
 func normalizeLineEndings(text, target string) string {
 	if target == "\n" {
-		// 统一去掉 \r
+		// Uniformly remove \r
 		return strings.ReplaceAll(text, "\r\n", "\n")
 	}
-	// target == \r\n：先把已有的 \r\n 规整成 \n，再统一加 \r
+	// target == \r\n: First, refine the existing \r\n to \n, then uniformly add \r
 	unified := strings.ReplaceAll(text, "\r\n", "\n")
 	return strings.ReplaceAll(unified, "\n", "\r\n")
 }
 
-// withDiagnostics 包装写操作结果，附加诊断（按注册的 provider；未注册=默认关闭）。
+// withDiagnostics wraps and writes the operation results, attaches diagnostics (according to the registered provider; Not registered = closed by default).
 func (t *editTool) withDiagnostics(path string, result string, err error) (string, error) {
 	if err != nil {
 		return result, err
@@ -569,7 +569,7 @@ func (t *editTool) withDiagnostics(path string, result string, err error) (strin
 	return result + t.reportDiagnostics(path), nil
 }
 
-// reportDiagnostics 编辑后跑诊断：按注册的 DiagnosticProvider（未注册返回空=默认关闭）。
+// After editing reportDiagnostics, run diagnostics: According to the registered DiagnosticProvider (unregistered returns empty = closed by default).
 func (t *editTool) reportDiagnostics(path string) string {
 	p := common.LookupDiagnosticProvider(path)
 	if p == nil {
@@ -592,9 +592,9 @@ func (t *editTool) editSearch(path string, params OperationParams, sessionId str
 		return common.ErrSearchEmpty().Error(), nil
 	}
 
-	// 无意义替换防呆：search==replace 时不执行，避免空转浪费一轮。
-	// 仅 literal 模式判 no-op：regex 模式下 search 是 pattern、replace 是模板，二者字符串相等
-	// 不代表无改动（如 search="(foo)" replace="(foo)" 会把 foo 改成 (foo)）。
+	// Meaningless replacement for foolproofing: does not execute search==replace to avoid wasting a round of idle gameplay.
+	// Only literal mode is used to determine no-op: In regex mode, search is pattern, replace is template, and both strings are equal
+	// This does not mean there are no changes (for example, search="(foo)" replace="(foo)" will change foo to (foo)).
 	if !params.UseRegex && params.Search == params.Replace {
 		return "Error: NO_CHANGE - search and replace are identical, nothing to change. 若无需修改请直接结束，不要做无意义替换。", nil
 	}
@@ -625,7 +625,7 @@ func (t *editTool) editSearch(path string, params OperationParams, sessionId str
 			replaceCount = len(matches)
 			contentStr = re.ReplaceAllString(contentStr, params.Replace)
 		} else {
-			// 唯一性校验：非全局替换要求搜索串唯一定位，多处匹配则拒绝，避免改错位置
+			// Uniqueness verification: Non-global replacement requires searching for unique positions in the string; multiple matches are rejected to avoid correcting incorrect positions
 			if len(matches) == 0 {
 				// no match, replaceCount stays 0
 			} else if len(matches) > 1 {
@@ -642,7 +642,7 @@ func (t *editTool) editSearch(path string, params OperationParams, sessionId str
 			replaceCount = strings.Count(contentStr, params.Search)
 			contentStr = strings.ReplaceAll(contentStr, params.Search, params.Replace)
 		} else {
-			// 唯一性校验：非全局替换要求搜索串唯一定位，多处匹配则拒绝
+			// Uniqueness verification: Non-global replacement requires searching for a unique position in the thread; multiple matches are rejected
 			count := strings.Count(contentStr, params.Search)
 			if count == 0 {
 				// no match, replaceCount stays 0
@@ -698,7 +698,7 @@ func (t *editTool) editInsert(path string, params OperationParams, sessionId str
 	insertPos := ""
 
 	if params.InsertAfter != "" {
-		// 唯一性校验：insert_after 在文件中多处匹配时报错，避免插到错误位置；提示用更长的锚点。
+		// Uniqueness verification: insert_after Errors occur when multiple matches occur in the file, avoiding insertion in the wrong position; Tips with longer anchors.
 		if count := strings.Count(contentStr, params.InsertAfter); count > 1 {
 			return fmt.Sprintf("Error: INSERT_ANCHOR_NOT_UNIQUE - insert_after found %d matches. Provide a longer insert_after anchor to uniquely locate. First matches at:\n%s",
 				count, locateMatches(contentStr, params.InsertAfter, 3)), nil

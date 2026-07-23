@@ -26,9 +26,9 @@ import (
 	"strings"
 
 	"github.com/rulego/rulego"
+	"github.com/rulego/rulego-components-ai/embedding"
 	"github.com/rulego/rulego/api/types"
 	"github.com/rulego/rulego/components/base"
-	"github.com/rulego/rulego-components-ai/embedding"
 	"github.com/rulego/rulego/utils/el"
 	"github.com/rulego/rulego/utils/maps"
 	"github.com/rulego/rulego/utils/str"
@@ -66,26 +66,26 @@ type LocalIntent struct {
 	Examples    []string `json:"examples" label:"Examples" desc:"Example sentences for embedding matching, 3-10 recommended" required:"true"`
 }
 
-// intentsFileConfig 外部意图配置文件格式
+// intentsFileConfig is an external intent configuration file format
 type intentsFileConfig struct {
 	Intents []LocalIntent `yaml:"intents" json:"intents"`
 }
 
-// LocalIntentNode 基于 Embedding 的本地意图识别节点
+// LocalIntentNode identifies nodes based on embedding
 type LocalIntentNode struct {
 	Config            LocalIntentConfiguration
 	embeddingClient   *embedding.EmbeddingClient
 	userInputTemplate el.Template
 	hasVar            bool
-	intentVectors     []embedding.VectorEntry // 预计算的意图向量
+	intentVectors     []embedding.VectorEntry // Precomputed intent vectors
 }
 
-// Type 组件类型
+// Type returns the component type
 func (x *LocalIntentNode) Type() string {
 	return "ai/localIntent"
 }
 
-// New 创建新的组件实例
+// New: Create a new component instance
 func (x *LocalIntentNode) New() types.Node {
 	return &LocalIntentNode{
 		Config: LocalIntentConfiguration{
@@ -122,13 +122,13 @@ func (x *LocalIntentNode) New() types.Node {
 	}
 }
 
-// Init 初始化
+// Init initializes the component
 func (x *LocalIntentNode) Init(ruleConfig types.Config, configuration types.Configuration) error {
 	if err := maps.Map2Struct(configuration, &x.Config); err != nil {
 		return err
 	}
 
-	// 验证必填项
+	// Verification required fields
 	x.Config.Url = strings.TrimSpace(x.Config.Url)
 	if x.Config.Url == "" {
 		return fmt.Errorf("url is required")
@@ -139,7 +139,7 @@ func (x *LocalIntentNode) Init(ruleConfig types.Config, configuration types.Conf
 		return fmt.Errorf("model is required")
 	}
 
-	// 加载意图配置
+	// Load intent configuration
 	intents, err := x.loadIntents()
 	if err != nil {
 		return err
@@ -148,7 +148,7 @@ func (x *LocalIntentNode) Init(ruleConfig types.Config, configuration types.Conf
 		return fmt.Errorf("at least one intent must be defined (via intents or intentsFile)")
 	}
 
-	// 初始化用户输入模板（在 API 调用之前验证，快速失败）
+	// Initialize user input templates (validate before API calls, fail quickly)
 	x.Config.Input = strings.TrimSpace(x.Config.Input)
 	if x.Config.Input != "" {
 		tmpl, err := el.NewTemplate(x.Config.Input)
@@ -161,14 +161,14 @@ func (x *LocalIntentNode) Init(ruleConfig types.Config, configuration types.Conf
 		}
 	}
 
-	// 初始化 Embedding 客户端
+	// Initialize the Embedding client
 	x.embeddingClient = embedding.NewEmbeddingClient(
 		x.Config.Url,
 		x.Config.Key,
 		x.Config.Model,
 	)
 
-	// 预计算意图向量
+	// Precompute intent vectors
 	if err := x.precomputeVectors(intents); err != nil {
 		return fmt.Errorf("failed to precompute intent vectors: %v", err)
 	}
@@ -176,14 +176,14 @@ func (x *LocalIntentNode) Init(ruleConfig types.Config, configuration types.Conf
 	return nil
 }
 
-// OnMsg 处理消息
+// OnMsg processes a message
 func (x *LocalIntentNode) OnMsg(ctx types.RuleContext, msg types.RuleMsg) {
 	var evn map[string]interface{}
 	if x.hasVar {
 		evn = base.NodeUtils.GetEvnAndMetadata(ctx, msg)
 	}
 
-	// 获取用户输入文本
+	// Retrieves user input text
 	var userInput string
 	if x.userInputTemplate != nil {
 		if v, err := x.userInputTemplate.Execute(evn); err != nil {
@@ -202,7 +202,7 @@ func (x *LocalIntentNode) OnMsg(ctx types.RuleContext, msg types.RuleMsg) {
 		return
 	}
 
-	// 计算用户输入的 embedding
+	// Calculate the embedding input from the user
 	vectors, err := x.embeddingClient.Embed(ctx.GetContext(), []string{userInput})
 	if err != nil {
 		ctx.TellFailure(msg, fmt.Errorf("failed to compute embedding: %v", err))
@@ -213,7 +213,7 @@ func (x *LocalIntentNode) OnMsg(ctx types.RuleContext, msg types.RuleMsg) {
 		return
 	}
 
-	// 在意图级别匹配：每个意图取最高分
+	// Match at the intent level: each intent receives the highest score
 	intentScores := x.intentTopScores(vectors[0])
 	if len(intentScores) == 0 {
 		ctx.TellFailure(msg, fmt.Errorf("no intent vectors available"))
@@ -227,30 +227,30 @@ func (x *LocalIntentNode) OnMsg(ctx types.RuleContext, msg types.RuleMsg) {
 		intentGap = intentScores[0].Score - intentScores[1].Score
 	}
 
-	// 绝对分数低于阈值 或 与第二名意图差距不足 → 视为不确定
+	// Absolute scores below thresholds or insufficient intention to differ from second-place → are considered uncertain
 	relationType := matchedIntent
 	if bestScore < x.Config.Threshold || (x.Config.MinGap > 0 && intentGap < x.Config.MinGap) {
 		matchedIntent = x.Config.DefaultIntent
 		relationType = types.DefaultRelationType
 	}
 
-	// 将结果写入 metadata 并路由
+	// Write the results into metadata and route them
 	msg.GetMetadata().PutValue(IntentMetadataKey, matchedIntent)
 	ctx.TellNext(msg, relationType)
 }
 
-// Destroy 销毁资源
+// Destroy resources
 func (x *LocalIntentNode) Destroy() {
-	// 无需清理
+	// No cleaning required
 }
 
-// intentScore 意图级别分数
+// intentScore is an intention-level score
 type intentScore struct {
 	Name  string
 	Score float64
 }
 
-// intentTopScores 计算每个意图的最高相似度分数，按分数降序返回
+// intentTopScores calculates the highest similarity score for each intent, returning in descending order of score
 func (x *LocalIntentNode) intentTopScores(target []float64) []intentScore {
 	best := make(map[string]float64)
 	for _, entry := range x.intentVectors {
@@ -274,14 +274,14 @@ func (x *LocalIntentNode) Desc() string {
 	return "Classify user intent via embedding cosine similarity and route to matching connection. Fast low-cost alternative to LLM-based intent recognition. Pre-computes intent vectors at init, matches at runtime. Routes to matched intent name or default"
 }
 
-// loadIntents 加载意图配置，支持内联和文件两种方式
+// loadIntents loading intent configuration, supports both inline and file methods
 func (x *LocalIntentNode) loadIntents() ([]LocalIntent, error) {
-	// 优先使用内联配置
+	// Prioritize inline configuration
 	if len(x.Config.Intents) > 0 {
 		return x.Config.Intents, nil
 	}
 
-	// 从文件加载
+	// Load from file
 	x.Config.IntentsFile = strings.TrimSpace(x.Config.IntentsFile)
 	if x.Config.IntentsFile == "" {
 		return nil, nil
@@ -311,19 +311,19 @@ func (x *LocalIntentNode) loadIntents() ([]LocalIntent, error) {
 	return config.Intents, nil
 }
 
-// precomputeVectors 预计算所有意图示例的 embedding 向量
+// precomputeVectors: Precomputes the embedding vector for all intent examples
 func (x *LocalIntentNode) precomputeVectors(intents []LocalIntent) error {
-	// 收集所有文本：每个 intent 的 description + examples
+	// Collect all text: description + examples for each intent
 	var texts []string
-	var textToIntent []string // 与 texts 一一对应的 intent name
+	var textToIntent []string // The intent name corresponding one-to-one to texts
 
 	for _, intent := range intents {
-		// description 也参与 embedding 计算
+		// Description also participates in embedding calculations
 		if desc := strings.TrimSpace(intent.Description); desc != "" {
 			texts = append(texts, desc)
 			textToIntent = append(textToIntent, intent.Name)
 		}
-		// 所有 example 句子
+		// All example sentences
 		for _, example := range intent.Examples {
 			if ex := strings.TrimSpace(example); ex != "" {
 				texts = append(texts, ex)
@@ -336,7 +336,7 @@ func (x *LocalIntentNode) precomputeVectors(intents []LocalIntent) error {
 		return fmt.Errorf("no text to embed: all intents have empty descriptions and examples")
 	}
 
-	// 分批调用 Embedding API，避免超出 API 批量限制
+	// Call the Embedding API in batches to avoid exceeding the API batch limit
 	const batchSize = 10
 	var allVectors [][]float64
 	for i := 0; i < len(texts); i += batchSize {
@@ -355,7 +355,7 @@ func (x *LocalIntentNode) precomputeVectors(intents []LocalIntent) error {
 		return fmt.Errorf("embedding count mismatch: got %d, expected %d", len(allVectors), len(texts))
 	}
 
-	// 构建向量库
+	// Build a vector library
 	x.intentVectors = make([]embedding.VectorEntry, 0, len(allVectors))
 	for i, vec := range allVectors {
 		x.intentVectors = append(x.intentVectors, embedding.VectorEntry{
@@ -367,13 +367,13 @@ func (x *LocalIntentNode) precomputeVectors(intents []LocalIntent) error {
 	return nil
 }
 
-// parseJSONIntents 解析 JSON 格式的意图配置文件
+// parseJSONIntents parses intent configuration files in JSON format
 func parseJSONIntents(data []byte, config *intentsFileConfig) error {
-	// 尝试解析为 {"intents": [...]}
+	// Try parsing it as {"intents": [...]}
 	if err := json.Unmarshal(data, config); err == nil && len(config.Intents) > 0 {
 		return nil
 	}
-	// 尝试解析为 [...]
+	// Attempting to parse it as [...]
 	var intents []LocalIntent
 	if err := json.Unmarshal(data, &intents); err == nil && len(intents) > 0 {
 		config.Intents = intents

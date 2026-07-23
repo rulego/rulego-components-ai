@@ -24,10 +24,10 @@ import (
 )
 
 // =============================================================================
-// 通道信息上下文 (Channel Context)
+// Channel Information Context
 // =============================================================================
 
-// ChannelType 通道类型
+// ChannelType channel type
 type ChannelType string
 
 const (
@@ -43,49 +43,49 @@ const (
 	ChannelTypeUnknown  ChannelType = "unknown"
 )
 
-// ChannelContext 通道上下文信息
-// 用于记录当前会话的通道信息，支持长时间任务或定时任务主动回复用户
+// ChannelContext channel context
+// Used to record channel information for the current session, supporting proactive responses to users for long-term or scheduled tasks
 type ChannelContext struct {
-	// 基础通道信息
-	Type      ChannelType `json:"type"`       // 通道类型: feishu, dingtalk, wecom, etc.
-	Platform  string      `json:"platform"`   // 平台名称（与 Type 相同，用于兼容）
-	Timestamp int64       `json:"timestamp"`  // 创建时间戳
+	// Basic channel information
+	Type      ChannelType `json:"type"`      // Channel types: feishu, dingtalk, wecom, etc.
+	Platform  string      `json:"platform"`  // Platform name (same as Type, used for compatibility)
+	Timestamp int64       `json:"timestamp"` // Create timestamps
 
-	// 会话标识
-	ChatID    string `json:"chatId,omitempty"`    // 会话/聊天 ID
-	ChatType  string `json:"chatType,omitempty"`  // 会话类型: p2p, group
-	ThreadID  string `json:"threadId,omitempty"`  // 线程/话题 ID
-	MessageID string `json:"messageId,omitempty"` // 消息 ID（用于回复）
+	// Session icon
+	ChatID    string `json:"chatId,omitempty"`    // Session/chat ID
+	ChatType  string `json:"chatType,omitempty"`  // Session type: P2P, group
+	ThreadID  string `json:"threadId,omitempty"`  // Thread/topic ID
+	MessageID string `json:"messageId,omitempty"` // Message ID (for reply)
 
-	// 用户信息
-	UserID    string `json:"userId,omitempty"`    // 用户 ID
-	OpenID    string `json:"openId,omitempty"`    // 用户 OpenID
-	UnionID   string `json:"unionId,omitempty"`   // 用户 UnionID
-	UserName  string `json:"userName,omitempty"`  // 用户昵称
-	UserEmail string `json:"userEmail,omitempty"` // 用户邮箱
+	// User information
+	UserID    string `json:"userId,omitempty"`    // User ID
+	OpenID    string `json:"openId,omitempty"`    // User OpenID
+	UnionID   string `json:"unionId,omitempty"`   // User UnionID
+	UserName  string `json:"userName,omitempty"`  // User nickname
+	UserEmail string `json:"userEmail,omitempty"` // User email
 
-	// 机器人信息
-	BotID string `json:"botId,omitempty"` // 机器人 ID
+	// Robot information
+	BotID string `json:"botId,omitempty"` // Robot ID
 
-	// 租户信息（多租户场景）
-	TenantKey string `json:"tenantKey,omitempty"` // 租户 Key（飞书）
-	CorpID    string `json:"corpId,omitempty"`    // 企业 ID（企业微信）
+	// Tenant Information (Multi-tenant Scenario)
+	TenantKey string `json:"tenantKey,omitempty"` // Tenant: Key (Feishu)
+	CorpID    string `json:"corpId,omitempty"`    // Company ID (WeChat Work)
 
-	// 回复相关
-	RootID   string `json:"rootId,omitempty"`   // 根消息 ID（话题/线程）
-	ParentID string `json:"parentId,omitempty"` // 父消息 ID
+	// Reply relevantly
+	RootID   string `json:"rootId,omitempty"`   // Root message ID (topic/thread)
+	ParentID string `json:"parentId,omitempty"` // Parent message ID
 
-	// 扩展信息（平台特定数据）
+	// Extended Information (Platform-Specific Data)
 	Extensions map[string]string `json:"extensions,omitempty"`
 }
 
-// ToJSON 将通道上下文转换为 JSON 字符串
+// ToJSON converts the channel context into a JSON string
 func (c *ChannelContext) ToJSON() string {
 	data, _ := json.Marshal(c)
 	return string(data)
 }
 
-// ToMetadata 将通道上下文转换为元数据 map
+// ToMetadata converts channel context into metadata maps
 func (c *ChannelContext) ToMetadata() map[string]string {
 	metadata := make(map[string]string)
 
@@ -129,7 +129,7 @@ func (c *ChannelContext) ToMetadata() map[string]string {
 		metadata["im.parentId"] = c.ParentID
 	}
 
-	// 合并扩展信息
+	// Merge and expand information
 	for k, v := range c.Extensions {
 		metadata[k] = v
 	}
@@ -137,62 +137,62 @@ func (c *ChannelContext) ToMetadata() map[string]string {
 	return metadata
 }
 
-// IsGroup 是否群聊
+// Is IsGroup a group chat?
 func (c *ChannelContext) IsGroup() bool {
 	return c.ChatType == "group"
 }
 
-// IsP2P 是否私聊
+// IsP2P: Is there a private message?
 func (c *ChannelContext) IsP2P() bool {
 	return c.ChatType == "p2p"
 }
 
-// IsFeishu 是否飞书通道
+// IsFeishu is a flying book channel
 func (c *ChannelContext) IsFeishu() bool {
 	return c.Type == ChannelTypeFeishu
 }
 
-// IsDingTalk 是否钉钉通道
+// IsDingTalk is a DingTalk channel
 func (c *ChannelContext) IsDingTalk() bool {
 	return c.Type == ChannelTypeDingTalk
 }
 
-// IsWeCom 是否企业微信通道
+// IsWeCom is a WeCom enterprise channel
 func (c *ChannelContext) IsWeCom() bool {
 	return c.Type == ChannelTypeWeCom
 }
 
-// CanReply 是否可以回复
+// Can CanReply be replyed?
 func (c *ChannelContext) CanReply() bool {
 	return c.ChatID != ""
 }
 
-// CanSend 是否可以发送消息
+// Can CanSend send messages?
 func (c *ChannelContext) CanSend() bool {
 	return c.ChatID != ""
 }
 
 // =============================================================================
-// 通道上下文 Context 工具
+// Channel Context Tool
 // =============================================================================
 
 type channelContextKey struct{}
 
-// ChannelContextKey 用于在 Context 中存储 ChannelContext 的 key
+// ChannelContextKey is used to store the key of the ChannelContext within the Context
 var ChannelContextKey = channelContextKey{}
 
-// GetChannelContext 从 Context 获取通道上下文
+// GetChannelContext retrieves the channel context from the Context
 func GetChannelContext(ctx context.Context) (*ChannelContext, bool) {
 	chCtx, ok := ctx.Value(ChannelContextKey).(*ChannelContext)
 	return chCtx, ok
 }
 
-// WithChannelContext 添加通道上下文到 Context
+// WithChannelContext adds channel context to the Context
 func WithChannelContext(ctx context.Context, chCtx *ChannelContext) context.Context {
 	return context.WithValue(ctx, ChannelContextKey, chCtx)
 }
 
-// MustGetChannelContext 获取通道上下文，如果不存在返回空对象
+// MustGetChannelContext obtains the channel context; if it does not exist, returns an empty object
 func MustGetChannelContext(ctx context.Context) *ChannelContext {
 	if chCtx, ok := GetChannelContext(ctx); ok {
 		return chCtx
@@ -201,47 +201,47 @@ func MustGetChannelContext(ctx context.Context) *ChannelContext {
 }
 
 // =============================================================================
-// 通道上下文管理器（用于存储和检索历史通道信息）
+// Channel Context Manager (for storing and retrieving historical channel information)
 // =============================================================================
 
-// ChannelContextManager 通道上下文管理器接口
-// 用于存储会话的通道信息，支持长时间任务或定时任务主动回复用户
+// ChannelContextManager interface
+// Used to store session channel information, supports proactive replies to users for long-term or scheduled tasks
 type ChannelContextManager interface {
-	// Save 保存通道上下文
+	// Save saves the channel context
 	Save(ctx context.Context, sessionKey string, chCtx *ChannelContext) error
 
-	// Get 获取通道上下文
+	// Get channel context
 	Get(ctx context.Context, sessionKey string) (*ChannelContext, error)
 
-	// Delete 删除通道上下文
+	// Delete to remove the channel context
 	Delete(ctx context.Context, sessionKey string) error
 }
 
-// MemoryChannelContextManager 内存通道上下文管理器
+// MemoryChannelContextManager
 type MemoryChannelContextManager struct {
-	mu      sync.RWMutex
+	mu       sync.RWMutex
 	contexts map[string]*ChannelContext
 }
 
-// NewMemoryChannelContextManager 创建内存通道上下文管理器
+// NewMemoryChannelContextManager creates a memory channel context manager
 func NewMemoryChannelContextManager() *MemoryChannelContextManager {
 	return &MemoryChannelContextManager{
 		contexts: make(map[string]*ChannelContext),
 	}
 }
 
-// Save 保存通道上下文
+// Save saves the channel context
 func (m *MemoryChannelContextManager) Save(ctx context.Context, sessionKey string, chCtx *ChannelContext) error {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 
-	// 更新时间戳
+	// Update timestamp
 	chCtx.Timestamp = time.Now().UnixMilli()
 	m.contexts[sessionKey] = chCtx
 	return nil
 }
 
-// Get 获取通道上下文
+// Get channel context
 func (m *MemoryChannelContextManager) Get(ctx context.Context, sessionKey string) (*ChannelContext, error) {
 	m.mu.RLock()
 	defer m.mu.RUnlock()
@@ -252,7 +252,7 @@ func (m *MemoryChannelContextManager) Get(ctx context.Context, sessionKey string
 	return nil, nil
 }
 
-// Delete 删除通道上下文
+// Delete to remove the channel context
 func (m *MemoryChannelContextManager) Delete(ctx context.Context, sessionKey string) error {
 	m.mu.Lock()
 	defer m.mu.Unlock()
@@ -262,7 +262,7 @@ func (m *MemoryChannelContextManager) Delete(ctx context.Context, sessionKey str
 }
 
 // =============================================================================
-// 全局通道上下文管理器
+// Global channel context manager
 // =============================================================================
 
 var (
@@ -270,7 +270,7 @@ var (
 	globalChannelContextManagerMu sync.Mutex
 )
 
-// GetGlobalChannelContextManager 获取全局通道上下文管理器
+// GetGlobalChannelContextManager to obtain the global channel context manager
 func GetGlobalChannelContextManager() ChannelContextManager {
 	globalChannelContextManagerMu.Lock()
 	defer globalChannelContextManagerMu.Unlock()
@@ -280,7 +280,7 @@ func GetGlobalChannelContextManager() ChannelContextManager {
 	return globalChannelContextManager
 }
 
-// SetGlobalChannelContextManager 设置全局通道上下文管理器
+// SetGlobalChannelContextManager sets the global channel context manager
 func SetGlobalChannelContextManager(manager ChannelContextManager) {
 	globalChannelContextManagerMu.Lock()
 	defer globalChannelContextManagerMu.Unlock()
@@ -288,21 +288,21 @@ func SetGlobalChannelContextManager(manager ChannelContextManager) {
 }
 
 // =============================================================================
-// 通道上下文管理器 Context 工具
+// Channel Context Manager Context tool
 // =============================================================================
 
 type channelContextManagerKey struct{}
 
-// ChannelContextManagerKey 用于在 Context 中存储管理器的 key
+// ChannelContextManagerKey is used to store the manager's key in the context
 var ChannelContextManagerKey = channelContextManagerKey{}
 
-// GetChannelContextManager 从 Context 获取通道上下文管理器
+// GetChannelContextManager obtains the channel context manager from the Context
 func GetChannelContextManager(ctx context.Context) (ChannelContextManager, bool) {
 	manager, ok := ctx.Value(ChannelContextManagerKey).(ChannelContextManager)
 	if ok {
 		return manager, true
 	}
-	// 回退到全局管理器
+	// Revert to the global manager
 	global := GetGlobalChannelContextManager()
 	if global != nil {
 		return global, true
@@ -310,12 +310,12 @@ func GetChannelContextManager(ctx context.Context) (ChannelContextManager, bool)
 	return nil, false
 }
 
-// WithChannelContextManager 添加通道上下文管理器到 Context
+// WithChannelContextManager adds the channel context manager to the Context
 func WithChannelContextManager(ctx context.Context, manager ChannelContextManager) context.Context {
 	return context.WithValue(ctx, ChannelContextManagerKey, manager)
 }
 
-// SaveChannelContext 保存通道上下文（使用 Context 中的管理器）
+// SaveChannelContext saves channel context (using the manager in Context)
 func SaveChannelContext(ctx context.Context, sessionKey string, chCtx *ChannelContext) error {
 	if manager, ok := GetChannelContextManager(ctx); ok {
 		return manager.Save(ctx, sessionKey, chCtx)
@@ -323,7 +323,7 @@ func SaveChannelContext(ctx context.Context, sessionKey string, chCtx *ChannelCo
 	return nil
 }
 
-// LoadChannelContext 加载通道上下文（使用 Context 中的管理器）
+// LoadChannelContext Load the channel context (using the manager in Context)
 func LoadChannelContext(ctx context.Context, sessionKey string) (*ChannelContext, error) {
 	if manager, ok := GetChannelContextManager(ctx); ok {
 		return manager.Get(ctx, sessionKey)

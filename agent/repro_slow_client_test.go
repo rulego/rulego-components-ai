@@ -1,10 +1,10 @@
 package agent
 
-// 复现“前端慢消费 → Error in input stream”。
+// Reproduces "Front-end slow consumption → Error in input stream."
 //
-// rulego 的 Stream 关系同步转发，前端慢会经 TellNext 反压到 Recv，把 LLM 服务端连接拖到
-// 超时。本地 server 模拟 GLM/百炼/siliconflow 的行为：推送大 chunk，发现 Write 因 TCP 背压
-// 变慢就发 “Error in input stream”。
+// Stream-related synchronous forwarding in rulego, the frontend slowly, via TellNext, pushes it to Recv, dragging the LLM server connection to
+// Overtime. Local server simulates GLM/Bailian/siliconflow behavior: pushes a large chunk, discovers write is backloading due to TCP
+// If it slows down, it sends "Error in input stream".
 
 import (
 	"context"
@@ -22,14 +22,14 @@ import (
 	"github.com/rulego/rulego-components-ai/config"
 )
 
-// slowFrontendServer 模拟 LLM 服务端在"客户端慢消费（TCP 背压）"时发 error 的行为。
-// 推送大 chunk，每次 Write 后统计耗时；超过 slowThreshold（TCP 背压）则发 SSE error。
+// slowFrontendServer simulates the behavior of the LLM server when it issues an error during "client-side slow consumption (TCP backpressure)".
+// Push large chunks, and count the time spent after each write; If the slowThreshold (TCP backpressure) is exceeded, an SSE error is issued.
 type slowFrontendServer struct {
 	addr          string
 	totalChunks   int
 	chunkSize     int
-	slowThreshold time.Duration // Write 耗时超过此值 = client 慢（TCP 背压）
-	writeTimeout  time.Duration // 单次 Write 绝对超时（兜底）
+	slowThreshold time.Duration // Write time exceeding this value = client slow (TCP backpressure)
+	writeTimeout  time.Duration // Absolute timeout for single writes (as a backup)
 	calls         int
 	server        *http.Server
 }
@@ -85,7 +85,7 @@ func (s *slowFrontendServer) handle(w http.ResponseWriter, r *http.Request) {
 		})
 		writeSSE(string(chunkJSON))
 		if elapsed := time.Since(start); elapsed > s.slowThreshold {
-			// TCP 背压：client 没及时读，Write 阻塞超过阈值 → 模拟服务端超时发 error
+			// TCP backpressure: client does not read in time, write blocks exceed thresholds → simulates server timeout and error
 			writeErr()
 			return
 		}
@@ -93,8 +93,8 @@ func (s *slowFrontendServer) handle(w http.ResponseWriter, r *http.Request) {
 	writeSSE("[DONE]")
 }
 
-// drainWithSlowdown 消费流，每个 chunk 后 sleep（模拟 rulego Stream 同步 TellNext + 慢前端）。
-// slowPerChunk<=0 表示快消费（对照）。返回 (chunk数, 错误)。
+// drainWithSlowdown consumes streams, sleeping after each chunk (simulates a rulego stream synchronizing TellNext + slow frontend).
+// slowPerChunk<=0 indicates fast consumption (control). Returns (chunk count, invalid).
 func drainWithSlowdown(sr *schema.StreamReader[*schema.Message], slowPerChunk time.Duration) (int, error) {
 	defer sr.Close()
 	n := 0
@@ -102,7 +102,7 @@ func drainWithSlowdown(sr *schema.StreamReader[*schema.Message], slowPerChunk ti
 		msg, err := sr.Recv()
 		if err != nil {
 			if errors.Is(err, io.EOF) {
-				return n, nil // 正常结束
+				return n, nil // Ends normally
 			}
 			return n, err
 		}
@@ -115,8 +115,8 @@ func drainWithSlowdown(sr *schema.StreamReader[*schema.Message], slowPerChunk ti
 	}
 }
 
-// TestRepro_SlowFrontend_CausesInputStream 慢消费 → 服务端 TCP 背压 → 发 error。
-// client 每个 chunk sleep 400ms（模拟慢前端），期望触发 "Error in input stream"。
+// TestRepro_SlowFrontend_CausesInputStream Slow consumption → server-side TCP backpressure → send errors.
+// Each client chunk sleep 400ms (simulating a slow frontend), expecting to trigger "Error in input stream".
 func TestRepro_SlowFrontend_CausesInputStream(t *testing.T) {
 	srv := newSlowFrontendServer(t, 20, 512, 200*time.Millisecond, 10*time.Second)
 	defer srv.server.Close()
@@ -125,7 +125,7 @@ func TestRepro_SlowFrontend_CausesInputStream(t *testing.T) {
 		Url: "http://" + srv.addr + "/v1", Key: "k", Model: "m",
 		Params: config.ModelParams{Temperature: 0.7, TopP: 0.9},
 	}
-	m, err := CreateChatModel(*cfg, ModelOptions{}) // 裸模型，不包 retry，观察原始 error
+	m, err := CreateChatModel(*cfg, ModelOptions{}) // Bare models, no retry, observe the original error
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -136,12 +136,12 @@ func TestRepro_SlowFrontend_CausesInputStream(t *testing.T) {
 
 	n, gotErr := drainWithSlowdown(sr, 400*time.Millisecond)
 	if gotErr == nil || !strings.Contains(gotErr.Error(), "input stream") {
-		t.Fatalf("期望慢消费触发 'error, Error in input stream...'，收到 %d chunk，err=%v", n, gotErr)
+		t.Fatalf("Expect slow consumption to trigger 'error, Error in input stream...', receive %d chunk, err = %v", n, gotErr)
 	}
-	t.Logf("✅ 复现成功：前端慢消费（sleep 400ms/chunk，收到 %d chunk 后）→ 服务端 TCP 背压 → %v", n, gotErr)
+	t.Logf("✅ Successful reproduction: Front-end slow consumption (sleep 400ms/chunk, after receiving %d chunk) → server TCP backpressure → %v", n, gotErr)
 }
 
-// TestRepro_FastFrontend_NoError 对照：快消费（不 sleep）→ 无背压 → 正常完成，不触发 error。
+// TestRepro_FastFrontend_NoError Comparison: Fast consumption (no sleep) → no backpressure→ Completed normally, no error triggered.
 func TestRepro_FastFrontend_NoError(t *testing.T) {
 	srv := newSlowFrontendServer(t, 20, 512, 200*time.Millisecond, 10*time.Second)
 	defer srv.server.Close()
@@ -159,9 +159,9 @@ func TestRepro_FastFrontend_NoError(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	n, gotErr := drainWithSlowdown(sr, 0) // 快消费，不 sleep
+	n, gotErr := drainWithSlowdown(sr, 0) // Spend quickly, don't sleep
 	if gotErr != nil {
-		t.Fatalf("快消费不应触发 error，收到 %d chunk，err=%v", n, gotErr)
+		t.Fatalf("Fast spending should not trigger error, receive %d chunk, err = %v", n, gotErr)
 	}
-	t.Logf("✅ 对照通过：快消费（不 sleep）收到全部 %d chunk，正常完成无错误", n)
+	t.Logf("✅ Verification passed: Kuai Consumption (not sleep) received all %d chunk, completed normally without errors", n)
 }

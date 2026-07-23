@@ -26,34 +26,34 @@ import (
 )
 
 // ============================================
-// Tool Calls Collector - 工具调用收集器
+// Tool Calls Collector - Tool call collector
 // ============================================
 
 // toolCallsKey stores ToolCallsCollector in context
 var toolCallsKey = contextx.NewKey[*ToolCallsCollector]("toolCalls")
 
-// ToolCallsCollector 工具调用收集器
-// 线程安全，用于在 Agent 执行过程中收集工具调用结果
+// ToolCallsCollector The tool calls the collector
+// Thread safety, used to collect tool call results during Agent execution
 type ToolCallsCollector struct {
 	mu    sync.Mutex
 	calls []ToolCallResult
 }
 
-// NewToolCallsCollector 创建新的工具调用收集器
+// NewToolCallsCollector creates a new tool call collector
 func NewToolCallsCollector() *ToolCallsCollector {
 	return &ToolCallsCollector{
 		calls: make([]ToolCallResult, 0),
 	}
 }
 
-// Add 添加工具调用结果
+// Add adds the tool to call the result
 func (c *ToolCallsCollector) Add(call ToolCallResult) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	c.calls = append(c.calls, call)
 }
 
-// Get 获取所有工具调用结果
+// Get all tool call results
 func (c *ToolCallsCollector) Get() []ToolCallResult {
 	c.mu.Lock()
 	defer c.mu.Unlock()
@@ -62,19 +62,19 @@ func (c *ToolCallsCollector) Get() []ToolCallResult {
 	return result
 }
 
-// WithToolCallsCollector 将工具调用收集器存入 context
+// WithToolCallsCollector stores the tool call collector in context
 func WithToolCallsCollector(ctx context.Context, collector *ToolCallsCollector) context.Context {
 	return toolCallsKey.With(ctx, collector)
 }
 
-// GetToolCallsCollector 从 context 获取工具调用收集器
+// GetToolCallsCollector Retrieves the tool call collector from the context
 func GetToolCallsCollector(ctx context.Context) *ToolCallsCollector {
 	c, _ := toolCallsKey.Get(ctx)
 	return c
 }
 
-// AddToolCallResultToContext 添加工具调用结果到 context 中的收集器
-// 这是一个便捷函数，用于在工具执行后将结果添加到 context
+// AddToolCallResultToContext Adds the tool call result to the collector in the context
+// This is a convenient function used to add results to the context after the tool is executed
 func AddToolCallResultToContext(ctx context.Context, result *ToolCallResult) {
 	collector := GetToolCallsCollector(ctx)
 	if collector == nil {
@@ -83,8 +83,8 @@ func AddToolCallResultToContext(ctx context.Context, result *ToolCallResult) {
 	collector.Add(*result)
 }
 
-// GetToolCallResultsFromContext 从 context 获取所有工具调用结果
-// 这是一个便捷函数，用于在构建输出时读取工具调用结果
+// GetToolCallResultsFromContext Retrieves all tool call results from the context
+// This is a convenient function used to read the result of a tool call when building output
 func GetToolCallResultsFromContext(ctx context.Context) []ToolCallResult {
 	collector := GetToolCallsCollector(ctx)
 	if collector == nil {
@@ -94,198 +94,198 @@ func GetToolCallResultsFromContext(ctx context.Context) []ToolCallResult {
 }
 
 // ============================================
-// Aspect Interface - 切面接口定义
+// Aspect Interface - Aspect interface definition
 // ============================================
 
 // Aspect defines the base interface for implementing Aspect-Oriented Programming (AOP) for AI Agents.
-// Aspect 定义用于实现智能体面向切面编程（AOP）的基础接口。
+// Aspect defines the basic interface for implementing Face-Facing Programming (AOP) for agents.
 //
 // Aspect provides cross-cutting functionality that can intercept and enhance agent execution
 // without modifying the original business logic.
 //
-// 切面提供可以拦截和增强智能体执行的横切功能，而无需修改原始业务逻辑。
+// The facet provides cross-cutting capabilities that can intercept and enhance agent execution without modifying the original business logic.
 //
 // Agent Aspect Categories:
-// 智能体切面类别：
+// Intelligent Agent Section Categories:
 //
 //   - Agent Lifecycle Aspects: AgentStartAspect, AgentCompletedAspect
-//     智能体生命周期切面：AgentStartAspect、AgentCompletedAspect
+//     Agent lifecycle cross-section: AgentStartAspect, AgentCompletedAspect
 //   - Agent Execution Aspects: AgentBeforeAspect, AgentAfterAspect, AgentAroundAspect
-//     智能体执行切面：AgentBeforeAspect、AgentAfterAspect、AgentAroundAspect
+//     Agent execution face: AgentBeforeAspect, AgentAfterAspect, AgentAroundAspect
 //   - Message Processing Aspects: MessageBeforeAspect, MessageAfterAspect
-//     消息处理切面：MessageBeforeAspect、MessageAfterAspect
+//     Message processing face: MessageBeforeAspect, MessageAfterAspect
 //   - Stream Processing Aspects: StreamChunkAspect
-//     流式处理切面：StreamChunkAspect
+//     Streaming processing aspect: StreamChunkAspect
 //   - Tool Call Aspects: ToolCallBeforeAspect, ToolCallAfterAspect
-//     工具调用切面：ToolCallBeforeAspect、ToolCallAfterAspect
+//     Tool call aspects: ToolCallBeforeAspect, ToolCallAfterAspect
 //
 // Execution Order:
-// 执行顺序：
+// Execution sequence:
 //
 //  1. Agent Level:
-//     智能体级别：
+//     Agent Level:
 //     AgentStart -> AgentBefore -> AgentAround -> [Agent Execution] -> AgentAfter -> AgentCompleted
-//     智能体开始 -> 智能体执行前 -> 智能体环绕 -> [智能体执行] -> 智能体执行后 -> 智能体完成
+//     Agent starts -> before agent executes -> agent surrounds -> [Agent executes] -> After agent executes -> agent completes
 //
 //  2. Inside Agent Execution Loop:
-//     智能体执行循环内部：
+//     Inside the agent execution loop:
 //     MessageBefore -> [LLM Generate/Stream] -> StreamChunk -> ToolCallBefore -> [Tool Execution] -> ToolCallAfter
-//     消息处理前 -> [LLM 生成/流式] -> 流式块 -> 工具调用前 -> [工具执行] -> 工具调用后
+//     Before message processing -> [LLM generation/stream] -> Stream block -> Before tool call -> [Tool executes] -> After tool call
 type Aspect interface {
 	// Order returns the execution priority of the aspect.
 	// Lower values indicate higher priority and earlier execution in the aspect chain.
 	//
-	// Order 返回切面的执行优先级。
-	// 较小的值表示更高的优先级和在切面链中更早的执行。
+	// Order returns the execution priority of the facet.
+	// Smaller values indicate higher priority and earlier execution in the faceted chain.
 	//
 	// Returns:
-	// 返回：
+	// Returns:
 	//   - int: Priority value, lower numbers execute first
-	//     int：优先级值，较小的数字先执行
+	//     int: priority value; smaller numbers are executed first
 	Order() int
 
 	// New creates a new instance of the aspect for a specific agent instance.
 	// This ensures proper isolation between different agent instances.
 	//
-	// New 为特定的智能体实例创建切面的新实例。
-	// 这确保了不同智能体实例之间的适当隔离。
+	// New creates a new instance of a facet for a specific agent instance.
+	// This ensures proper isolation between different agent instances.
 	//
 	// Implementation Requirements:
-	// 实现要求：
+	// Implementation requirements:
 	//   - Create a completely independent instance
-	//     创建完全独立的实例
+	//     Create completely independent instances
 	//   - Copy necessary configuration
-	//     复制必要的配置
+	//     Copy the necessary configurations
 	//   - Ensure no shared mutable state between instances
-	//     确保实例之间没有共享的可变状态
+	//     Ensure that there is no mutable state shared between instances
 	//
 	// Returns:
-	// 返回：
+	// Returns:
 	//   - Aspect: New aspect instance for the agent
-	//     Aspect：智能体的新切面实例
+	//     Aspect: A new facet example of an agent
 	New() Aspect
 }
 
 // PointCut defines the interface for determining whether an aspect should be applied
 // based on runtime conditions.
 //
-// PointCut 定义用于基于运行时条件确定是否应用切面的接口。
+// PointCut defines an interface used to determine whether to apply a facet based on runtime conditions.
 type PointCut interface {
 	// PointCut determines whether this aspect should be applied to a specific execution point.
 	// This method enables selective aspect application based on runtime conditions.
 	//
-	// PointCut 确定此切面是否应应用于特定的执行点。
-	// 此方法基于运行时条件启用选择性切面应用。
+	// PointCut determines whether this section should be applied to a specific execution point.
+	// This method enables selective facet applications based on runtime conditions.
 	//
 	// Parameters:
-	// 参数：
+	// Parameters:
 	//   - ctx: Execution context
-	//     ctx：执行上下文
+	//     ctx: Execute context
 	//   - point: Agent execution point information
-	//     point：智能体执行点信息
+	//     point: Information about the agent's execution point
 	//
 	// Returns:
-	// 返回：
+	// Returns:
 	//   - bool: true to apply aspect, false to skip
-	//     bool：true 应用切面，false 跳过
+	//     bool:true applies the facet, false skips
 	PointCut(ctx context.Context, point *AgentPoint) bool
 }
 
 // AgentPoint represents the execution point information for aspect interception.
 // It contains metadata about the current agent execution context.
 //
-// AgentPoint 表示切面拦截的执行点信息。
-// 它包含关于当前智能体执行上下文的元数据。
+// AgentPoint represents the execution point information for the section interception.
+// It contains metadata about the current agent execution context.
 type AgentPoint struct {
-	AgentId     string            // Agent ID / 智能体 ID
-	AgentName   string            // Agent name / 智能体名称
-	AgentType   string            // Agent type (react, deep, etc.) / 智能体类型
-	ThreadId    string            // Session thread ID / 会话线程 ID
-	UserId      string            // User ID / 用户 ID
-	MessageType string            // Message type / 消息类型
-	ToolName    string            // Tool name (during tool calls) / 工具名称（工具调用时）
-	Metadata    map[string]string // Additional metadata / 额外元数据
+	AgentId     string            // Agent ID
+	AgentName   string            // Agent name
+	AgentType   string            // Agent type (react, deep, etc.)
+	ThreadId    string            // Session thread ID
+	UserId      string            // User ID
+	MessageType string            // Message type
+	ToolName    string            // Tool name (during tool calls)
+	Metadata    map[string]string // Additional metadata
 }
 
 // AgentInput represents the input to an agent execution.
 //
-// AgentInput 表示智能体执行的输入。
+// AgentInput represents the input executed by the agent.
 type AgentInput struct {
-	Messages         []*schema.Message // Current messages / 当前消息
-	SystemPrompt     string            // System prompt / 系统提示词
-	Context          map[string]any    // Execution context / 执行上下文
-	Metadata         map[string]string // Input metadata / 输入元数据
-	SessionKey       string            // Session key for conversation history / 会话键
-	HistoryMessages  []*schema.Message // Historical messages (populated by session aspect) / 历史消息（由会话切面填充）
-	OriginalMessages []*schema.Message // Original input messages (before history merge) / 原始输入消息（历史合并前）
+	Messages         []*schema.Message // Current messages
+	SystemPrompt     string            // System prompt
+	Context          map[string]any    // Execution context
+	Metadata         map[string]string // Input metadata
+	SessionKey       string            // Session key for conversation history
+	HistoryMessages  []*schema.Message // Historical messages (populated by session aspect)
+	OriginalMessages []*schema.Message // Original input messages (before history merge)
 }
 
 // AgentOutput represents the output from an agent execution.
 //
-// AgentOutput 表示智能体执行的输出。
+// AgentOutput represents the output executed by the agent.
 type AgentOutput struct {
-	Content          string            // Response content / 响应内容
-	Messages         []*schema.Message // Complete message history / 完整消息历史
-	OriginalMessages []*schema.Message // Original input messages for session saving / 原始输入消息（用于会话保存）
-	ToolCalls        []ToolCallResult  // Tool call records / 工具调用记录
-	TokenUsage       TokenUsage        // Token usage statistics / Token 使用统计
-	Duration         int64             // Execution duration in milliseconds / 执行耗时（毫秒）
-	Metadata         map[string]any    // Output metadata / 输出元数据
-	SessionKey       string            // Session key / 会话键
-	IsSuccess        bool              // Execution success status / 执行成功状态
-	Error            error             // Error if failed / 错误信息（失败时）
-	SkippedAI        bool              // Whether AI processing was skipped (e.g., by Around aspect interception) / 是否跳过了 AI 处理（如 Around 切面拦截）
+	Content          string            // Response content
+	Messages         []*schema.Message // Complete message history
+	OriginalMessages []*schema.Message // Original input messages for session saving
+	ToolCalls        []ToolCallResult  // Tool call records
+	TokenUsage       TokenUsage        // Token usage statistics / Token usage statistics
+	Duration         int64             // Execution duration in milliseconds
+	Metadata         map[string]any    // Output metadata
+	SessionKey       string            // Session key
+	IsSuccess        bool              // Execution success status
+	Error            error             // Error if failed
+	SkippedAI        bool              // Whether AI processing was skipped (e.g., by Around aspect interception)
 }
 
 // TokenUsage represents token usage statistics for an agent execution.
 //
-// TokenUsage 表示智能体执行的 token 使用统计。
+// TokenUsage represents the token usage statistics executed by the agent.
 type TokenUsage struct {
-	PromptTokens     int // Input tokens / 输入 tokens
-	CompletionTokens int // Output tokens / 输出 tokens
-	TotalTokens      int // Total tokens / 总 tokens
-	CachedTokens     int // Cached prompt tokens / 缓存的输入 tokens
+	PromptTokens     int // Input tokens
+	CompletionTokens int // Output tokens
+	TotalTokens      int // Total tokens
+	CachedTokens     int // Cached prompt tokens
 }
 
 // ToolCallInfo represents information about a tool call before execution.
 //
-// ToolCallInfo 表示工具调用执行前的信息。
+// ToolCallInfo represents information before the tool call is executed.
 type ToolCallInfo struct {
-	CallId    string    // Unique call ID / 唯一调用 ID
-	Name      string    // Tool name / 工具名称
-	Arguments string    // Tool arguments as JSON / 工具参数（JSON 格式）
-	ToolType  ToolType  // Tool type: builtin/rulechain/subagent/mcp / 工具类型
-	TargetId  string    // Target ID (rulechain ID or tool ID) / 目标 ID
-	StartTime time.Time // Call start time / 调用开始时间
+	CallId    string    // Unique call ID
+	Name      string    // Tool name
+	Arguments string    // Tool arguments as JSON
+	ToolType  ToolType  // Tool type: builtin/rulechain/subagent/mcp
+	TargetId  string    // Target ID (rulechain ID or tool ID)
+	StartTime time.Time // Call start time
 }
 
 // ToolCallResult represents the result of a tool call execution.
 //
-// ToolCallResult 表示工具调用执行的结果。
+// ToolCallResult represents the result executed by the tool call.
 type ToolCallResult struct {
-	CallId    string    // Unique call ID / 唯一调用 ID
-	Name      string    // Tool name / 工具名称
-	Arguments string    // Tool call arguments (JSON) / 工具调用参数（JSON格式）
-	Result    string    // Tool execution result / 工具执行结果
-	Error     error     // Error if failed / 错误（失败时）
-	Duration  int64     // Execution duration in milliseconds / 执行耗时（毫秒）
-	EndTime   time.Time // Call end time / 调用结束时间
+	CallId    string    // Unique call ID
+	Name      string    // Tool name
+	Arguments string    // Tool call arguments (JSON)
+	Result    string    // Tool execution result
+	Error     error     // Error if failed
+	Duration  int64     // Execution duration in milliseconds
+	EndTime   time.Time // Call end time
 }
 
 // StreamChunk represents a chunk of streaming output from an agent.
 //
-// StreamChunk 表示来自智能体的流式输出块。
+// StreamChunk represents a stream output block from an agent.
 type StreamChunk struct {
-	Content    string    // Chunk content / 块内容
-	IsToolCall bool      // Whether this is a tool call chunk / 是否是工具调用块
-	ToolName   string    // Tool name for tool call chunks / 工具名称（工具调用时）
-	ToolArgs   string    // Tool arguments for tool call chunks / 工具参数（工具调用时）
-	IsFinal    bool      // Whether this is the final chunk / 是否是最后一个块
-	IsError    bool      // Whether this is an error chunk / 是否是错误块
-	Timestamp  time.Time // Chunk timestamp / 块时间戳
+	Content    string    // Chunk content
+	IsToolCall bool      // Whether this is a tool call chunk
+	ToolName   string    // Tool name for tool call chunks
+	ToolArgs   string    // Tool arguments for tool call chunks
+	IsFinal    bool      // Whether this is the final chunk
+	IsError    bool      // Whether this is an error chunk
+	Timestamp  time.Time // Chunk timestamp
 }
 
 // AgentExecutor represents the agent execution function used by Around aspects.
 //
-// AgentExecutor 表示 Around 切面使用的智能体执行函数。
+// AgentExecutor represents the agent execution function used by the Around face.
 type AgentExecutor func(ctx context.Context, input *AgentInput) (*AgentOutput, error)

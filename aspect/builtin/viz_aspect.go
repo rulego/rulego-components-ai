@@ -26,39 +26,39 @@ import (
 	"github.com/rulego/rulego-components-ai/aspect"
 )
 
-// VizAspect 可视化切面
-// 发送 AG-UI 标准事件用于智能体执行可视化
+// VizAspect visualizes agent execution.
+// Send AG-UI standard events for agent execution visualization
 type VizAspect struct {
 	order int
 }
 
-// NewVizAspect 创建可视化切面
+// NewVizAspect creates a visual facet
 func NewVizAspect() *VizAspect {
 	return &VizAspect{
 		order: 100,
 	}
 }
 
-// Order 返回执行顺序
+// Order returns the execution order
 func (a *VizAspect) Order() int {
 	return a.order
 }
 
-// New 创建切面的新实例
+// New: Create a new instance of the face
 func (a *VizAspect) New() aspect.Aspect {
 	return &VizAspect{
 		order: a.order,
 	}
 }
 
-// PointCut 始终应用此切面
+// PointCut always applies this facet
 func (a *VizAspect) PointCut(ctx context.Context, point *aspect.AgentPoint) bool {
-	// 检查是否有 emitter
+	// Check for emitters
 	_, ok := aspect.GetEmitterWithFallback(ctx, point.AgentId)
 	return ok
 }
 
-// OnStart 发送 RUN_STARTED 事件
+// OnStart sends RUN_STARTED events
 func (a *VizAspect) OnStart(ctx context.Context, point *aspect.AgentPoint, input *aspect.AgentInput) (*aspect.AgentInput, error) {
 	emitter, ok := aspect.GetEmitterWithFallback(ctx, point.AgentId)
 	if !ok {
@@ -72,18 +72,18 @@ func (a *VizAspect) OnStart(ctx context.Context, point *aspect.AgentPoint, input
 
 	runId := fmt.Sprintf("agent_%s_%d", point.AgentId, time.Now().UnixNano())
 
-	// 发送开始事件
+	// Send the start event
 	emitter.EmitRunStarted(threadId, runId, "", map[string]interface{}{
 		"agentName": point.AgentName,
 		"agentType": point.AgentType,
 		"agentId":   point.AgentId,
 	})
 
-	// 发送输入消息事件
-	// 只发送最新的用户消息（最后一条非系统消息），避免重复发送历史消息
-	// 因为 OpenAI 等接口每次请求都会带完整的历史消息
+	// Send an input message event
+	// Only the latest user message (the last non-system message) is sent, avoiding repeated transmission of historical messages
+	// Because interfaces like OpenAI carry a complete historical message with every request
 	if input != nil && len(input.OriginalMessages) > 0 {
-		// 找到最后一条用户消息
+		// Find the last user message
 		var lastUserMsg *schema.Message
 		for i := len(input.OriginalMessages) - 1; i >= 0; i-- {
 			msg := input.OriginalMessages[i]
@@ -110,7 +110,7 @@ func (a *VizAspect) OnStart(ctx context.Context, point *aspect.AgentPoint, input
 	return input, nil
 }
 
-// OnCompleted 发送 RUN_FINISHED 事件
+// OnCompleted sends RUN_FINISHED events
 func (a *VizAspect) OnCompleted(ctx context.Context, point *aspect.AgentPoint, output *aspect.AgentOutput) {
 	emitter, ok := aspect.GetEmitterWithFallback(ctx, point.AgentId)
 	if !ok {
@@ -155,7 +155,7 @@ func (a *VizAspect) OnCompleted(ctx context.Context, point *aspect.AgentPoint, o
 	emitter.EmitRunFinished("", "", metadata)
 }
 
-// OnChunk 发送流式内容事件
+// OnChunk sends a streaming content event
 func (a *VizAspect) OnChunk(ctx context.Context, point *aspect.AgentPoint, chunk *aspect.StreamChunk) error {
 	emitter, ok := aspect.GetEmitterWithFallback(ctx, point.AgentId)
 	if !ok {
@@ -175,7 +175,7 @@ func (a *VizAspect) OnChunk(ctx context.Context, point *aspect.AgentPoint, chunk
 	return nil
 }
 
-// BeforeToolCall 发送工具调用开始事件
+// BeforeToolCall sends the tool call to start the event
 func (a *VizAspect) BeforeToolCall(ctx context.Context, point *aspect.AgentPoint, call *aspect.ToolCallInfo) (*aspect.ToolCallInfo, error) {
 	emitter, ok := aspect.GetEmitterWithFallback(ctx, point.AgentId)
 	if !ok {
@@ -187,7 +187,7 @@ func (a *VizAspect) BeforeToolCall(ctx context.Context, point *aspect.AgentPoint
 		toolType = aspect.ToolTypeUnknown
 	}
 
-	// 获取当前消息 ID 作为 parentMessageId
+	// Retrieves the current message ID as parentMessageId
 	parentMessageId := point.Metadata["_viz_msg_id"]
 
 	emitter.EmitToolCallStart(call.CallId, call.Name, toolType, call.TargetId, parentMessageId)
@@ -196,7 +196,7 @@ func (a *VizAspect) BeforeToolCall(ctx context.Context, point *aspect.AgentPoint
 	return call, nil
 }
 
-// AfterToolCall 发送工具调用完成事件
+// AfterToolCall sends a tool call completion event
 func (a *VizAspect) AfterToolCall(ctx context.Context, point *aspect.AgentPoint, call *aspect.ToolCallInfo, result *aspect.ToolCallResult) error {
 	emitter, ok := aspect.GetEmitterWithFallback(ctx, point.AgentId)
 	if !ok {

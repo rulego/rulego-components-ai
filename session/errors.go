@@ -3,15 +3,15 @@ package session
 import "errors"
 
 var (
-	// ErrSessionNotFound 会话不存在
+	// The ErrSessionNotFound session does not exist
 	ErrSessionNotFound = errors.New("session not found")
 
-	// ErrSessionAlreadyExists 会话已存在
+	// ErrSessionAlreadyExists session already exists
 	ErrSessionAlreadyExists = errors.New("session already exists")
 
-	// ErrInvalidSessionKey 无效的会话键
+	// ErrInvalidSessionKey Invalid session key
 	ErrInvalidSessionKey = errors.New("invalid session key")
 
-	// ErrStorageClosed 存储已关闭
+	// ErrStorageClosed Storage is closed
 	ErrStorageClosed = errors.New("storage closed")
 )

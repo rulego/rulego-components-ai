@@ -15,9 +15,9 @@ import (
 	"github.com/mark3labs/mcp-go/mcp"
 )
 
-// remoteMCPClient 管理到远程 MCP 服务器的客户端连接。
-// 同一个 server 的多个 RemoteMCPToolAdapter 共享同一个 remoteMCPClient，
-// 避免重复建连。
+// remoteMCPClient manages client connections to remote MCP servers.
+// Multiple RemoteMCPToolAdapters on the same server share the same remoteMCPClient,
+// Avoid redundant connection establishment.
 type remoteMCPClient struct {
 	server string
 	client *client.Client
@@ -77,8 +77,8 @@ func (r *remoteMCPClient) getClient(ctx context.Context) (*client.Client, error)
 	return c, nil
 }
 
-// RemoteMCPToolAdapter 将远程 MCP 服务器的单个工具适配为 eino tool.InvokableTool。
-// 多个 adapter 共享同一个 remoteMCPClient。
+// RemoteMCPToolAdapter adapts a single tool from the remote MCP server to an eino tool.InvokableTool.
+// Multiple adapters share the same remoteMCPClient.
 type RemoteMCPToolAdapter struct {
 	name        string
 	description string
@@ -86,7 +86,7 @@ type RemoteMCPToolAdapter struct {
 	rc          *remoteMCPClient
 }
 
-// Info 返回工具信息。
+// Info returns tool information.
 func (a *RemoteMCPToolAdapter) Info(ctx context.Context) (*schema.ToolInfo, error) {
 	var paramsOneOf *schema.ParamsOneOf
 	if len(a.inputSchema) > 0 {
@@ -108,7 +108,7 @@ func (a *RemoteMCPToolAdapter) Info(ctx context.Context) (*schema.ToolInfo, erro
 	}, nil
 }
 
-// InvokableRun 调用远程 MCP 工具。
+// InvokableRun calls the remote MCP tool.
 func (a *RemoteMCPToolAdapter) InvokableRun(ctx context.Context, arguments string, opts ...tool.Option) (string, error) {
 	var args map[string]interface{}
 	if arguments != "" {
@@ -160,8 +160,8 @@ func (a *RemoteMCPToolAdapter) InvokableRun(ctx context.Context, arguments strin
 	return strings.Join(contents, "\n"), nil
 }
 
-// CreateToolsFromRemote 连接远程 MCP 服务器，通过 tools/list 自动发现工具并创建适配器。
-// toolNames 为过滤器：nil 或空切片表示加载全部，["*"] 也表示全部。
+// CreateToolsFromRemote connects to a remote MCP server, automatically discovers tools through tools/list, and creates adapters.
+// toolNames means filter: nil or empty slice means loading all, and ["*"] also means all.
 func CreateToolsFromRemote(server string, toolNames []string) ([]tool.BaseTool, error) {
 	rc := newRemoteMCPClient(server)
 

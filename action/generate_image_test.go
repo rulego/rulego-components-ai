@@ -11,8 +11,8 @@ import (
 )
 
 func TestGenerateImageNodeOnMsg(t *testing.T) {
-	// 图片生成测试需要专门的 LLM_IMAGE_* 环境变量
-	// 因为不是所有 LLM API 都支持图片生成（如 Gitee AI, BigModel 等）
+	// Image generation testing requires dedicated LLM_IMAGE_* environment variables
+	// Because not all LLM APIs support image generation (such as Gitee AI, BigModel, etc.)
 	apiKey := os.Getenv("LLM_IMAGE_API_KEY")
 	baseURL := os.Getenv("LLM_IMAGE_BASE_URL")
 	model := os.Getenv("LLM_IMAGE_MODEL")

@@ -9,13 +9,13 @@ import (
 	"github.com/rulego/rulego/utils/el"
 )
 
-// ChatMessageTemplate 上下文消息/用户消息模板
+// ChatMessageTemplate Contextual message/user message template
 type ChatMessageTemplate struct {
 	Role            string
 	ContentTemplate el.Template
 }
 
-// ParseMultiTurnChatRequest 解析多轮对话请求
+// ParseMultiTurnChatRequest parses multi-turn conversation requests
 func ParseMultiTurnChatRequest(msgData string) (*config.MultiTurnChatRequest, []ChatMessageTemplate, error) {
 	var chatRequest config.MultiTurnChatRequest
 	if err := json.Unmarshal([]byte(msgData), &chatRequest); err != nil {

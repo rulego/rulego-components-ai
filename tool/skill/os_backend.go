@@ -11,21 +11,21 @@ import (
 	"github.com/cloudwego/eino/adk/filesystem"
 )
 
-// osBackend 基于 os 包实现 filesystem.Backend，供 skill middleware 从磁盘读取 SKILL.md。
+// osBackend Implement filesystem.Backend based on OS packages, allowing skill middleware to read SKILL.md from disk.
 //
-// 背景：eino v0.9+ 起 einoskill.NewLocalBackend 被替换为 NewBackendFromFilesystem，
-// 后者要求传入一个 filesystem.Backend；而 adk/filesystem 仅提供 InMemoryBackend，
-// 没有读真实磁盘的实现。skill middleware 只用到 GlobInfo（查找 */SKILL.md）与
-// Read（读取文件内容），因此这里仅正确实现这两个方法，其余返回 errOSBackendNotSupported。
+// Background: Starting from eino v0.9+, einoskill.NewLocalBackend was replaced by NewBackendFromFilesystem,
+// The latter requires passing a filesystem.Backend;  whereas adk/filesystem only provides InMemoryBackend,
+// No implementation of the real disk is read. skill middleware only uses GlobInfo (lookup */SKILL.md) and
+// Read (reads file content), so only these two methods are correctly implemented here; the rest return errOSBackendNotSupported.
 type osBackend struct{}
 
-// newOSBackend 创建基于本地文件系统的 backend。
+// newOSBackend creates a backend based on the local file system.
 func newOSBackend() *osBackend { return &osBackend{} }
 
-// errOSBackendNotSupported 表示该方法在 osBackend 中未实现（skill 不会调用）。
+// errOSBackendNotSupported means the method is not implemented in osBackend (skill will not be called).
 var errOSBackendNotSupported = errors.New("osBackend: operation not supported")
 
-// GlobInfo 按通配符匹配文件，返回匹配项信息。pattern 相对 base 解析（如 base=dir, pattern=*/SKILL.md）。
+// GlobInfo matches the file by wildcard and returns match information. pattern relative to base analysis (e.g., base=dir, pattern=*/SKILL.md).
 func (b *osBackend) GlobInfo(_ context.Context, req *filesystem.GlobInfoRequest) ([]filesystem.FileInfo, error) {
 	if req == nil {
 		return nil, errors.New("osBackend.GlobInfo: nil request")
@@ -47,9 +47,9 @@ func (b *osBackend) GlobInfo(_ context.Context, req *filesystem.GlobInfoRequest)
 		if statErr != nil {
 			continue
 		}
-		// 返回绝对路径。eino filesystem_backend 对非绝对路径会再拼一次 BaseDir，
-		// 若返回带 base 前缀的相对路径（如 data/skills/x/SKILL.md）会被拼成
-		// data/skills/data/skills/x/SKILL.md 导致读不到文件。
+		// Return to the absolute path. eino filesystem_backend BaseDir is used again for non-absolute paths,
+		// If you return a relative path with the base prefix (such as data/skills/x/SKILL.md), it will be concatenated
+		// data/skills/data/skills/x/SKILL.md causes the file to be unreadable.
 		abs, absErr := filepath.Abs(m)
 		if absErr != nil {
 			abs = m
@@ -64,7 +64,7 @@ func (b *osBackend) GlobInfo(_ context.Context, req *filesystem.GlobInfoRequest)
 	return result, nil
 }
 
-// Read 读取文件内容，支持 1-based 行号 Offset/Limit（Limit=0 表示读取全部）。
+// Read reads file content, supports 1-based line number Offset/Limit (Limit=0 means reading everything).
 func (b *osBackend) Read(_ context.Context, req *filesystem.ReadRequest) (*filesystem.FileContent, error) {
 	if req == nil {
 		return nil, errors.New("osBackend.Read: nil request")
@@ -74,7 +74,7 @@ func (b *osBackend) Read(_ context.Context, req *filesystem.ReadRequest) (*files
 		return nil, err
 	}
 	content := string(data)
-	// 仅在显式指定 Offset/Limit 时按行切片，避免对全量内容做无谓的 Split。
+	// Only slice line by line when explicitly specifying Offset/Limit to avoid unnecessary splits of all content.
 	if req.Offset > 1 || req.Limit > 0 {
 		lines := strings.Split(content, "\n")
 		start := req.Offset - 1
@@ -93,22 +93,22 @@ func (b *osBackend) Read(_ context.Context, req *filesystem.ReadRequest) (*files
 	return &filesystem.FileContent{Content: content}, nil
 }
 
-// LsInfo 未实现（skill 不使用）。
+// LsInfo not implemented (skill not used).
 func (b *osBackend) LsInfo(_ context.Context, _ *filesystem.LsInfoRequest) ([]filesystem.FileInfo, error) {
 	return nil, errOSBackendNotSupported
 }
 
-// GrepRaw 未实现（skill 不使用）。
+// GrepRaw is not implemented (skill is not used).
 func (b *osBackend) GrepRaw(_ context.Context, _ *filesystem.GrepRequest) ([]filesystem.GrepMatch, error) {
 	return nil, errOSBackendNotSupported
 }
 
-// Write 未实现（skill 只读）。
+// Write not implemented (skill read-only).
 func (b *osBackend) Write(_ context.Context, _ *filesystem.WriteRequest) error {
 	return errOSBackendNotSupported
 }
 
-// Edit 未实现（skill 只读）。
+// Edit not implemented (skill read-only).
 func (b *osBackend) Edit(_ context.Context, _ *filesystem.EditRequest) error {
 	return errOSBackendNotSupported
 }

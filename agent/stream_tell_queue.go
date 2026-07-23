@@ -9,48 +9,48 @@ import (
 	"github.com/rulego/rulego/api/types"
 )
 
-// DefaultStreamTellQueueCap 默认队列容量（消息数）。
-// 取 1024：流式场景前端只转发 SSE，消费速度通常 ≥ LLM 生成速度，队列常年接近空；
-// 堆到上限基本意味着前端失活（断网/关页）或 full 模式重放突发未被及时消费。
-// 1024 条 RuleMsg（含 data+metadata）内存可控（MB 级）：既能吸收正常瞬时慢消费和
-// full 模式的重放突发，又给"前端失活"一个明确判定点。
+// DefaultStreamTellQueueCap Default queue capacity (number of messages).
+// Take 1024: The streaming scene frontend only forwards SSE, with consumption speeds usually ≥ LLM generation speed, and queues often nearly empty;
+// Stacking up to the ceiling basically means frontend inactivity (network disconnection/page closure) or full mode replay bursts that are not consumed in time.
+// 1024 RuleMsg (including data+metadata) Memory Controllable (MB level): Can absorb normal instantaneous slow consumption and
+// The sudden replay of full mode provides a clear judgment point for "frontend inactivation."
 const DefaultStreamTellQueueCap = 1024
 
-// DefaultStreamTellBlockTimeout full 模式下缓冲满后阻塞反压的时长上限。
-// 满则阻塞等前端消费（重放数据已在内存，不丢）；持续 blockTimeout 仍消费不动才认定前端真断开、abort 止损。
+// The maximum duration of block backflow after buffering is full in DefaultStreamTellBlockTimeout full mode.
+// If full, it blocks and other front-end consumption (data is already in memory and is not lost); Only if blockTimeout continues to consume and no action is considered a true frontend disconnect and abort stop-loss.
 const DefaultStreamTellBlockTimeout = 30 * time.Second
 
-// StreamTellQueue 把流式的 TellNext 串行化：chunk 内容和工具事件都进同一个 FIFO channel，
-// 由单个 goroutine 按入队顺序发给下游。
+// StreamTellQueue serializes the streaming TellNext: chunk content and tool events are all stored in the same FIFO channel,
+// Distributed downstream by a single goroutine in the order of joining.
 //
-// 流式响应有两条 TellNext(Stream) 路径——onChunk（chunk 内容）和 SSEHandler.sendEvent（工具事件）。
-// 都走队列，生产端才不会被前端慢消费拖住；统一到一个队列，是为了避免两条路径并发抢顺序。
+// Stream responses have two TellNext (Stream) paths—onChunk (chunk content) and SSEHandler.sendEvent (tool event).
+// Everyone queues up, so the production side won't be held back by slow front-end consumption; Unified into one queue is to prevent two paths from rushing to order concurrently.
 //
-// 缓冲满时的策略按流式模式区分（blockTimeout 控制）：
-//   - off 模式（blockTimeout<=0）：立即 abort 上游流止损。off 是平滑实时流，正常消费堆不到上限，
-//     满了即认定前端失活；且不能反压上游 Recv，否则会重新引入 "Error in input stream"。
-//   - full 模式（blockTimeout>0）：阻塞反压 blockTimeout，超时才 abort。full 重放是突发流量（整条流
-//     缓冲后瞬间涌出），即使前端正常也可能短暂堆满；此时应等消费而非误判失活——重放数据已在内存，
-//     阻塞反压不丢数据、也不会反压到 LLM（缓冲阶段已结束）。只有持续不消费（真断开）才超时止损。
+// Buffer full policies are distinguished by stream mode (blockTimeout control):
+//   - off mode (blockTimeout<=0): Immediate stop-loss for upstream abort flow. Off means smooth real-time streaming, normal consumption doesn't reach the limit,
+//     If full, the front end is deemed inactive; Also, you cannot reverse the upstream Recv, otherwise the "Error in input stream" will be re-introduced.
+//   - Full mode (blockTimeout>0): blocks backward blockTimeout, only aborts after timeout. Full replay is burst traffic (entire stream).
+//     After buffering, it will surge out instantly), even if the front end is normal, it may briefly fill up; At this point, you should wait for consumption, not misjudge inactivation—the playback data is already in memory,
+//     Blocking backpressure does not lose data or backpressure to the LLM (buffering phase has ended). Only if you do not spend continuously (truly disconnect) will you stop loss over time.
 type StreamTellQueue struct {
 	ctx          types.RuleContext
 	ch           chan *types.RuleMsg
 	done         chan struct{}
 	once         sync.Once
-	abort        context.CancelFunc // 缓冲满（前端失活）时取消上游流止损；可为 nil
-	abortOnce    sync.Once          // 保证 abort（含日志）只触发一次
-	aborted      atomic.Bool        // 是否因缓冲满触发过 abort（executeStream 据此发 Failure 区分截断）
-	blockTimeout time.Duration      // 满则阻塞反压时长；<=0 立即 abort（off），>0 阻塞超时才 abort（full）
+	abort        context.CancelFunc // When the buffer is full (front end inactive), the upstream flow stop loss is canceled; Can be nil
+	abortOnce    sync.Once          // Ensure ABORT (including logs) is triggered only once
+	aborted      atomic.Bool        // Has abort ever been triggered due to full buffer? (executeStream issues a failure to distinguish truncation)
+	blockTimeout time.Duration      // When full, the block is blocked and the backcompression duration is prolonged; <=0 abort(off) immediately; >0 blocks timeout before abort(full)
 	logger       types.Logger
 }
 
-// NewStreamTellQueue 创建 off 模式队列：满则立即 abort，不反压上游 LLM。cap<=0 取默认值。
+// NewStreamTellQueue creates an off-mode queue: if full, immediately abort without overloading upstream LLMs. cap<=0 takes the default value.
 func NewStreamTellQueue(ctx types.RuleContext, cap int, abort context.CancelFunc, logger ...types.Logger) *StreamTellQueue {
 	return newStreamTellQueue(ctx, cap, abort, 0, logger...)
 }
 
-// NewStreamTellQueueWithBlock 创建 full 模式队列：满则阻塞反压 blockTimeout，超时才 abort。
-// 用于 full 模式重放的突发流量——阻塞等前端消费、不丢数据，持续 blockTimeout 不消费才认定失活止损。
+// NewStreamTellQueueWithBlock creates a full mode queue: when full, block and back-push blockTimeout, only abort after timeout.
+// For burst traffic in full mode replay—blocking and other front-end consumption, no data loss, and continuous blockTimeout without consumption—only then is the inactivation stop loss recognized.
 func NewStreamTellQueueWithBlock(ctx types.RuleContext, cap int, abort context.CancelFunc, blockTimeout time.Duration, logger ...types.Logger) *StreamTellQueue {
 	return newStreamTellQueue(ctx, cap, abort, blockTimeout, logger...)
 }
@@ -82,9 +82,9 @@ func (q *StreamTellQueue) consume() {
 	}
 }
 
-// Enqueue 入队一条消息。缓冲满时的处理由 blockTimeout 决定（见类型注释）。
+// Enqueue: A message to join the team. When the buffer is full, the handling is determined by blockTimeout (see type notes).
 func (q *StreamTellQueue) Enqueue(msg types.RuleMsg) {
-	// off 模式（blockTimeout<=0）：满则立即 abort 止损，不反压上游 Recv（避免 "Error in input stream"）。
+	// off mode (blockTimeout<=0): When full, immediately abort stops loss, without reselling upstream Recv (avoid "Error in input stream").
 	if q.blockTimeout <= 0 {
 		select {
 		case q.ch <- &msg:
@@ -93,7 +93,7 @@ func (q *StreamTellQueue) Enqueue(msg types.RuleMsg) {
 		}
 		return
 	}
-	// full 模式：满则阻塞反压（等前端消费，重放数据在内存不丢），持续 blockTimeout 不消费才 abort 止损。
+	// Full mode: When full, block the backlash (wait for frontend consumption, replay data is stored in memory without loss), and only after continuous blockTimeout without consumption is the abort stop loss.
 	timer := time.NewTimer(q.blockTimeout)
 	defer timer.Stop()
 	select {
@@ -103,7 +103,7 @@ func (q *StreamTellQueue) Enqueue(msg types.RuleMsg) {
 	}
 }
 
-// triggerAbort 触发一次 abort（取消上游流 + 标记 aborted）。幂等，只生效一次。
+// triggerAbort Triggers abort once (cancel upstream stream + mark aborted). Idempotent, only effective once.
 func (q *StreamTellQueue) triggerAbort() {
 	q.abortOnce.Do(func() {
 		q.aborted.Store(true)
@@ -116,26 +116,26 @@ func (q *StreamTellQueue) triggerAbort() {
 	})
 }
 
-// Aborted 是否因缓冲满（前端失活）触发过 abort。
-// executeStream 据此区分"流被中途截断"与"正常完成"——ExecuteStream 会吞掉 cancel 错误（返回 nil err），
-// 若不检查会把截断内容当成功发给前端。
+// Has Aborted ever triggered abort due to full buffer (front-end inactivation)?
+// executeStream distinguishes between "stream interrupted midway" and "normal completion"—ExecuteStream swallows cancel errors (returns nil err),
+// If not checked, the truncated content will be considered successful and sent to the frontend.
 func (q *StreamTellQueue) Aborted() bool {
 	return q.aborted.Load()
 }
 
-// closeOnce 幂等关闭入队口。panic 路径的 defer Close 与正常路径的 Wait 都会调用，故需幂等。
+// closeOnce idempotent: close the entry gate. Both the defer close of panic paths and the wait of normal paths are called, so idempotencies are required.
 func (q *StreamTellQueue) closeOnce() {
 	q.once.Do(func() { close(q.ch) })
 }
 
-// Wait 关闭入队并等已入队消息全部 TellNext 完成。幂等。流正常结束后调用。
+// Wait: Close the enqueuement and wait for all join-in notifications to be completed by TellNext. Power equal. Called after the stream ends normally.
 func (q *StreamTellQueue) Wait() {
 	q.closeOnce()
 	<-q.done
 }
 
-// Close 关闭入队口（防消费 goroutine 泄漏），不等已入队消息消费完。幂等。
-// 用于 defer 兜底 panic/异常路径；正常路径用 Wait。
+// Close Closing the entry gate (to prevent goroutine leaks), do not wait for the queue message to be consumed. Power equal.
+// Used to cover panic/abnormal paths in defers; Normal paths use Wait.
 func (q *StreamTellQueue) Close() {
 	q.closeOnce()
 }

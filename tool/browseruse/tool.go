@@ -1,32 +1,32 @@
 // Package browseruse provides a browser automation tool for AI agents.
 //
-// # 使用示例
+// # Usage examples
 //
-// 导航到网页:
+// Navigate to the webpage:
 //
 //	{"action": "go_to_url", "url": "https://example.com"}
 //
-// 点击元素:
+// Click on elements:
 //
 //	{"action": "click_element", "index": 0}
 //
-// 输入文本:
+// Input text:
 //
 //	{"action": "input_text", "index": 0, "text": "hello"}
 //
-// 滚动页面:
+// Scrolling page:
 //
 //	{"action": "scroll_down", "scroll_amount": 500}
 //
-// 提取内容:
+// Extracted content:
 //
-//	{"action": "extract_content", "goal": "获取页面主要内容"}
+//	{"action": "extract_content", "goal": "Get Main Content of Page"}
 //
-// 打开新标签页:
+// Open new tab:
 //
 //	{"action": "open_tab", "url": "https://example.com"}
 //
-// 等待:
+// Waiting:
 //
 //	{"action": "wait", "seconds": 3}
 package browseruse
@@ -64,7 +64,7 @@ type Config struct {
 	ExtraChromiumArgs []string `json:"extraChromiumArgs" label:"额外参数" desc:"额外的 Chromium 布尔命令行参数，如 disable-gpu, no-sandbox"`
 
 	// ChromiumFlags chromium command line flags with values
-	// 例如: {"lang": "zh-CN", "disable-blink-features": "AutomationControlled"}
+	// For example: {"lang": "zh-CN", "disable-blink-features": "AutomationControlled"}
 	ChromiumFlags map[string]any `json:"chromiumFlags" label:"Chromium参数" desc:"Chromium 命令行参数（支持带值），如 lang, disable-blink-features 等"`
 
 	// ChromeInstancePath path to Chrome/Chromium executable
@@ -74,17 +74,17 @@ type Config struct {
 	ProxyServer string `json:"proxyServer" label:"代理地址" desc:"HTTP 代理地址，如 http://127.0.0.1:7890"`
 
 	// UserDataDir Chrome user data directory for persistent sessions
-	// 支持相对路径和绝对路径，相对路径会基于当前工作目录解析
-	// 设置此目录可以保留登录状态、cookies、localStorage 等数据
+	// Supports relative paths and absolute paths; relative paths are parsed based on the current working directory
+	// Setting this directory allows you to retain login status, cookies, localStorage, and other data
 	UserDataDir string `json:"userDataDir" label:"用户数据目录" desc:"Chrome 用户数据目录，用于保留登录状态和浏览数据（支持相对路径）"`
 
-	// SearchEngine 默认搜索引擎，可选值: google, baidu, bing, duckduckgo
-	// 也可以直接填写 URL 模板，例如: "https://www.sogou.com/web?query=%s"
-	// 默认为 baidu
+	// SearchEngine is the default search engine, with optional values: google, baidu, bing, duckduckgo
+	// You can also directly fill in a URL template, for example: "https://www.sogou.com/web?query=%s"
+	// The default is baidu
 	SearchEngine string `json:"searchEngine" label:"搜索引擎" desc:"默认搜索引擎 (google, baidu, bing, duckduckgo) 或自定义 URL 模板"`
 
-	// Timeout 操作超时时间（秒），用于页面加载、元素等待等操作
-	// 默认为 30 秒
+	// Timeout operation timeout (seconds), used for page loading, element waiting, and other operations
+	// The default is 30 seconds
 	Timeout int `json:"timeout" label:"超时时间" desc:"操作超时时间（秒），用于页面加载、元素等待等操作，默认 30 秒"`
 
 	// DDGSearchTool DuckDuckGo search tool for web_search action
@@ -131,10 +131,10 @@ func NewToolWithContext(ctx context.Context, config Config) (tool.BaseTool, erro
 		logf = func(format string, args ...any) {}
 	}
 
-	// 解析 UserDataDir 为绝对路径
+	// Parse UserDataDir as an absolute path
 	userDataDir := config.UserDataDir
 	if userDataDir != "" {
-		// 如果是相对路径，转换为绝对路径
+		// If it is a relative path, convert it to an absolute path
 		if !filepath.IsAbs(userDataDir) {
 			absPath, err := filepath.Abs(userDataDir)
 			if err != nil {
@@ -142,11 +142,11 @@ func NewToolWithContext(ctx context.Context, config Config) (tool.BaseTool, erro
 			}
 			userDataDir = absPath
 		}
-		// 确保目录存在
+		// Ensure the directory exists
 		if err := os.MkdirAll(userDataDir, 0755); err != nil {
 			return nil, fmt.Errorf("创建用户数据目录失败: %w", err)
 		}
-		logf("[browseruse] UserDataDir 解析为: %s", userDataDir)
+		logf("[browseruse] UserDataDir resolved to: %s", userDataDir)
 	}
 
 	localConfig := &Config{
@@ -163,7 +163,7 @@ func NewToolWithContext(ctx context.Context, config Config) (tool.BaseTool, erro
 		Logf:               logf,
 	}
 
-	// 保存解析后的路径
+	// Save the parsed path
 	config.UserDataDir = userDataDir
 
 	t, err := NewBrowserUseTool(ctx, localConfig)
@@ -188,7 +188,7 @@ func (t *browserUseTool) InvokableRun(ctx context.Context, arguments string, opt
 	defer func() {
 		if r := recover(); r != nil {
 			err = fmt.Errorf("panic recovered in browser_use wrapper: %v", r)
-			// 尝试清理资源
+			// Try to clear out resources
 			t.Cleanup()
 		}
 	}()
@@ -206,7 +206,7 @@ func (t *browserUseTool) InvokableRun(ctx context.Context, arguments string, opt
 	return result, nil
 }
 
-// reinitializeIfNeeded 检查并重新初始化浏览器
+// reinitializeIfNeeded checks and reinitializes the browser
 func (t *browserUseTool) reinitializeIfNeeded() error {
 	_, err := t.tool.GetCurrentState()
 	if err == nil {
@@ -221,7 +221,7 @@ func (t *browserUseTool) reinitializeIfNeeded() error {
 		return nil
 	}
 
-	t.log("[browseruse] 重新初始化浏览器...")
+	t.log("[browseruse] Reinitializing the browser...")
 	t.tool.Cleanup()
 
 	newTool, err := NewBrowserUseTool(context.Background(), &Config{

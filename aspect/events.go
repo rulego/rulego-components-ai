@@ -24,75 +24,75 @@ import (
 )
 
 // =============================================================================
-// AG-UI 标准事件类型 (https://docs.ag-ui.com/concepts/events)
+// AG-UI Standard Event Types (https://docs.ag-ui.com/concepts/events)
 // =============================================================================
 
-// EventType AG-UI 标准事件类型
+// EventType AG-UI standard event type
 type EventType string
 
 const (
-	// 生命周期事件（必需）
+	// Lifecycle Events (Required)
 	EventRunStarted   EventType = "RUN_STARTED"
 	EventRunFinished  EventType = "RUN_FINISHED"
 	EventRunError     EventType = "RUN_ERROR"
 	EventStepStarted  EventType = "STEP_STARTED"
 	EventStepFinished EventType = "STEP_FINISHED"
 
-	// 文本消息事件（流式）
+	// Text message event (streaming)
 	EventTextMessageStart   EventType = "TEXT_MESSAGE_START"
 	EventTextMessageContent EventType = "TEXT_MESSAGE_CONTENT"
 	EventTextMessageEnd     EventType = "TEXT_MESSAGE_END"
 
-	// 工具调用事件
+	// Tool calls events
 	EventToolCallStart  EventType = "TOOL_CALL_START"
 	EventToolCallArgs   EventType = "TOOL_CALL_ARGS"
 	EventToolCallEnd    EventType = "TOOL_CALL_END"
 	EventToolCallResult EventType = "TOOL_CALL_RESULT"
 
-	// 思考过程事件（可选）
+	// Thought Process Events (optional)
 	EventThinkingStart              EventType = "THINKING_START"
 	EventThinkingEnd                EventType = "THINKING_END"
 	EventThinkingTextMessageStart   EventType = "THINKING_TEXT_MESSAGE_START"
 	EventThinkingTextMessageContent EventType = "THINKING_TEXT_MESSAGE_CONTENT"
 	EventThinkingTextMessageEnd     EventType = "THINKING_TEXT_MESSAGE_END"
 
-	// 状态管理事件
+	// State management events
 	EventStateSnapshot    EventType = "STATE_SNAPSHOT"
 	EventStateDelta       EventType = "STATE_DELTA"
 	EventMessagesSnapshot EventType = "MESSAGES_SNAPSHOT"
 )
 
 // =============================================================================
-// 工具类型常量
+// Tool type: constant
 // =============================================================================
 
-// ToolType 工具/调用类型
+// ToolType Tool/Call Type
 type ToolType string
 
 const (
-	// ToolTypeBuiltin 内置工具
+	// ToolTypeBuiltin built-in tool
 	ToolTypeBuiltin ToolType = "builtin"
-	// ToolTypeRuleChain 规则链工具
+	// ToolTypeRuleChain Rule chain tool
 	ToolTypeRuleChain ToolType = "rulechain"
-	// ToolTypeSubAgent 子智能体
+	// ToolTypeSubAgent sub-agent
 	ToolTypeSubAgent ToolType = "subagent"
-	// ToolTypeMCP MCP 工具
+	// ToolTypeMCP MCP tool
 	ToolTypeMCP ToolType = "mcp"
-	// ToolTypeUnknown 未知类型
+	// ToolTypeUnknown Unknown type
 	ToolTypeUnknown ToolType = "unknown"
 )
 
 // =============================================================================
-// AG-UI 标准事件结构
+// AG-UI standard event structure
 // =============================================================================
 
-// Event 所有事件的公共接口
+// Event: The common interface for all events
 type Event interface {
 	GetType() EventType
 	GetTimestamp() int64
 }
 
-// BaseEvent 所有事件的公共属性
+// BaseEvent is a common property of all events
 type BaseEvent struct {
 	Type      EventType `json:"type"`
 	Timestamp int64     `json:"timestamp"`
@@ -102,7 +102,7 @@ func (e *BaseEvent) GetType() EventType   { return e.Type }
 func (e *BaseEvent) GetTimestamp() int64  { return e.Timestamp }
 func (e *BaseEvent) SetTimestamp(t int64) { e.Timestamp = t }
 
-// RunStartedEvent RUN_STARTED 事件 - 表示 Agent 运行开始
+// RunStartedEvent RUN_STARTED Event - Indicates the start of the Agent run
 type RunStartedEvent struct {
 	BaseEvent
 	ThreadId    string                 `json:"threadId"`
@@ -111,7 +111,7 @@ type RunStartedEvent struct {
 	Input       map[string]interface{} `json:"input,omitempty"`
 }
 
-// RunFinishedEvent RUN_FINISHED 事件 - 表示 Agent 运行成功完成
+// RunFinishedEvent RUN_FINISHED Event - Indicates the agent has successfully completed its run
 type RunFinishedEvent struct {
 	BaseEvent
 	ThreadId string      `json:"threadId"`
@@ -119,69 +119,69 @@ type RunFinishedEvent struct {
 	Result   interface{} `json:"result,omitempty"`
 }
 
-// RunErrorEvent RUN_ERROR 事件 - 表示 Agent 运行出错
+// RunErrorEvent RUN_ERROR Event - indicates an error in the Agent run
 type RunErrorEvent struct {
 	BaseEvent
 	Message string `json:"message"`
 	Code    string `json:"code,omitempty"`
 }
 
-// StepStartedEvent STEP_STARTED 事件 - 表示步骤开始
+// StepStartedEvent STEP_STARTED Event - Indicates the start of the step
 type StepStartedEvent struct {
 	BaseEvent
 	StepName string `json:"stepName"`
 }
 
-// StepFinishedEvent STEP_FINISHED 事件 - 表示步骤完成
+// StepFinishedEvent STEP_FINISHED Event - Indicates the step is complete
 type StepFinishedEvent struct {
 	BaseEvent
 	StepName string `json:"stepName"`
 }
 
-// TextMessageStartEvent TEXT_MESSAGE_START 事件 - 表示文本消息开始
+// TextMessageStartEvent TEXT_MESSAGE_START Event - Indicates the start of a text message
 type TextMessageStartEvent struct {
 	BaseEvent
 	MessageId string `json:"messageId"`
 	Role      string `json:"role"` // "assistant" | "user" | "system" | "developer" | "tool"
 }
 
-// TextMessageContentEvent TEXT_MESSAGE_CONTENT 事件 - 表示文本消息增量内容
+// TextMessageContentEvent TEXT_MESSAGE_CONTENT Event - Represents incremental content of a text message
 type TextMessageContentEvent struct {
 	BaseEvent
 	MessageId string `json:"messageId"`
 	Delta     string `json:"delta"`
 }
 
-// TextMessageEndEvent TEXT_MESSAGE_END 事件 - 表示文本消息结束
+// TextMessageEndEvent TEXT_MESSAGE_END Event - Indicates the end of a text message
 type TextMessageEndEvent struct {
 	BaseEvent
 	MessageId string `json:"messageId"`
 }
 
-// ToolCallStartEvent TOOL_CALL_START 事件 - 表示工具调用开始
+// ToolCallStartEvent TOOL_CALL_START Event - Indicates the start of the tool call
 type ToolCallStartEvent struct {
 	BaseEvent
 	ToolCallId      string   `json:"toolCallId"`
 	ToolCallName    string   `json:"toolCallName"`
-	ToolType        ToolType `json:"toolType,omitempty"` // 工具类型：builtin/rulechain/subagent/mcp
-	TargetId        string   `json:"targetId,omitempty"` // 目标 ID（规则链 ID 或工具 ID）
+	ToolType        ToolType `json:"toolType,omitempty"` // Tool type: builtin/rulechain/subagent/mcp
+	TargetId        string   `json:"targetId,omitempty"` // Target ID (Rule Chain ID or Tool ID)
 	ParentMessageId string   `json:"parentMessageId,omitempty"`
 }
 
-// ToolCallArgsEvent TOOL_CALL_ARGS 事件 - 表示工具调用参数增量
+// ToolCallArgsEvent TOOL_CALL_ARGS Event - Indicates the incremental parameter of the tool call
 type ToolCallArgsEvent struct {
 	BaseEvent
 	ToolCallId string `json:"toolCallId"`
 	Delta      string `json:"delta"`
 }
 
-// ToolCallEndEvent TOOL_CALL_END 事件 - 表示工具调用参数传输完成
+// ToolCallEndEvent TOOL_CALL_END Event - Indicates that the tool call parameters have been transferred
 type ToolCallEndEvent struct {
 	BaseEvent
 	ToolCallId string `json:"toolCallId"`
 }
 
-// ToolCallResultEvent TOOL_CALL_RESULT 事件 - 表示工具调用结果
+// ToolCallResultEvent TOOL_CALL_RESULT Event - Indicates the result of the tool call
 type ToolCallResultEvent struct {
 	BaseEvent
 	ToolCallId string `json:"toolCallId"`
@@ -190,66 +190,66 @@ type ToolCallResultEvent struct {
 	Role       string `json:"role,omitempty"`
 }
 
-// ThinkingStartEvent THINKING_START 事件 - 表示思考过程开始
+// ThinkingStartEvent THINKING_START Event - Indicates the start of the thinking process
 type ThinkingStartEvent struct {
 	BaseEvent
 }
 
-// ThinkingEndEvent THINKING_END 事件 - 表示思考过程结束
+// ThinkingEndEvent THINKING_END Event - Indicates the end of the thinking process
 type ThinkingEndEvent struct {
 	BaseEvent
 }
 
-// ThinkingTextMessageStartEvent THINKING_TEXT_MESSAGE_START 事件
+// ThinkingTextMessageStartEvent THINKING_TEXT_MESSAGE_START event
 type ThinkingTextMessageStartEvent struct {
 	BaseEvent
 	MessageId string `json:"messageId"`
 }
 
-// ThinkingTextMessageContentEvent THINKING_TEXT_MESSAGE_CONTENT 事件
+// ThinkingTextMessageContentEvent THINKING_TEXT_MESSAGE_CONTENT event
 type ThinkingTextMessageContentEvent struct {
 	BaseEvent
 	MessageId string `json:"messageId"`
 	Delta     string `json:"delta"`
 }
 
-// ThinkingTextMessageEndEvent THINKING_TEXT_MESSAGE_END 事件
+// ThinkingTextMessageEndEvent THINKING_TEXT_MESSAGE_END event
 type ThinkingTextMessageEndEvent struct {
 	BaseEvent
 	MessageId string `json:"messageId"`
 }
 
-// StateSnapshotEvent STATE_SNAPSHOT 事件 - 表示完整状态快照
+// StateSnapshotEvent STATE_SNAPSHOT Event - Represents a complete state snapshot
 type StateSnapshotEvent struct {
 	BaseEvent
 	Snapshot interface{} `json:"snapshot"`
 }
 
-// StateDeltaEvent STATE_DELTA 事件 - 表示状态增量更新 (JSON Patch RFC 6902)
+// StateDeltaEvent STATE_DELTA Event - Indicates state incremental updates (JSON Patch RFC 6902)
 type StateDeltaEvent struct {
 	BaseEvent
 	Delta []JsonPatchOperation `json:"delta"`
 }
 
-// MessagesSnapshotEvent MESSAGES_SNAPSHOT 事件 - 表示消息列表快照
+// MessagesSnapshotEvent MESSAGES_SNAPSHOT Event - Represents a message list snapshot
 type MessagesSnapshotEvent struct {
 	BaseEvent
 	Messages []MessageState `json:"messages"`
 }
 
 // =============================================================================
-// 辅助数据结构
+// Auxiliary data structures
 // =============================================================================
 
-// JsonPatchOperation JSON Patch 操作 (RFC 6902)
+// JsonPatchOperation JSON Patch Operation (RFC 6902)
 type JsonPatchOperation struct {
 	Op    string      `json:"op"`              // "add" | "remove" | "replace" | "move" | "copy" | "test"
-	Path  string      `json:"path"`            // JSON Pointer 路径
-	Value interface{} `json:"value,omitempty"` // 操作的值
-	From  string      `json:"from,omitempty"`  // move/copy 操作的源路径
+	Path  string      `json:"path"`            // JSON Pointer path
+	Value interface{} `json:"value,omitempty"` // The value of the operation
+	From  string      `json:"from,omitempty"`  // The source path of the move/copy operation
 }
 
-// MessageState 消息状态
+// MessageState message status
 type MessageState struct {
 	Id        string `json:"id"`
 	Role      string `json:"role"`
@@ -258,54 +258,54 @@ type MessageState struct {
 }
 
 // =============================================================================
-// EventEmitter 接口
+// EventEmitter interface
 // =============================================================================
 
-// EventEmitter AG-UI 标准事件发射器接口
+// EventEmitter AG-UI standard event transmitter interface
 type EventEmitter interface {
-	// 生命周期事件
+	// Lifecycle events
 	EmitRunStarted(threadId, runId string, parentRunId string, input map[string]interface{})
 	EmitRunFinished(threadId, runId string, result interface{})
 	EmitRunError(message string, code string)
 
-	// 步骤事件
+	// Step events
 	EmitStepStarted(stepName string)
 	EmitStepFinished(stepName string)
 
-	// 文本消息事件（流式）
+	// Text message event (streaming)
 	EmitTextMessageStart(messageId, role string)
 	EmitTextMessageContent(messageId, delta string)
 	EmitTextMessageEnd(messageId string)
 
-	// 工具调用事件
+	// Tool calls events
 	EmitToolCallStart(toolCallId, toolCallName string, toolType ToolType, targetId, parentMessageId string)
 	EmitToolCallArgs(toolCallId, delta string)
 	EmitToolCallEnd(toolCallId string)
 	EmitToolCallResult(toolCallId, content, messageId string)
 
-	// 思考过程事件
+	// Thinking about the process of events
 	EmitThinkingStart()
 	EmitThinkingContent(messageId, delta string)
 	EmitThinkingEnd()
 
-	// 状态管理事件
+	// State management events
 	EmitStateSnapshot(snapshot interface{})
 	EmitStateDelta(delta []JsonPatchOperation)
 }
 
 // =============================================================================
-// Context 工具函数 - 使用泛型 Key
+// Context Utility Function - Uses generic Keys
 // =============================================================================
 
 // emitterKey stores EventEmitter in context
 var emitterKey = contextx.NewKey[EventEmitter]("emitter")
 
-// GetEmitter 从 Context 获取事件发射器
+// GetEmitter retrieves the event emitter from Context
 func GetEmitter(ctx context.Context) (EventEmitter, bool) {
 	return emitterKey.Get(ctx)
 }
 
-// WithEmitter 添加事件发射器到 Context
+// WithEmitter adds an event emitter to the Context
 func WithEmitter(ctx context.Context, emitter EventEmitter) context.Context {
 	return emitterKey.With(ctx, emitter)
 }
@@ -313,22 +313,22 @@ func WithEmitter(ctx context.Context, emitter EventEmitter) context.Context {
 // messageIDKey stores message ID in context
 var messageIDKey = contextx.NewKey[string]("messageId")
 
-// GetMessageID 从 Context 获取当前消息 ID
+// GetMessageID retrieves the current message ID from the context
 func GetMessageID(ctx context.Context) string {
 	msgId, _ := messageIDKey.Get(ctx)
 	return msgId
 }
 
-// WithMessageID 添加当前消息 ID 到 Context
+// WithMessageID Adds the current message ID to the Context
 func WithMessageID(ctx context.Context, msgId string) context.Context {
 	return messageIDKey.With(ctx, msgId)
 }
 
 // =============================================================================
-// 辅助函数
+// Auxiliary function
 // =============================================================================
 
-// NewBaseEvent 创建基础事件
+// NewBaseEvent creates a base event
 func NewBaseEvent(eventType EventType) BaseEvent {
 	return BaseEvent{
 		Type:      eventType,
@@ -336,7 +336,7 @@ func NewBaseEvent(eventType EventType) BaseEvent {
 	}
 }
 
-// NewRunStartedEvent 创建 RUN_STARTED 事件
+// NewRunStartedEvent creates RUN_STARTED events
 func NewRunStartedEvent(threadId, runId, parentRunId string, input map[string]interface{}) *RunStartedEvent {
 	return &RunStartedEvent{
 		BaseEvent:   NewBaseEvent(EventRunStarted),
@@ -347,7 +347,7 @@ func NewRunStartedEvent(threadId, runId, parentRunId string, input map[string]in
 	}
 }
 
-// NewRunFinishedEvent 创建 RUN_FINISHED 事件
+// NewRunFinishedEvent creates RUN_FINISHED events
 func NewRunFinishedEvent(threadId, runId string, result interface{}) *RunFinishedEvent {
 	return &RunFinishedEvent{
 		BaseEvent: NewBaseEvent(EventRunFinished),
@@ -357,7 +357,7 @@ func NewRunFinishedEvent(threadId, runId string, result interface{}) *RunFinishe
 	}
 }
 
-// NewRunErrorEvent 创建 RUN_ERROR 事件
+// NewRunErrorEvent creates RUN_ERROR events
 func NewRunErrorEvent(message, code string) *RunErrorEvent {
 	return &RunErrorEvent{
 		BaseEvent: NewBaseEvent(EventRunError),
@@ -366,7 +366,7 @@ func NewRunErrorEvent(message, code string) *RunErrorEvent {
 	}
 }
 
-// NewStepStartedEvent 创建 STEP_STARTED 事件
+// NewStepStartedEvent creates STEP_STARTED events
 func NewStepStartedEvent(stepName string) *StepStartedEvent {
 	return &StepStartedEvent{
 		BaseEvent: NewBaseEvent(EventStepStarted),
@@ -374,7 +374,7 @@ func NewStepStartedEvent(stepName string) *StepStartedEvent {
 	}
 }
 
-// NewStepFinishedEvent 创建 STEP_FINISHED 事件
+// NewStepFinishedEvent creates STEP_FINISHED events
 func NewStepFinishedEvent(stepName string) *StepFinishedEvent {
 	return &StepFinishedEvent{
 		BaseEvent: NewBaseEvent(EventStepFinished),
@@ -382,7 +382,7 @@ func NewStepFinishedEvent(stepName string) *StepFinishedEvent {
 	}
 }
 
-// NewTextMessageStartEvent 创建 TEXT_MESSAGE_START 事件
+// NewTextMessageStartEvent creates TEXT_MESSAGE_START events
 func NewTextMessageStartEvent(messageId, role string) *TextMessageStartEvent {
 	return &TextMessageStartEvent{
 		BaseEvent: NewBaseEvent(EventTextMessageStart),
@@ -391,7 +391,7 @@ func NewTextMessageStartEvent(messageId, role string) *TextMessageStartEvent {
 	}
 }
 
-// NewTextMessageContentEvent 创建 TEXT_MESSAGE_CONTENT 事件
+// NewTextMessageContentEvent creates TEXT_MESSAGE_CONTENT events
 func NewTextMessageContentEvent(messageId, delta string) *TextMessageContentEvent {
 	return &TextMessageContentEvent{
 		BaseEvent: NewBaseEvent(EventTextMessageContent),
@@ -400,7 +400,7 @@ func NewTextMessageContentEvent(messageId, delta string) *TextMessageContentEven
 	}
 }
 
-// NewTextMessageEndEvent 创建 TEXT_MESSAGE_END 事件
+// NewTextMessageEndEvent creates TEXT_MESSAGE_END events
 func NewTextMessageEndEvent(messageId string) *TextMessageEndEvent {
 	return &TextMessageEndEvent{
 		BaseEvent: NewBaseEvent(EventTextMessageEnd),
@@ -408,7 +408,7 @@ func NewTextMessageEndEvent(messageId string) *TextMessageEndEvent {
 	}
 }
 
-// NewToolCallStartEvent 创建 TOOL_CALL_START 事件
+// NewToolCallStartEvent creates TOOL_CALL_START events
 func NewToolCallStartEvent(toolCallId, toolCallName string, toolType ToolType, targetId, parentMessageId string) *ToolCallStartEvent {
 	return &ToolCallStartEvent{
 		BaseEvent:       NewBaseEvent(EventToolCallStart),
@@ -420,7 +420,7 @@ func NewToolCallStartEvent(toolCallId, toolCallName string, toolType ToolType, t
 	}
 }
 
-// NewToolCallArgsEvent 创建 TOOL_CALL_ARGS 事件
+// NewToolCallArgsEvent creates TOOL_CALL_ARGS events
 func NewToolCallArgsEvent(toolCallId, delta string) *ToolCallArgsEvent {
 	return &ToolCallArgsEvent{
 		BaseEvent:  NewBaseEvent(EventToolCallArgs),
@@ -429,7 +429,7 @@ func NewToolCallArgsEvent(toolCallId, delta string) *ToolCallArgsEvent {
 	}
 }
 
-// NewToolCallEndEvent 创建 TOOL_CALL_END 事件
+// NewToolCallEndEvent creates TOOL_CALL_END events
 func NewToolCallEndEvent(toolCallId string) *ToolCallEndEvent {
 	return &ToolCallEndEvent{
 		BaseEvent:  NewBaseEvent(EventToolCallEnd),
@@ -437,7 +437,7 @@ func NewToolCallEndEvent(toolCallId string) *ToolCallEndEvent {
 	}
 }
 
-// NewToolCallResultEvent 创建 TOOL_CALL_RESULT 事件
+// NewToolCallResultEvent creates TOOL_CALL_RESULT events
 func NewToolCallResultEvent(toolCallId, content, messageId string) *ToolCallResultEvent {
 	return &ToolCallResultEvent{
 		BaseEvent:  NewBaseEvent(EventToolCallResult),
@@ -447,21 +447,21 @@ func NewToolCallResultEvent(toolCallId, content, messageId string) *ToolCallResu
 	}
 }
 
-// NewThinkingStartEvent 创建 THINKING_START 事件
+// NewThinkingStartEvent creates THINKING_START events
 func NewThinkingStartEvent() *ThinkingStartEvent {
 	return &ThinkingStartEvent{
 		BaseEvent: NewBaseEvent(EventThinkingStart),
 	}
 }
 
-// NewThinkingEndEvent 创建 THINKING_END 事件
+// NewThinkingEndEvent creates THINKING_END events
 func NewThinkingEndEvent() *ThinkingEndEvent {
 	return &ThinkingEndEvent{
 		BaseEvent: NewBaseEvent(EventThinkingEnd),
 	}
 }
 
-// NewStateSnapshotEvent 创建 STATE_SNAPSHOT 事件
+// NewStateSnapshotEvent creates STATE_SNAPSHOT events
 func NewStateSnapshotEvent(snapshot interface{}) *StateSnapshotEvent {
 	return &StateSnapshotEvent{
 		BaseEvent: NewBaseEvent(EventStateSnapshot),
@@ -469,7 +469,7 @@ func NewStateSnapshotEvent(snapshot interface{}) *StateSnapshotEvent {
 	}
 }
 
-// NewStateDeltaEvent 创建 STATE_DELTA 事件
+// NewStateDeltaEvent creates STATE_DELTA events
 func NewStateDeltaEvent(delta []JsonPatchOperation) *StateDeltaEvent {
 	return &StateDeltaEvent{
 		BaseEvent: NewBaseEvent(EventStateDelta),

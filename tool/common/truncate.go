@@ -12,47 +12,47 @@ import (
 	"unicode/utf8"
 )
 
-// 截断默认常量。
+// Truncate default constants.
 const (
 	TruncateDefaultMaxLines = 2000
 	TruncateDefaultMaxBytes = 50 * 1024 // 50KB
-	TruncateTailScanBytes   = 2048      // 尾部扫描错误关键字的字节数
-	TruncateHeadRatio = 0.7 // head+tail 时 head 占比
+	TruncateTailScanBytes   = 2048      // The tail scans bytes of the wrong keyword
+	TruncateHeadRatio       = 0.7       // Head + tail is the proportion of head
 )
 
-// truncateErrorPattern 尾部命中强错误信号则保留 tail，避免错误上下文被截断丢失。
+// truncateErrorPattern If the tail hits a strong error signal, the tail is kept to avoid the error context being cut off and lost.
 var truncateErrorPattern = regexp.MustCompile(
 	`(?i)(traceback|panic|fatal|core dumped|segfault|exit code [1-9])`,
 )
 
-// TruncateDirection 截断方向。
+// TruncateDirection: Truncate direction.
 type TruncateDirection int
 
 const (
-	// TruncHeadTail 错误感知（默认零值）：扫尾部错误关键字，命中则 head+tail(70/30)，否则纯 head。
+	// TruncHeadTail Error Detection (default zero): sweeps the tail incorrect keyword; if hit, use head+tail(70/30); otherwise, just head.
 	TruncHeadTail TruncateDirection = iota
-	// TruncHead 纯 head（保留开头）。
+	// TruncHead is a pure head (retaining the beginning).
 	TruncHead
-	// TruncTail 纯 tail（保留结尾）。
+	// TruncTail: pure tail (retains the end).
 	TruncTail
 )
 
-// TruncateOptions 截断选项。零值字段用默认常量。
+// TruncateOptions Truncate options. The zero field uses the default constant.
 type TruncateOptions struct {
 	MaxLines  *int
 	MaxBytes  *int
 	Direction TruncateDirection
 }
 
-// TruncateResult 截断结果。
+// TruncateResult Truncation result.
 type TruncateResult struct {
 	Content    string
 	Truncated  bool
-	OutputPath string // 若调用方把完整原文落盘，填路径供 agent 取回（Truncate 本身不落盘）
+	OutputPath string // If the caller places the full original text on the disk, the path is filled in for the agent to retrieve (Truncate itself does not record it).
 }
 
-// Truncate 对长文本做错误感知截断。
-// 未超限原样返回；超限按 Direction 处理：HeadTail(默认) 扫尾部错误关键字决定 head+tail 或纯 head。
+// Truncate performs misperception truncation on long texts.
+// Return as it is if not exceeding the limit; Over-limit handling by Direction: HeadTail (default) scans the incorrect keywords at the end to determine head+tail or pure head.
 func Truncate(text string, opts TruncateOptions) TruncateResult {
 	maxLines, maxBytes := resolveTruncateLimits(opts)
 
@@ -86,7 +86,7 @@ func resolveTruncateLimits(opts TruncateOptions) (int, int) {
 	return maxLines, maxBytes
 }
 
-// scanTailForError 扫描文本尾部 TruncateTailScanBytes 字节是否含错误关键字。
+// scanTailForError scans the end of the text TruncateTailScanBytes bytes to check if the bytes contain the error keywords.
 func scanTailForError(text string) bool {
 	region := text
 	if len(region) > TruncateTailScanBytes {
@@ -95,7 +95,7 @@ func scanTailForError(text string) bool {
 	return truncateErrorPattern.MatchString(region)
 }
 
-// truncHead 保留开头 maxLines 行（且字节不超 maxBytes），拼 omitted 提示。
+// truncHead keeps the starting maxLines line (and the byte does not exceed maxBytes), and the omitted prompt is used.
 func truncHead(lines []string, maxLines, maxBytes int) TruncateResult {
 	n := maxLines
 	if n > len(lines) {
@@ -107,7 +107,7 @@ func truncHead(lines []string, maxLines, maxBytes int) TruncateResult {
 	return TruncateResult{Content: head + footer, Truncated: true}
 }
 
-// truncTail 保留结尾 maxLines 行。
+// truncTail keeps the maxLines line at the end.
 func truncTail(lines []string, maxLines, maxBytes int) TruncateResult {
 	n := maxLines
 	if n > len(lines) {
@@ -118,7 +118,7 @@ func truncTail(lines []string, maxLines, maxBytes int) TruncateResult {
 	return TruncateResult{Content: header + tail, Truncated: true}
 }
 
-// truncHeadTail head(70%)+tail(30%)，中间 omitted 提示（错误感知：尾部错误上下文保留）。
+// truncHeadTail head (70%) + tail (30%), with omitted prompts in the middle (error perception: tail error context retained).
 func truncHeadTail(lines []string, maxLines, maxBytes int) TruncateResult {
 	headLines := int(float64(maxLines) * TruncateHeadRatio)
 	if headLines < 1 {
@@ -128,7 +128,7 @@ func truncHeadTail(lines []string, maxLines, maxBytes int) TruncateResult {
 	if tailLines < 1 {
 		tailLines = 1
 	}
-	// 行数不足以拆分时退化为对半切
+	// When the number of rows is insufficient to split, it degenerates into a half-section
 	if headLines+tailLines >= len(lines) {
 		headLines = len(lines) / 2
 		tailLines = len(lines) - headLines
@@ -141,7 +141,7 @@ func truncHeadTail(lines []string, maxLines, maxBytes int) TruncateResult {
 	return TruncateResult{Content: head + mid + tail, Truncated: true}
 }
 
-// capBytes 截断到 maxBytes（在 rune 边界切，避免截断多字节字符）。
+// capBytes is truncated to maxBytes (cut at the rune boundary to avoid truncating multibyte characters).
 func capBytes(s string, maxBytes int) string {
 	if len(s) <= maxBytes {
 		return s
@@ -153,8 +153,8 @@ func capBytes(s string, maxBytes int) string {
 	return s[:cut] + "... [byte-limited]"
 }
 
-// WriteToTruncationDir 把完整原文落盘到 dir，返回文件路径供 agent 取回。
-// 调用方（如 bash 工具）持有 data 目录上下文时使用；Truncate 本身不落盘。
+// WriteToTruncationDir files the full original text into the dir and returns the file path for the agent to retrieve.
+// Used when the caller (such as a bash tool) holds the context of the data directory; Truncate itself does not place bets.
 func WriteToTruncationDir(text, dir string) (string, error) {
 	if err := os.MkdirAll(dir, 0755); err != nil {
 		return "", fmt.Errorf("create truncation dir: %w", err)

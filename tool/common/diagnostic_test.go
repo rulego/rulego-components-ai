@@ -134,7 +134,7 @@ func TestCommandProvider_FilePlaceholder(t *testing.T) {
 	}
 }
 
-// 命令不在 PATH 时应静默跳过（不 error、不执行），与 go vet 不可用语义一致。
+// Commands should be silently skipped when not in PATH (no error, no execution), consistent with the semantics of go vet being unusable.
 func TestCommandProvider_CommandMissingSkips(t *testing.T) {
 	p := NewCommandDiagnosticProvider(CommandProviderConfig{
 		Ext: ".txt", Command: "definitely-not-a-real-tool-xyz-123",
@@ -175,7 +175,7 @@ func TestParseCommandDiagnostics_Empty(t *testing.T) {
 	}
 }
 
-// ---- 预置常量 ----
+// ---- Preset Constants ----
 
 func TestPresetConfigs_Fields(t *testing.T) {
 	cases := []struct {
@@ -199,7 +199,7 @@ func TestPresetConfigs_Fields(t *testing.T) {
 	}
 }
 
-// tsc 自带 ParseFunc；其余走默认 colon 正则。各自典型输出必须能解析。
+// tsc comes with ParseFunc; The rest use the default colon regex. Each typical output must be parsable.
 func TestPresetConfigs_OutputParseable(t *testing.T) {
 	type tc struct {
 		name    string
@@ -224,7 +224,7 @@ func TestPresetConfigs_OutputParseable(t *testing.T) {
 			t.Errorf("%s: line not parsed: %+v", c.name, diags[0])
 		}
 	}
-	// tsc warning 应降级为 SeverityWarning
+	// tsc warning should be downgraded to SeverityWarning
 	warnDiags := parseTscDiagnostics("a.ts:1:1 - warning TS6133: unused\n")
 	if len(warnDiags) != 1 || warnDiags[0].Severity != SeverityWarning {
 		t.Fatalf("tsc warning should downgrade: %+v", warnDiags)

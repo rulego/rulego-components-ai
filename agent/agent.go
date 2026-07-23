@@ -30,7 +30,7 @@ import (
 )
 
 // ============================================
-// 配置结构体
+// Configure the structure
 // ============================================
 
 // ChatAgentConfig extends NodeConfiguration with Agent specifics
@@ -45,7 +45,7 @@ func (ChatAgentConfig) Desc() string {
 	return "ReAct AI agent that iteratively reasons and calls tools to answer queries. Routes to Success/Failure"
 }
 
-// SubAgentConfig 子代理配置
+// SubAgentConfig Subagent configuration
 type SubAgentConfig struct {
 	Name        string              `json:"name" label:"Name" desc:"Sub-agent name used as tool name in the parent agent" required:"true"`
 	Description string              `json:"description" label:"Description" desc:"Sub-agent description exposed to the LLM for tool selection"`
@@ -55,34 +55,34 @@ type SubAgentConfig struct {
 }
 
 // ============================================
-// 核心接口
+// Core interface
 // ============================================
 
-// Agent 核心智能体接口
+// Agent core agent interface
 type Agent interface {
-	// Name 返回智能体名称
+	// Name returns the agent name
 	Name() string
-	// Description 返回智能体描述
+	// Description Returns a description of the agent
 	Description() string
-	// Tools 返回可用工具列表
+	// Tools returns a list of available tools
 	Tools() []*schema.ToolInfo
 }
 
-// AgentExecutor 智能体执行器接口
+// AgentExecutor agent executor interface
 type AgentExecutor interface {
 	Agent
-	// Generate 同步执行
+	// Generate executes synchronously
 	Generate(ctx context.Context, messages []*schema.Message) (*schema.Message, error)
-	// Stream 流式执行
+	// Stream execution
 	Stream(ctx context.Context, messages []*schema.Message) (*schema.StreamReader[*schema.Message], error)
 }
 
-// ToolWrapper 工具包装器接口
+// ToolWrapper interface
 type ToolWrapper interface {
 	Wrap(tool tool.InvokableTool, opts ToolWrapOptions) tool.InvokableTool
 }
 
-// ToolWrapOptions 工具包装选项
+// ToolWrapOptions tool-wrapping options
 type ToolWrapOptions struct {
 	Name                string
 	AgentId             string
@@ -91,29 +91,29 @@ type ToolWrapOptions struct {
 	TargetId            string
 	AspectManager       *aspect.AspectManager
 	MaxStep             int
-	MaxToolOutputLength int // 工具输出最大长度
+	MaxToolOutputLength int // Tool output maximum length
 	Logger              types.Logger
 	MetricsCollector    *token.MetricsCollector
 }
 
 // ============================================
-// 公开常量
+// Public constants
 // ============================================
 
 const (
-	// DefaultMaxStep 默认最大步数
+	// DefaultMaxStep The default maximum number of steps
 	DefaultMaxStep = 50
-	// MaxToolOutputLength 工具输出最大长度
+	// MaxToolOutputLength tool outputs the maximum length
 	MaxToolOutputLength = 50000
-	// DefaultToolTimeout 默认工具超时时间（秒）
+	// DefaultToolTimeout Default Tool Timeout (seconds)
 	DefaultToolTimeout = 120
 )
 
 // ============================================
-// 工具函数
+// Utility function
 // ============================================
 
-// generateShortID 生成一个短的随机 ID 字符串
+// generateShortID generates a short random ID string
 func generateShortID() string {
 	const charset = "abcdefghijklmnopqrstuvwxyz0123456789"
 	b := make([]byte, 6)
@@ -123,7 +123,7 @@ func generateShortID() string {
 	return string(b)
 }
 
-// maskAPIKey 隐藏 API Key 的中间部分，只显示前4位和后4位
+// maskAPIKey hides the middle part of the API Key, showing only the first 4 bits and the last 4 bits
 func maskAPIKey(key string) string {
 	if len(key) <= 8 {
 		return "****"
@@ -131,8 +131,8 @@ func maskAPIKey(key string) string {
 	return key[:4] + "****" + key[len(key)-4:]
 }
 
-// truncateResult 截断工具输出结果，防止超出上下文限制
-// maxLen 为最大 rune 数，按 rune 截断以避免破坏 UTF-8 字符
+// truncateResult Truncate the tool's output to prevent exceeding context limits
+// maxLen is the maximum rune count; truncate by rune to avoid corrupting UTF-8 characters
 func truncateResult(result string, maxLen int) string {
 	if maxLen <= 0 {
 		maxLen = MaxToolOutputLength

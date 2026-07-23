@@ -29,7 +29,7 @@ const (
 	// ToolName is the name of the bash tool.
 	ToolName = "bash"
 
-	// DefaultMaxOutputSize 默认最大输出大小 (64KB)
+	// DefaultMaxOutputSize Default maximum output size (64KB)
 	DefaultMaxOutputSize = 64 * 1024
 )
 
@@ -37,9 +37,9 @@ const (
 type SecurityMode string
 
 const (
-	// ModeAllow 允许模式：只允许列表中的命令（默认）
+	// ModeAllow Mode: Only allows commands in the list (default)
 	ModeAllow SecurityMode = "allow"
-	// ModeDeny 拒绝模式：允许所有非拒绝列表的命令
+	// ModeDeny Reject Mode: Allows all commands that are not rejected from the list
 	ModeDeny SecurityMode = "deny"
 )
 
@@ -96,7 +96,7 @@ func NewTool(config Config) (tool.BaseTool, error) {
 			platform.ShellType = ShellTypeCMD
 			platform.ShellArgs = []string{"/c"}
 		} else {
-			// 默认当作 sh 处理
+			// By default, it is treated as sh
 			platform.ShellType = ShellTypeSh
 			platform.ShellArgs = []string{"-c"}
 		}
@@ -154,7 +154,7 @@ func (t *bashTool) Info(ctx context.Context) (*schema.ToolInfo, error) {
 		Description: fmt.Sprintf("超时时间（秒，可选）。默认使用配置值 %d 秒。对于长时间运行的命令可设置更大的值。", t.config.Timeout),
 	})
 
-	// 根据平台和 shell 类型生成描述
+	// Generate descriptions based on platform and shell type
 	platformDesc := fmt.Sprintf("当前平台: %s, Shell类型: %s。", runtime.GOOS, t.platform.ShellType)
 	switch t.platform.ShellType {
 	case ShellTypeBash:
@@ -184,7 +184,7 @@ type OperationParams struct {
 	Command string   `json:"command"`
 	Args    []string `json:"args"`
 	WorkDir string   `json:"work_dir"`
-	Timeout int      `json:"timeout"` // 超时时间（秒），0 表示使用配置默认值
+	Timeout int      `json:"timeout"` // Timeout time (seconds), 0 means using the default configuration value
 }
 
 // InvokableRun executes the operation.
@@ -203,7 +203,7 @@ func (t *bashTool) executeShell(ctx context.Context, params OperationParams) (st
 		return common.NewError(common.ErrCodeInvalidParams, "command cannot be empty").Error(), nil
 	}
 
-	// 构建完整命令字符串
+	// Build a complete command string
 	var fullCommand string
 	if len(params.Args) > 0 {
 		fullCommand = params.Command + " " + strings.Join(params.Args, " ")
@@ -211,7 +211,7 @@ func (t *bashTool) executeShell(ctx context.Context, params OperationParams) (st
 		fullCommand = params.Command
 	}
 
-	// 提取命令链中的所有命令进行安全检查
+	// Extract all commands from the command chain for security checks
 	commands := extractAllCommands(fullCommand)
 
 	// Security check: deny commands (always apply)
@@ -247,7 +247,7 @@ func (t *bashTool) executeShell(ctx context.Context, params OperationParams) (st
 	if params.Timeout > 0 {
 		timeoutSeconds = params.Timeout
 	}
-	// 超时上限：不超过全局 MaxTimeout，默认不超过 300 秒
+	// Timeout limit: not exceeding global MaxTimeout, default not exceeding 300 seconds
 	maxAllowed := common.GetTimeoutConfig().MaxTimeout
 	if maxAllowed <= 0 {
 		maxAllowed = 300 * time.Second
@@ -263,23 +263,23 @@ func (t *bashTool) executeShell(ctx context.Context, params OperationParams) (st
 	// Create command using shell to support pipes, redirects, && etc.
 	var cmd *exec.Cmd
 	if len(params.Args) > 0 {
-		// 如果有单独的 args，使用传统方式
+		// If there are separate ARGS, use the traditional method
 		cmdPath, err := exec.LookPath(params.Command)
 		if err != nil {
 			return common.NewErrorf(common.ErrCodeFileNotFound, "command '%s' not found: %v", params.Command, err).Error(), nil
 		}
 		cmd = exec.CommandContext(ctx, cmdPath, params.Args...)
 	} else {
-		// 使用 shell 执行完整命令字符串，支持管道、重定向等
+		// Use shell to execute complete command strings, supporting pipelines, redirects, and more
 		shellArgs := make([]string, len(t.platform.ShellArgs))
 		copy(shellArgs, t.platform.ShellArgs)
 
-		// PowerShell 5.1 不支持 &&，替换为 ; 以兼容 AI 常生成的命令（有损：忽略错误码继续执行）
+		// PowerShell 5.1 does not support &&, replace it with; Compatible with AI-generated commands (lossy: ignores error codes and continues execution)
 		if t.platform.ShellType == ShellTypePowerShell {
 			if strings.Contains(fullCommand, " && ") {
 				fullCommand = strings.ReplaceAll(fullCommand, " && ", "; ")
 			}
-			// 用户命令拼到 ShellArgs 末尾，接在 platform.go 定义的 [Console]:: 前缀之后
+			// The user command is spelled to the end of ShellArgs, following the [Console]:: prefix defined by platform.go
 			lastIdx := len(shellArgs) - 1
 			shellArgs[lastIdx] = shellArgs[lastIdx] + " " + fullCommand
 		} else {
@@ -289,18 +289,18 @@ func (t *bashTool) executeShell(ctx context.Context, params OperationParams) (st
 		cmd = exec.CommandContext(ctx, t.platform.ShellCommand, shellArgs...)
 	}
 
-	// Set working directory（解析顺序：LLM 参数 → ctx 注入 → 配置写死）
+	// Set working directory (parsing order: LLM parameters → ctx injection → Configuration write-down)
 	workDir := params.WorkDir
 	if workDir == "" {
-		// 通用 workDir 注入：调用方（如主 agent 派子 agent）通过 ctx 指定工作目录，
-		// 不依赖配置写死（业务层把 projectId 等转成路径后注入，基础库不认业务字段）
+		// General workDir injection: The caller (such as the main agent and sub-agent) specifies the working directory via ctx,
+		// Non-dependent configuration is written in a fixed way (the business layer converts projectId and other documents into paths and injects them; the base library does not recognize business fields)
 		workDir = common.WorkDirFromCtx(ctx)
 	}
 	if workDir == "" {
 		workDir = t.config.WorkDir
 	}
 	if workDir != "" {
-		// 安全校验：清理路径并拒绝包含 .. 的路径
+		// Security verification: Clean up paths and refuse to include: The path
 		workDir = filepath.Clean(workDir)
 		if strings.Contains(workDir, "..") {
 			return common.NewErrorf(common.ErrCodePathEscape, "work_dir contains path traversal: %s", params.WorkDir).Error(), nil
@@ -308,10 +308,10 @@ func (t *bashTool) executeShell(ctx context.Context, params OperationParams) (st
 		cmd.Dir = workDir
 	}
 
-	// 设置进程组属性（Linux/macOS 下设置 Setpgid，用于超时时 kill 整个进程组）
+	// Set process group properties (set Setpgid on Linux/macOS to kill the entire process group when timeout)
 	setSysProcAttr(cmd)
 
-	// ctx 超时/取消时触发 Cancel 杀进程组，WaitDelay 兜底回收残留 IO
+	// When ctx times out or cancels, Cancel is triggered to kill the process group, and WaitDelay is used to recover residual IO
 	cmd.Cancel = func() error {
 		if cmd.Process != nil {
 			killProcessGroup(cmd.Process.Pid)
@@ -322,14 +322,14 @@ func (t *bashTool) executeShell(ctx context.Context, params OperationParams) (st
 
 	// Set environment variables
 	cmd.Env = os.Environ()
-	// Windows: 设置 UTF-8 编码
+	// Windows: Set UTF-8 encoding
 	if runtime.GOOS == "windows" {
 		cmd.Env = append(cmd.Env,
 			"PYTHONIOENCODING=utf-8",
 			"LANG=en_US.UTF-8",
 			"LC_ALL=en_US.UTF-8",
 		)
-		// 如果使用 Git Bash，还需要设置 CHCP
+		// If using Git Bash, you also need to set up CHCP
 		if t.platform.ShellType == ShellTypeBash {
 			cmd.Env = append(cmd.Env, "MSYSTEM=UCRT64")
 		}
@@ -340,20 +340,20 @@ func (t *bashTool) executeShell(ctx context.Context, params OperationParams) (st
 	cmd.Stdout = &stdout
 	cmd.Stderr = &stderr
 
-	// 启动进程
+	// Start the process
 	startTime := time.Now()
 	if err := cmd.Start(); err != nil {
 		return "", fmt.Errorf("启动命令失败: %w", err)
 	}
 
-	// exec.CommandContext 在 ctx 超时/取消时自动触发上面的 Cancel 杀进程
+	// exec.CommandContext automatically triggers the Cancel kill process above when ctx timeout/cancel
 	err := cmd.Wait()
 	executionTime := time.Since(startTime).Milliseconds()
 
-	// 输出处理三步：
-	//   1) UTF-8 转换（已有逻辑）
-	//   2) L1 token 清洗链（progress/ansi/redact/longline + never-worse 守卫，opt-out via # nofilter/# raw）
-	//   3) 错误感知 head+tail 截断（超限时落盘到 workDir/.tool-output，output 给路径）
+	// Three steps for output processing:
+	//   1) UTF-8 Conversion (Existing Logic)
+	//   2) L1 token cleanup chain (progress/ansi/redact/longline + never-worse guard, opt-out via # nofilter/# raw)
+	//   3) Error detection: head+tail truncation (when the limit is over, disk is placed at workDir/.tool-output, output to the path)
 	rawStdout := convertToUTF8(stdout.Bytes())
 	rawStderr := convertToUTF8(stderr.Bytes())
 
@@ -365,7 +365,7 @@ func (t *bashTool) executeShell(ctx context.Context, params OperationParams) (st
 		filteredStderr = pipe.run(rawStderr)
 	}
 
-	// 落盘目录：workDir/.tool-output（workDir 优先 cmd.Dir，回退 config.WorkDir）
+	// Folder: workDir/.tool-output(workDir prioritizes cmd.Dir, reverts config.WorkDir)
 	outDir := ""
 	if cmd.Dir != "" {
 		outDir = cmd.Dir
@@ -384,13 +384,13 @@ func (t *bashTool) executeShell(ctx context.Context, params OperationParams) (st
 	// Determine error message
 	errorMsg := ""
 	if err != nil {
-		// 检查上下文错误（超时或取消）
+		// Check for contextual errors (timeout or cancellation)
 		if ctx.Err() == context.DeadlineExceeded {
 			errorMsg = fmt.Sprintf("命令执行超时（%v）", timeout)
 		} else if ctx.Err() == context.Canceled {
 			errorMsg = "命令执行被中断"
 		} else if _, ok := err.(*exec.ExitError); ok {
-			// ExitError 会在后面通过 Exit Code 显示，这里不需要额外信息
+			// ExitError will be displayed later via the Exit Code, and no additional information is needed here
 		} else {
 			errorMsg = err.Error()
 		}
@@ -421,7 +421,7 @@ func (t *bashTool) executeShell(ctx context.Context, params OperationParams) (st
 		result.WriteString(fmt.Sprintf("Error: %s\n", errorMsg))
 	}
 
-	// Truncation warning：基于清洗后的实际字节判断
+	// Truncation warning: Judgment based on the actual byte after cleaning
 	stdoutTruncated := stdoutDropped != ""
 	stderrTruncated := stderrDropped != ""
 
@@ -455,14 +455,14 @@ func (t *bashTool) executeShell(ctx context.Context, params OperationParams) (st
 	return result.String(), nil
 }
 
-// truncateWithDump 用统一截断服务（错误感知 head+tail）截断输出；
-// 若发生截断且 outDir 非空，则把完整原文落盘并返回落盘路径，供 agent 取回。
-// 返回 (截断后的内容, 落盘路径/空)。
+// truncateWithDump Use unified truncation service (misperception head+tail) to cut off output;
+// If a truncation occurs and outDir is not null, the full original text is placed and the execution path is returned for the agent to retrieve.
+// Returns (truncated content, order path/empty).
 func truncateWithDump(text string, maxSize int, outDir string) (string, string) {
 	if len(text) <= maxSize {
 		return text, ""
 	}
-	maxLines := 0 // 0 表示用默认（2000）
+	maxLines := 0 // 0 means default (2000)
 	maxBytes := maxSize
 	tr := common.Truncate(text, common.TruncateOptions{
 		MaxLines:  &maxLines,
@@ -481,14 +481,14 @@ func truncateWithDump(text string, maxSize int, outDir string) (string, string) 
 	return tr.Content, dumped
 }
 
-// convertToUTF8 检测并转换输出编码为 UTF-8
-// Windows 上某些命令可能输出 UTF-16 或其他编码
+// convertToUTF8 detects and converts the output encoding to UTF-8
+// Some commands on Windows may output UTF-16 or other encodings
 func convertToUTF8(output []byte) string {
 	if len(output) == 0 {
 		return ""
 	}
 
-	// 1. 检测 BOM (Strongest signal)
+	// 1. Detecting BOM (Strongest Signal)
 	if len(output) >= 2 {
 		if output[0] == 0xFF && output[1] == 0xFE { // UTF-16 LE BOM
 			decoder := unicode.UTF16(unicode.LittleEndian, unicode.UseBOM).NewDecoder()
@@ -504,9 +504,9 @@ func convertToUTF8(output []byte) string {
 		}
 	}
 
-	// 2. 统计检测 UTF-16 (LE/BE) 及偏移量
-	// Windows/WSL 有时会输出带垃圾前缀的 UTF-16 流，或者无 BOM 的 UTF-16
-	// 我们检查 0 和 1 两个偏移量，寻找 null 字节的模式
+	// 2. Statistical detection of UTF-16 (LE/BE) and offsets
+	// Windows/WSL sometimes outputs UTF-16 streams with garbage prefixes, or UTF-16 without BOMs
+	// We examine the offsets 0 and 1 to find the pattern of null bytes
 	// UTF-16 LE: Char 00
 	// UTF-16 BE: 00 Char
 
@@ -517,14 +517,14 @@ func convertToUTF8(output []byte) string {
 		sampleLen = len(output)
 	}
 
-	// 计算四种组合的得分 (null 字节的数量)
-	// 0 偏移
+	// Calculate the scores for four combinations (number of null bytes)
+	// 0 offset
 	scoreLE0, scoreBE0 := countNulls(output, 0, sampleLen)
-	// 1 偏移
+	// 1. Offset
 	scoreLE1, scoreBE1 := countNulls(output, 1, sampleLen)
 
-	// 只有当 null 字节占比超过一定阈值 (例如 30%) 时才认为是 UTF-16
-	// 正常 UTF-8 文本中 null 字节极少
+	// Only when the null byte ratio exceeds a certain threshold (for example, 30%) is it considered UTF-16
+	// Normal UTF-8 text contains very few null bytes
 	threshold := sampleLen / 2 * 30 / 100
 
 	if scoreLE0 > threshold && scoreLE0 >= bestScore {
@@ -569,27 +569,27 @@ func convertToUTF8(output []byte) string {
 
 		if decoder != nil && len(input) > 0 {
 			if converted, err := decoder.Bytes(input); err == nil {
-				// 转换成功后，还需要过滤掉可能的残留乱码字符 (如 U+FFFD)
+				// After successful conversion, you also need to filter out any remaining garbled characters (such as U+FFFD).
 				return strings.ToValidUTF8(string(converted), "�")
 			}
 		}
 	}
 
-	// 3. 尝试作为 UTF-8
-	// 即使 utf8.Valid 返回 true，如果前面检测出是 UTF-16 且解码成功，就不会走到这里
+	// 3. Try to be UTF-8
+	// Even with utf8.Valid returns true. If it had detected UTF-16 earlier and decoded successfully, it wouldn't have ended here
 	if utf8.Valid(output) {
 		return string(output)
 	}
 
-	// 4. 无法识别，返回替换后的 UTF-8
+	// 4. Cannot be recognized, returns the replaced UTF-8
 	return strings.ToValidUTF8(string(output), "�")
 }
 
-// countNulls 统计偶数位和奇数位的 null 字节数
-// startOffset: 0 或 1
+// countNulls Counts the number of null bytes in both even and odd bits
+// startOffset: 0 or 1
 // return (oddNulls, evenNulls) relative to the pair start
-// 对于 LE (Char 00)，null 在高位 (index+1)，即 relative odd
-// 对于 BE (00 Char)，null 在低位 (index)，即 relative even
+// For LE (Char 00), null is at the high level (index+1), i.e., relative odd
+// For BE (00 Char), null is at the low level (index), i.e., relative even
 func countNulls(data []byte, startOffset int, limit int) (leScore, beScore int) {
 	if startOffset >= len(data) {
 		return 0, 0
@@ -599,7 +599,7 @@ func countNulls(data []byte, startOffset int, limit int) (leScore, beScore int) 
 		end = len(data)
 	}
 
-	// 确保处理完整的 2 字节对
+	// Ensure the full 2-byte pair is handled
 	limitLen := end - startOffset
 	pairs := limitLen / 2
 
@@ -620,34 +620,34 @@ func countNulls(data []byte, startOffset int, limit int) (leScore, beScore int) 
 	return
 }
 
-// isBlockedPatternMatch 检查命令是否包含禁止模式
-// 使用更精确的匹配规则，避免误伤
+// isBlockedPatternMatch checks whether the command contains a prohibited pattern
+// Use more precise matching rules to avoid accidental hits
 func isBlockedPatternMatch(fullCommand, blocked string) bool {
-	// 对于 Windows CMD 风格的参数（以 / 开头的短参数，如 /s, /q, /f）
-	// 只匹配作为独立参数出现的情况
+	// For Windows CMD-style parameters (with
+	// Only matches cases that occur as independent parameters
 	if strings.HasPrefix(blocked, "/") && len(blocked) <= 3 {
 		return isIndependentArg(fullCommand, blocked)
 	}
 
-	// 对于其他模式，使用包含匹配，但要求在单词边界
-	// 例如 "-rf /" 应该匹配 "rm -rf /" 但不应该匹配 "rm -rf /home/user"
+	// For other patterns, include matching but require word boundaries
+	// For example, "-rf /" should match "rm -rf /" but should not match "rm -rf /home/user"
 	if strings.Contains(blocked, " ") {
-		// 带空格的模式，检查是否在参数边界
+		// Mode with spaces, check if it is within the parameter boundary
 		return strings.Contains(fullCommand, blocked) && isAtWordBoundary(fullCommand, blocked)
 	}
 
-	// 对于其他短模式（如 /dev/sd），使用包含匹配
+	// For other short modes (such as /dev/sd), use inclusion matching
 	return strings.Contains(fullCommand, blocked)
 }
 
-// isIndependentArg 检查模式是否作为独立参数出现
+// isIndependentArg checks whether the mode appears as an independent parameter
 func isIndependentArg(fullCommand, arg string) bool {
 	idx := strings.Index(fullCommand, arg)
 	for idx != -1 {
-		// 检查前面是否是空格或命令开头
+		// Check if the front is a space or a command beginning
 		beforeOK := idx == 0 || fullCommand[idx-1] == ' ' || fullCommand[idx-1] == '\t'
 
-		// 检查后面是否是空格、命令结束或参数结束符
+		// Check if the next sign is a space, command termination, or parameter terminator
 		afterIdx := idx + len(arg)
 		afterOK := afterIdx >= len(fullCommand) ||
 			fullCommand[afterIdx] == ' ' ||
@@ -662,7 +662,7 @@ func isIndependentArg(fullCommand, arg string) bool {
 			return true
 		}
 
-		// 继续搜索下一个匹配
+		// Keep searching for the next match
 		nextIdx := strings.Index(fullCommand[idx+1:], arg)
 		if nextIdx != -1 {
 			idx = idx + 1 + nextIdx
@@ -673,14 +673,14 @@ func isIndependentArg(fullCommand, arg string) bool {
 	return false
 }
 
-// isAtWordBoundary 检查模式是否在单词边界
+// isAtWordBoundary checks whether the pattern is at the word boundary
 func isAtWordBoundary(fullCommand, pattern string) bool {
 	idx := strings.Index(fullCommand, pattern)
 	for idx != -1 {
-		// 检查模式前是否是空格或命令开头
+		// Check if the mode starts with a space or command
 		beforeOK := idx == 0 || fullCommand[idx-1] == ' ' || fullCommand[idx-1] == '\t'
 
-		// 检查模式后是否是空格、命令结束或路径分隔符
+		// Check if the mode is a space, command termination, or path separator
 		afterIdx := idx + len(pattern)
 		afterOK := afterIdx >= len(fullCommand) ||
 			fullCommand[afterIdx] == ' ' ||
@@ -697,7 +697,7 @@ func isAtWordBoundary(fullCommand, pattern string) bool {
 			return true
 		}
 
-		// 继续搜索下一个匹配
+		// Keep searching for the next match
 		nextIdx := strings.Index(fullCommand[idx+1:], pattern)
 		if nextIdx != -1 {
 			idx = idx + 1 + nextIdx
@@ -708,16 +708,16 @@ func isAtWordBoundary(fullCommand, pattern string) bool {
 	return false
 }
 
-// extractAllCommands 从命令字符串中提取所有命令名
-// 支持: |, &&, ||, ;, $() 等分隔符
+// extractAllCommands extracts all command names from the command string
+// Support: |, &&, ||,;, $() and other separators
 func extractAllCommands(cmd string) []string {
 	cmd = strings.TrimSpace(cmd)
 
-	// 移除常见的 shell 前缀
+	// Removed common shell prefixes
 	for _, prefix := range []string{"sudo ", "su -c ", "bash -c ", "sh -c "} {
 		if strings.HasPrefix(cmd, prefix) {
 			cmd = strings.TrimSpace(cmd[len(prefix):])
-			// 如果是引号包裹的，提取内容
+			// If it is wrapped in quotation marks, extract the content
 			if len(cmd) >= 2 && (cmd[0] == '\'' || cmd[0] == '"') {
 				quote := cmd[0]
 				if end := strings.LastIndexByte(cmd, quote); end > 0 {
@@ -731,12 +731,12 @@ func extractAllCommands(cmd string) []string {
 	var current strings.Builder
 	inQuote := false
 	quoteChar := byte(0)
-	inSubshell := 0 // 跟踪 $() 嵌套
+	inSubshell := 0 // Track $() nesting
 
 	for i := 0; i < len(cmd); i++ {
 		c := cmd[i]
 
-		// 处理引号
+		// Handle quotation marks
 		if (c == '\'' || c == '"') && inSubshell == 0 {
 			if !inQuote {
 				inQuote = true
@@ -749,7 +749,7 @@ func extractAllCommands(cmd string) []string {
 			continue
 		}
 
-		// 处理 $() 子 shell
+		// Handle the $() subshell
 		if c == '$' && i+1 < len(cmd) && cmd[i+1] == '(' && !inQuote {
 			inSubshell++
 			current.WriteString("$(")
@@ -762,24 +762,24 @@ func extractAllCommands(cmd string) []string {
 			continue
 		}
 
-		// 如果在引号或子 shell 中，直接添加字符
+		// If in quotes or subshells, add characters directly
 		if inQuote || inSubshell > 0 {
 			current.WriteByte(c)
 			continue
 		}
 
-		// 检查分隔符
+		// Check the separator
 		isSeparator := false
 		separatorLen := 0
 
 		switch {
 		case c == '|':
-			// 检查是 || 还是 |
+			// The check is || Or |
 			if i+1 < len(cmd) && cmd[i+1] == '|' {
 				separatorLen = 2
 				isSeparator = true
 			} else if isRedirectionPipe(cmd, i) {
-				// | 是重定向的一部分 (如 >|)，不是管道分隔符
+				// | is part of a redirect (e.g., >|), not a pipe delimiter
 				current.WriteByte(c)
 				continue
 			} else {
@@ -787,22 +787,22 @@ func extractAllCommands(cmd string) []string {
 				isSeparator = true
 			}
 		case c == '&':
-			// 检查是 && 还是 &
+			// Check whether it's && or &
 			if i+1 < len(cmd) && cmd[i+1] == '&' {
 				separatorLen = 2
 				isSeparator = true
 			} else if isRedirectionAmpersand(cmd, i) {
-				// & 是重定向的一部分 (如 2>&1)，不是分隔符
+				// & is part of a redirect (e.g., 2>&1), not a separator
 				current.WriteByte(c)
 				continue
 			} else {
-				// 单个 & 是后台运行，也作为分隔符
+				// Single & is run in the background and also serves as a separator
 				separatorLen = 1
 				isSeparator = true
 			}
 		case c == ';':
-			// 检查是否是 find -exec 的 \; 终止符
-			// \; 不应该被当作分隔符
+			// Check if it is the \ of find -exec; termination symbol
+			// \; It should not be used as a separator
 			if i > 0 && cmd[i-1] == '\\' {
 				current.WriteByte(c)
 				continue
@@ -810,10 +810,10 @@ func extractAllCommands(cmd string) []string {
 			separatorLen = 1
 			isSeparator = true
 		case c == '\n':
-			// 检查是否是命令续行符（\ 后跟换行）
-			// 如果前一个字符是 \，则这是续行符，不是分隔符
+			// Check if it is a command continuation character (\ followed by a line break)
+			// If the previous character is \, then this is a continuer, not a separator
 			if i > 0 && cmd[i-1] == '\\' {
-				// 移除之前添加的 \，续行符不应该是命令的一部分
+				// Remove the previously added \ and continue characters should not be part of the command
 				currentStr := current.String()
 				if len(currentStr) > 0 && currentStr[len(currentStr)-1] == '\\' {
 					current.Reset()
@@ -826,20 +826,20 @@ func extractAllCommands(cmd string) []string {
 		}
 
 		if isSeparator {
-			// 提取当前命令
+			// Extract the current command
 			if cmdStr := strings.TrimSpace(current.String()); cmdStr != "" {
 				if firstCmd := extractFirstCommand(cmdStr); firstCmd != "" {
 					commands = append(commands, firstCmd)
 				}
 			}
 			current.Reset()
-			i += separatorLen - 1 // -1 因为循环会 +1
+			i += separatorLen - 1 // -1 because the loop will increase +1
 		} else {
 			current.WriteByte(c)
 		}
 	}
 
-	// 添加最后一个命令
+	// Add the last command
 	if cmdStr := strings.TrimSpace(current.String()); cmdStr != "" {
 		if firstCmd := extractFirstCommand(cmdStr); firstCmd != "" {
 			commands = append(commands, firstCmd)
@@ -849,27 +849,27 @@ func extractAllCommands(cmd string) []string {
 	return commands
 }
 
-// isRedirectionAmpersand 检查 & 是否是重定向的一部分 (如 2>&1, <&0, >&2)
-// 重定向模式: N>&M, N<&M, >&M, <&M, &>file (bash)
+// isRedirectionAmpersand checks whether & are part of a redirect (e.g., 2>&1, <&0, >&2)
+// Redirect mode: N>&M, N<&M, >&M, <&M, &>file (bash)
 func isRedirectionAmpersand(cmd string, pos int) bool {
 	if pos <= 0 {
 		return false
 	}
 
-	// 检查前一个字符
+	// Check the previous character
 	prev := cmd[pos-1]
 
-	// 模式 1: >& 或 <& (如 2>&1, <&0)
+	// Pattern 1: >& or <& (e.g., 2>&1, <&0)
 	if prev == '>' || prev == '<' {
 		return true
 	}
 
-	// 模式 2: &> (bash 的 &>file 重定向)
-	// 检查 & 后面是否跟着 >
+	// Mode 2: &> (Bash's &>file redirect)
+	// Check if the > is following behind
 	if pos+1 < len(cmd) && cmd[pos+1] == '>' {
-		// 确保不是 &&> (这应该是 && 然后 >)
+		// Make sure it's not &&> (this should be && then >)
 		if pos > 0 && cmd[pos-1] == '&' {
-			return false // 这是 &&>
+			return false // This is &>
 		}
 		return true
 	}
@@ -877,31 +877,31 @@ func isRedirectionAmpersand(cmd string, pos int) bool {
 	return false
 }
 
-// isRedirectionPipe 检查 | 是否是重定向的一部分 (如 >|)
-// 重定向模式: >| (bash noclobber 强制覆盖)
+// isRedirectionPipe checks | Is it part of a redirect (e.g., >|)
+// Redirect mode: >| (bash noclobber forced override)
 func isRedirectionPipe(cmd string, pos int) bool {
 	if pos <= 0 {
 		return false
 	}
 
-	// 检查前一个字符是否是 >
-	// >| 是 bash 的 noclobber 强制覆盖重定向
+	// Check if the previous character is >
+	// >| It is a noclobber redirect for bash forced override
 	prev := cmd[pos-1]
 	return prev == '>'
 }
 
-// extractFirstCommand 从单个命令字符串中提取命令名
+// extractFirstCommand extracts command names from a single command string
 func extractFirstCommand(cmd string) string {
 	cmd = strings.TrimSpace(cmd)
 
-	// 过滤以 - 开头的纯选项参数（它们是命令选项，不是命令名）
-	// 例如: -H 'Content-Type' 应该被过滤掉
-	// 但不过滤带路径的文件，如 /path/to/-script 或 ./-script.sh
+	// Filter pure option parameters starting with - (these are command options, not command names)
+	// For example: -H 'Content-Type' should be filtered
+	// However, files with paths are not filtered, such as /path/to/-script or./-script.sh
 	if strings.HasPrefix(cmd, "-") && !strings.Contains(cmd, "/") && !strings.Contains(cmd, "\\") {
 		return ""
 	}
 
-	// 处理带引号的命令
+	// Handle commands with quotes
 	if strings.HasPrefix(cmd, "'") || strings.HasPrefix(cmd, "\"") {
 		quote := cmd[0]
 		if end := strings.IndexByte(cmd[1:], quote); end > 0 {
@@ -909,12 +909,12 @@ func extractFirstCommand(cmd string) string {
 		}
 	}
 
-	// 提取第一个空格或特殊字符前的部分
+	// Extract the part before the first space or special character
 	if idx := strings.IndexAny(cmd, " \t|&;<>()"); idx > 0 {
 		cmd = cmd[:idx]
 	}
 
-	// 处理路径，只取命令名
+	// Handle the path, and only take the command name
 	if strings.Contains(cmd, "/") || strings.Contains(cmd, "\\") {
 		parts := strings.FieldsFunc(cmd, func(r rune) bool {
 			return r == '/' || r == '\\'
@@ -924,7 +924,7 @@ func extractFirstCommand(cmd string) string {
 		}
 	}
 
-	// Windows 下处理 .exe 后缀
+	// Handles.exe suffix on Windows
 	if runtime.GOOS == "windows" {
 		cmd = strings.TrimSuffix(cmd, ".exe")
 	}

@@ -14,15 +14,15 @@ import (
 	"time"
 )
 
-// 诊断严重度。
+// Diagnosis of severity.
 const (
-	SeverityError   = 1 // 仅 Error 级回灌给 agent，避免 warning 噪音
+	SeverityError   = 1 // Only the error level is fed back to the agent to avoid warning noise
 	SeverityWarning = 2
 	SeverityInfo    = 3
 	SeverityHint    = 4
 )
 
-// Diagnostic 单条诊断。
+// Diagnostic: Single diagnosis.
 type Diagnostic struct {
 	Severity int
 	Line     int
@@ -30,17 +30,17 @@ type Diagnostic struct {
 	Message  string
 }
 
-// DiagnosticProvider 诊断提供者接口。按文件扩展名注册实现。
-// 库内置 GoVetProvider（go vet）；其他语言用 NewCommandDiagnosticProvider 配置外部命令注册（ruff/eslint/tsc...）。
+// DiagnosticProvider diagnostic provider interface. Register and implement by file extension.
+// The library includes GoVetProvider(go vet); For other languages, use NewCommandDiagnosticProvider to configure external command registration (ruff/eslint/tsc...).
 type DiagnosticProvider interface {
-	// Report 对指定文件跑诊断，返回诊断列表。
+	// Report: Run diagnostics on the specified file and return the diagnostic list.
 	Report(filePath string) ([]Diagnostic, error)
-	// Supports 判断 provider 是否处理该文件类型。
+	// Supports determines whether the provider handles this file type.
 	Supports(filePath string) bool
 }
 
-// DiagnosticReport 把诊断格式化为回灌文本。只保留 severity=Error，每文件上限 maxPerFile（0=不限）。
-// 空结果返回空串（调用方据此决定是否拼到 output）。
+// DiagnosticReport formats diagnostics as feedback text. Only severity=Error is retained, with a maximum maxPerFile (0=unlimited) per file.
+// The empty result returns an empty string (the caller decides whether to confix the output accordingly).
 func DiagnosticReport(filePath string, diags []Diagnostic, maxPerFile int) string {
 	var errs []Diagnostic
 	for _, d := range diags {
@@ -72,27 +72,27 @@ func DiagnosticReport(filePath string, diags []Diagnostic, maxPerFile int) strin
 	return b.String()
 }
 
-// goDiagPattern 匹配 go build/vet 输出：<file>:<line>:<col>: <msg> 或 <file>:<line>: <msg>（无 col 时 line 与 msg 共用冒号）
+// goDiagPattern matches go build/vet output:<file>:<line>:<col>: <msg> or <file>:<line>: <msg>(If no col, line and msg share colon)
 var goDiagPattern = regexp.MustCompile(`^(\S+\.go):(\d+)(?::(\d+))?:\s*(.*)$`)
 
-// GoVetProvider 用 go vet 跑诊断（仅 .go 文件）。无状态，可全局注册复用。
+// GoVetProvider runs diagnostics with GoVet (only.go files). No status, can be registered and reused globally.
 type GoVetProvider struct{}
 
-// Supports 仅处理 .go 文件。
+// Supports only handles.go files.
 func (p *GoVetProvider) Supports(filePath string) bool {
 	return strings.ToLower(filepath.Ext(filePath)) == ".go"
 }
 
-// Report 跑 go vet 并解析输出。go vet 非零退出码表示有诊断（非执行错误），故忽略 Run 的 error。
+// Report: run go vet and parse the output. Go vet is not zero and the exit code indicates a diagnosis (not an execution error), so the Run error is ignored.
 func (p *GoVetProvider) Report(filePath string) ([]Diagnostic, error) {
 	if !p.Supports(filePath) {
 		return nil, nil
 	}
-	// go 不可用直接跳过（不启动进程、不阻塞主流程）
+	// Go is unusable and skips directly (no process start, no main flow blocked)
 	if _, err := exec.LookPath("go"); err != nil {
 		return nil, nil
 	}
-	// 超时保护：vet 对损坏/超大文件可能卡住，限 10s 避免阻塞工具调用
+	// Timeout protection: VET may freeze damaged or oversized files, limited to 10 seconds to avoid blocking tool calls
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
 	cmd := exec.CommandContext(ctx, "go", "vet", filePath)
@@ -108,7 +108,7 @@ func (p *GoVetProvider) Report(filePath string) ([]Diagnostic, error) {
 	return parseGoDiagnostics(output), nil
 }
 
-// parseGoDiagnostics 解析 go build/vet 的行输出为 Diagnostic 列表。
+// parseGoDiagnostics parses the row output of go build/vet as a Diagnostic list.
 func parseGoDiagnostics(output string) []Diagnostic {
 	var diags []Diagnostic
 	scanner := bufio.NewScanner(strings.NewReader(output))
@@ -124,7 +124,7 @@ func parseGoDiagnostics(output string) []Diagnostic {
 			col, _ = strconv.Atoi(m[3])
 		}
 		msg := strings.TrimSpace(m[4])
-		// go vet 输出含编译错误与可疑构造，默认按 Error；显式 warning 降级
+		// go vet outputs include compilation errors and suspicious constructs, default is Error; Explicit warning: Downgrade
 		sev := SeverityError
 		if strings.HasPrefix(strings.ToLower(msg), "warning") {
 			sev = SeverityWarning
@@ -134,16 +134,16 @@ func parseGoDiagnostics(output string) []Diagnostic {
 	return diags
 }
 
-// diagnosticProviders 按文件扩展名注册诊断 provider（".go"→GoVetProvider 等）。
-// write 写后按此查 provider；未注册的类型不跑诊断（默认关闭）。应用层启动时注册。
+// diagnosticProviders registers diagnostic providers by file extension (".go"→GoVetProvider, etc.).
+// write: After writing, click here to search for provider; Unregistered types do not run diagnostics (disabled by default). Register when the application layer starts.
 var diagnosticProviders sync.Map
 
-// RegisterDiagnosticProvider 注册某扩展名（如 ".go"）对应的诊断 provider。
+// RegisterDiagnosticProvider registers the diagnostic provider corresponding to a certain extension (such as ".go").
 func RegisterDiagnosticProvider(ext string, p DiagnosticProvider) {
 	diagnosticProviders.Store(strings.ToLower(ext), p)
 }
 
-// LookupDiagnosticProvider 按文件扩展名查注册的 provider；未注册返回 nil。
+// LookupDiagnosticProvider Searches for registered providers by file extension; Returns nil if not registered.
 func LookupDiagnosticProvider(filePath string) DiagnosticProvider {
 	v, ok := diagnosticProviders.Load(strings.ToLower(filepath.Ext(filePath)))
 	if !ok {
@@ -153,28 +153,28 @@ func LookupDiagnosticProvider(filePath string) DiagnosticProvider {
 	return p
 }
 
-// defaultDiagPattern 通用 lint 输出解析：<file>:<line>:<col>: <msg> 或 <file>:<line>: <msg>。
-// 文件名用 [^:\s]+ 限定（不含冒号/空白），避免贪婪吞掉行号。覆盖 ruff/eslint/tsc/mypy 等多数 colon 格式。
+// defaultDiagPattern general lint output parsing:<file>:<line>:<col>: <msg> or <file>:<line>:: <msg>.
+// Filenames are limited to [^:\s]+ (excluding colons/spaces) to avoid greedily swallowing line numbers. Overrides most colon formats such as ruff/eslint/tsc/mypy.
 var defaultDiagPattern = regexp.MustCompile(`^([^:\s]+):(\d+)(?::(\d+))?:\s*(.*)$`)
 
-// CommandProviderConfig 通用命令式诊断 provider 的配置。
+// CommandProviderConfig General Command Diagnostic Configuration provider.
 type CommandProviderConfig struct {
-	// Ext 关联扩展名（含点，如 ".py"），决定 Supports 是否处理该文件。
+	// Ext is associated with an extension (including a dot, such as ".py"), and determines whether Supports will handle the file.
 	Ext string
-	// Command 可执行命令（如 "ruff"）。PATH 中不可用时静默跳过，不阻塞工具调用。
+	// Command can execute commands (such as "ruff"). Silently skips when unavailable in PATH, without blocking tool calls.
 	Command string
-	// Args 命令参数；"{file}" 占位符替换为目标文件绝对路径。
+	// Args command parameters; The "{file}" placeholder is replaced with the absolute path of the target file.
 	Args []string
-	// Dir 命令工作目录，空则取文件所在目录。
+	// Dir command: Operating directory; empty to get the directory where the file is located.
 	Dir string
-	// Timeout 执行超时，<=0 取默认 10s。
+	// Timeout executes timeout, <=0, set to the default 10s.
 	Timeout time.Duration
-	// ParseFunc 自定义输出解析；为 nil 时用默认 colon 正则解析。
+	// ParseFunc custom output parsing; When nil is used, the default colon regex is used.
 	ParseFunc func(output string) []Diagnostic
 }
 
-// CommandDiagnosticProvider 通过外部命令跑诊断的通用 provider。
-// 应用层无需为每种语言写 struct，配置命令模板即可注册，例如：
+// CommandDiagnosticProvider is a general-purpose provider that runs diagnostics through external commands.
+// The application layer does not need to write structs for each language; it can be registered by configuring command templates, for example:
 //
 //	common.RegisterDiagnosticProvider(".py", common.NewCommandDiagnosticProvider(common.CommandProviderConfig{
 //	    Ext: ".py", Command: "ruff", Args: []string{"check", "--output-format=concise", "{file}"},
@@ -183,7 +183,7 @@ type CommandDiagnosticProvider struct {
 	cfg CommandProviderConfig
 }
 
-// NewCommandDiagnosticProvider 构造通用命令 provider，补默认超时、规范化扩展名。
+// NewCommandDiagnosticProvider constructs a general command provider, supplementing default timeouts and normalized extensions.
 func NewCommandDiagnosticProvider(cfg CommandProviderConfig) *CommandDiagnosticProvider {
 	if cfg.Timeout <= 0 {
 		cfg.Timeout = 10 * time.Second
@@ -192,34 +192,34 @@ func NewCommandDiagnosticProvider(cfg CommandProviderConfig) *CommandDiagnosticP
 	return &CommandDiagnosticProvider{cfg: cfg}
 }
 
-// 预置常用语言的诊断命令模板。命令未安装时 NewCommandDiagnosticProvider 内部
-// LookPath 自动跳过，注册无害；每个扩展名注册一个 provider 即可：
+// Pre-installed diagnostic command templates for commonly used languages. The command is not installed inside NewCommandDiagnosticProvider
+// LookPath automatically skips it, making registration harmless; You just need to register one provider for each extension:
 //
 //	common.RegisterDiagnosticProvider(".py", common.NewCommandDiagnosticProvider(common.RuffDiagnosticConfig))
 //	common.RegisterDiagnosticProvider(".ts", common.NewCommandDiagnosticProvider(common.TscDiagnosticConfig))
 //	common.RegisterDiagnosticProvider(".js", common.NewCommandDiagnosticProvider(common.EslintDiagnosticConfig))
 //	common.RegisterDiagnosticProvider(".sh", common.NewCommandDiagnosticProvider(common.ShellcheckDiagnosticConfig))
-//	// .go 用内置 GoVetProvider：
+//	.go with built-in GoVetProvider:
 //	common.RegisterDiagnosticProvider(".go", &common.GoVetProvider{})
 //
-// 输出非 colon 格式的工具自带 ParseFunc（见 TscDiagnosticConfig）；其他自定义工具同理用 CommandProviderConfig.ParseFunc。
+// Tools that output non-colon formats come with ParseFunc (see TscDiagnosticConfig); Other custom tools use CommandProviderConfig.ParseFunc similarly.
 var (
-	// RuffDiagnosticConfig Python ruff，concise 格式：file:line:col: CODE msg。
+	// RuffDiagnosticConfig Python ruff, concise format: file:line:col: CODE msg.
 	RuffDiagnosticConfig = CommandProviderConfig{Ext: ".py", Command: "ruff", Args: []string{"check", "--output-format=concise", "{file}"}}
-	// TscDiagnosticConfig TypeScript tsc，file(line,col): error TSxxxx: msg（自带 ParseFunc，兼容新版 colon 格式）。
+	// TscDiagnosticConfig TypeScript tsc,file(line,col): error TSxxxx: msg (comes with ParseFunc, compatible with the new colon format).
 	TscDiagnosticConfig = CommandProviderConfig{Ext: ".ts", Command: "tsc", Args: []string{"--noEmit", "--pretty", "false", "{file}"}, ParseFunc: parseTscDiagnostics}
-	// EslintDiagnosticConfig JavaScript eslint，unix 格式：file:line:col: msg [rule]。
+	// EslintDiagnosticConfig JavaScript eslint, Unix format: file:line:col: msg [rule].
 	EslintDiagnosticConfig = CommandProviderConfig{Ext: ".js", Command: "eslint", Args: []string{"--format=unix", "{file}"}}
-	// ShellcheckDiagnosticConfig shell 脚本 shellcheck，gcc 格式：file:line:col: severity: msg。
+	// ShellcheckDiagnosticConfig shell script shellcheck, gcc format: file:line:col: severity: msg.
 	ShellcheckDiagnosticConfig = CommandProviderConfig{Ext: ".sh", Command: "shellcheck", Args: []string{"-f", "gcc", "{file}"}}
 )
 
-// Supports 按扩展名匹配（大小写不敏感）。
+// Supports matches by extension (case-insensitive).
 func (p *CommandDiagnosticProvider) Supports(filePath string) bool {
 	return p.cfg.Ext != "" && strings.ToLower(filepath.Ext(filePath)) == p.cfg.Ext
 }
 
-// buildArgs 替换参数中的 {file} 占位符为目标文件路径。
+// The {file} placeholder in the buildArgs replacement parameter is the target file path.
 func (p *CommandDiagnosticProvider) buildArgs(filePath string) []string {
 	args := make([]string, len(p.cfg.Args))
 	for i, a := range p.cfg.Args {
@@ -228,7 +228,7 @@ func (p *CommandDiagnosticProvider) buildArgs(filePath string) []string {
 	return args
 }
 
-// Report 跑外部命令并解析输出。命令不可用直接返回 nil（不阻塞主流程）。
+// Report executes external commands and parses output. If the command is unavailable, it returns nil directly (without blocking the main flow).
 func (p *CommandDiagnosticProvider) Report(filePath string) ([]Diagnostic, error) {
 	if !p.Supports(filePath) {
 		return nil, nil
@@ -258,7 +258,7 @@ func (p *CommandDiagnosticProvider) Report(filePath string) ([]Diagnostic, error
 	return parseCommandDiagnostics(output), nil
 }
 
-// parseCommandDiagnostics 用默认 colon 正则解析 lint 输出为诊断列表。
+// parseCommandDiagnostics parses lint using the default colon regex to output as a diagnostic list.
 func parseCommandDiagnostics(output string) []Diagnostic {
 	var diags []Diagnostic
 	scanner := bufio.NewScanner(strings.NewReader(output))
@@ -283,14 +283,14 @@ func parseCommandDiagnostics(output string) []Diagnostic {
 	return diags
 }
 
-// tsc 输出格式随版本不同：旧版/pretty 为 file(line,col): error TSxxxx: msg；
-// 新版 --pretty false 为 file:line:col - error TSxxxx: msg。两种都解析。
+// TSC output format varies by version: old version/pretty is file(line, col): error TSxxxx: msg;
+// New version --pretty false is file:line:col - error TSxxxx: msg. Both are analyzed.
 var (
 	tscParenPattern = regexp.MustCompile(`^(.+?)\((\d+),(\d+)\):\s*(error|warning)\s+(.*)$`)
 	tscColonPattern = regexp.MustCompile(`^([^:\s]+):(\d+):(\d+)\s*-\s*(error|warning)\s+(.*)$`)
 )
 
-// parseTscDiagnostics 解析 tsc 输出（圆括号与 colon 两种格式）。
+// parseTscDiagnostics parses tsc outputs (in parentheses and colon formats).
 func parseTscDiagnostics(output string) []Diagnostic {
 	var diags []Diagnostic
 	scanner := bufio.NewScanner(strings.NewReader(output))

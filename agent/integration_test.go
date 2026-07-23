@@ -36,7 +36,7 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-// 集成测试配置 - 从环境变量获取
+// Integrated test configuration - obtained from environment variables
 func getIntegrationConfig() config.LLMConfig {
 	return config.LLMConfig{
 		Url:   getEnvOrDefault("LLM_BASE_URL", "https://open.bigmodel.cn/api/coding/paas/v4"),
@@ -45,7 +45,7 @@ func getIntegrationConfig() config.LLMConfig {
 		Params: config.ModelParams{
 			Temperature: 0.7,
 			MaxTokens:   1024,
-			// 智谱 AI 不支持以下参数，设置为 0 以禁用
+			// Zhipu AI does not support the following parameters; set them to 0 to disable them
 			FrequencyPenalty: 0,
 			PresencePenalty:  0,
 			TopP:             0,
@@ -61,7 +61,7 @@ func getEnvOrDefault(key, defaultVal string) string {
 	return defaultVal
 }
 
-// TestIntegration_CreateChatModel 测试创建聊天模型
+// TestIntegration_CreateChatModel Test the creation of chat models
 func TestIntegration_CreateChatModel(t *testing.T) {
 	cfg := getIntegrationConfig()
 	if cfg.Key == "" {
@@ -80,7 +80,7 @@ func TestIntegration_CreateChatModel(t *testing.T) {
 	t.Logf("✅ Chat model created successfully for model: %s", cfg.Model)
 }
 
-// TestIntegration_SimpleChat 测试简单对话
+// TestIntegration_SimpleChat Test simple conversations
 func TestIntegration_SimpleChat(t *testing.T) {
 	cfg := getIntegrationConfig()
 	if cfg.Key == "" {
@@ -115,7 +115,7 @@ func TestIntegration_SimpleChat(t *testing.T) {
 	t.Logf("✅ Response: %s", truncateString(response.Content, 200))
 }
 
-// TestIntegration_StreamChat 测试流式对话
+// TestIntegration_StreamChat Test streaming conversations
 func TestIntegration_StreamChat(t *testing.T) {
 	cfg := getIntegrationConfig()
 	if cfg.Key == "" {
@@ -163,7 +163,7 @@ func TestIntegration_StreamChat(t *testing.T) {
 	t.Logf("   Content preview: %s", truncateString(fullContent, 100))
 }
 
-// TestIntegration_CreateReactAgent 测试创建 React Agent
+// TestIntegration_CreateReactAgent Test the creation of the React Agent
 func TestIntegration_CreateReactAgent(t *testing.T) {
 	cfg := getIntegrationConfig()
 	if cfg.Key == "" {
@@ -177,7 +177,7 @@ func TestIntegration_CreateReactAgent(t *testing.T) {
 	})
 	require.NoError(t, err)
 
-	// 创建一个简单的测试工具
+	// Create a simple testing tool
 	tools := []config.Tool{
 		{
 			Name:        "echo",
@@ -208,7 +208,7 @@ func TestIntegration_CreateReactAgent(t *testing.T) {
 	t.Logf("✅ React Agent created successfully")
 }
 
-// TestIntegration_MultiTurnChat 测试多轮对话
+// TestIntegration_MultiTurnChat Test multi-turn dialogue
 func TestIntegration_MultiTurnChat(t *testing.T) {
 	cfg := getIntegrationConfig()
 	if cfg.Key == "" {
@@ -225,7 +225,7 @@ func TestIntegration_MultiTurnChat(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 90*time.Second)
 	defer cancel()
 
-	// 第一轮对话
+	// First round of dialogue
 	messages := []*schema.Message{
 		schema.SystemMessage("你是一个有帮助的助手，请记住用户告诉你的信息。"),
 		schema.UserMessage("我叫小明，今年18岁。"),
@@ -235,7 +235,7 @@ func TestIntegration_MultiTurnChat(t *testing.T) {
 	require.NoError(t, err, "First turn failed")
 	t.Logf("✅ Turn 1: %s", truncateString(response1.Content, 100))
 
-	// 第二轮对话 - 测试记忆
+	// The second round of dialogue is a memory test
 	messages = append(messages, response1)
 	messages = append(messages, schema.UserMessage("你还记得我叫什么名字吗？"))
 
@@ -243,13 +243,13 @@ func TestIntegration_MultiTurnChat(t *testing.T) {
 	require.NoError(t, err, "Second turn failed")
 	t.Logf("✅ Turn 2: %s", truncateString(response2.Content, 100))
 
-	// 验证模型记住了名字
+	// The validation model remembered the name
 	assert.Contains(t, response2.Content, "小明", "Model should remember the name")
 }
 
-// TestIntegration_ErrorHandling 测试错误处理
+// TestIntegration_ErrorHandling Handling of test errors
 func TestIntegration_ErrorHandling(t *testing.T) {
-	// 测试无效 URL
+	// Testing is invalid for URL
 	invalidConfig := config.LLMConfig{
 		Url:   "https://invalid-url-that-does-not-exist.com/v1",
 		Key:   "invalid-key",
@@ -261,18 +261,18 @@ func TestIntegration_ErrorHandling(t *testing.T) {
 		MaxRetries: 1,
 	})
 
-	// 创建模型不应该失败（错误会在调用时发生）
+	// Creating a model should not fail (errors occur when called)
 	assert.NoError(t, err, "CreateChatModel should not fail for invalid config")
 }
 
-// TestIntegration_TokenLimits 测试 Token 限制
+// TestIntegration_TokenLimits Test token limits
 func TestIntegration_TokenLimits(t *testing.T) {
 	cfg := getIntegrationConfig()
 	if cfg.Key == "" {
 		t.Skip("LLM_API_KEY not set, skipping integration test")
 	}
 
-	// 设置较低的 MaxTokens
+	// Set the MaxTokens lower
 	cfg.Params.MaxTokens = 50
 
 	chatModel, err := CreateChatModel(cfg, ModelOptions{
@@ -285,7 +285,7 @@ func TestIntegration_TokenLimits(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
 	defer cancel()
 
-	// 请求一个可能很长的回答
+	// Ask for a potentially long answer
 	messages := []*schema.Message{
 		schema.UserMessage("请用两句话介绍Go语言。"),
 	}
@@ -298,12 +298,12 @@ func TestIntegration_TokenLimits(t *testing.T) {
 	}
 	require.NoError(t, err, "Failed with token limit")
 
-	// 验证回答被截断（较短）
+	// Verification answers are truncated (shorter)
 	t.Logf("✅ Response length with MaxTokens=50: %d chars", len(response.Content))
 	t.Logf("   Preview: %s", truncateString(response.Content, 100))
 }
 
-// TestIntegration_RetryMechanism 测试重试机制
+// TestIntegration_RetryMechanism Test the retrial mechanism
 func TestIntegration_RetryMechanism(t *testing.T) {
 	cfg := getIntegrationConfig()
 	if cfg.Key == "" {
@@ -317,15 +317,15 @@ func TestIntegration_RetryMechanism(t *testing.T) {
 	})
 	require.NoError(t, err)
 
-	// 验证是包装后的模型
+	// Verification is the model after packaging
 	_, ok := chatModel.(*RetryChatModelWrapper)
 	assert.True(t, ok, "Should be wrapped with RetryChatModelWrapper")
 
 	t.Logf("✅ Retry mechanism enabled with MaxRetries=3")
 }
 
-// TestIntegration_ConcurrentRequests 测试并发请求
-// 注意：此测试可能会触发 API 速率限制，如果遇到 429 错误会跳过
+// TestIntegration_ConcurrentRequests Test concurrency requests
+// Note: This test may trigger API rate limits, which will be skipped if you encounter a 429 error
 func TestIntegration_ConcurrentRequests(t *testing.T) {
 	cfg := getIntegrationConfig()
 	if cfg.Key == "" {
@@ -339,7 +339,7 @@ func TestIntegration_ConcurrentRequests(t *testing.T) {
 	})
 	require.NoError(t, err)
 
-	const numRequests = 2 // 减少并发请求数以避免速率限制
+	const numRequests = 2 // Reduce the number of concurrent requests to avoid rate limits
 	results := make(chan string, numRequests)
 	errors := make(chan error, numRequests)
 
@@ -381,7 +381,7 @@ func TestIntegration_ConcurrentRequests(t *testing.T) {
 		}
 	}
 
-	// 如果遇到速率限制，跳过测试而不是失败
+	// If you encounter a rate limit, skip the test instead of failing
 	if rateLimited {
 		t.Skip("API rate limit reached, skipping test")
 	}
@@ -389,14 +389,14 @@ func TestIntegration_ConcurrentRequests(t *testing.T) {
 	assert.GreaterOrEqual(t, successCount, 1, "At least one concurrent request should succeed")
 }
 
-// TestIntegration_DifferentModels 测试不同模型（如果有多个模型可用）
+// TestIntegration_DifferentModels Test different models (if multiple models are available)
 func TestIntegration_DifferentModels(t *testing.T) {
 	cfg := getIntegrationConfig()
 	if cfg.Key == "" {
 		t.Skip("LLM_API_KEY not set, skipping integration test")
 	}
 
-	models := []string{cfg.Model} // 可以添加更多模型
+	models := []string{cfg.Model} // More models can be added
 
 	for _, model := range models {
 		t.Run(model, func(t *testing.T) {
@@ -426,68 +426,68 @@ func TestIntegration_DifferentModels(t *testing.T) {
 }
 
 // ============================================
-// 辅助函数
+// Auxiliary function
 // ============================================
 
-// isDebugMode 检查是否为调试模式（通过环境变量 DEBUG_TEST 控制）
-// 设置 DEBUG_TEST=1 时启用详细日志输出
+// isDebugMode checks whether it is in debug mode (controlled by environment variable DEBUG_TEST)
+// Enable detailed log output when set to DEBUG_TEST=1
 func isDebugMode() bool {
 	return os.Getenv("DEBUG_TEST") == "1"
 }
 
-// NewTestLogger 创建测试日志记录器
+// NewTestLogger creates a test log logger
 func NewTestLogger(t *testing.T) TestLogger {
 	return TestLogger{t: t}
 }
 
-// TestLogger 测试日志记录器
+// TestLogger test logger
 type TestLogger struct {
 	t *testing.T
 }
 
-// Printf 打印日志
+// Printf prints logs
 func (l TestLogger) Printf(format string, v ...interface{}) {
 	l.t.Logf("[AGENT] "+format, v...)
 }
 
-// Debugf 调试日志
+// Debugf debugging log
 func (l TestLogger) Debugf(format string, v ...interface{}) {
 	l.t.Logf("[DEBUG] "+format, v...)
 }
 
-// Infof 信息日志
+// Infof Information Log
 func (l TestLogger) Infof(format string, v ...interface{}) {
 	l.t.Logf("[INFO] "+format, v...)
 }
 
-// Warnf 警告日志
+// Warnf warning log
 func (l TestLogger) Warnf(format string, v ...interface{}) {
 	l.t.Logf("[WARN] "+format, v...)
 }
 
-// Errorf 错误日志
+// Errorf error log
 func (l TestLogger) Errorf(format string, v ...interface{}) {
 	l.t.Logf("[ERROR] "+format, v...)
 }
 
-// 注意：truncateString 函数在 aspect_integration.go 中已定义
+// Note: The truncateString function is defined in aspect_integration.go
 
 // ============================================================================
-// 规则链集成测试 - 多模态图片识别
+// Rule chain integration testing – multimodal image recognition
 // ============================================================================
 
-// TestIntegration_RuleChainVisionWithURL 使用规则链测试多模态图片识别（URL 图片）
-// 参考：tpclaw/data/agents/agent01.json 和 rulego/engine/engine_test.go
+// TestIntegration_RuleChainVisionWithURL Using Rule Chains to Test Multimodal Image Recognition (URL Images)
+// References: tpclaw/data/agents/agent01.json and rulego/engine/engine_test.go
 func TestIntegration_RuleChainVisionWithURL(t *testing.T) {
 	cfg := getIntegrationConfig()
 	if cfg.Key == "" {
 		t.Skip("LLM_API_KEY not set, skipping integration test")
 	}
 
-	// 使用支持视觉能力的模型（如 glm-4.6v）
+	// Using models that support visual capabilities (such as glm-4.6v)
 	visionModel := getEnvOrDefault("LLM_VISION_MODEL", "glm-4.6v")
 
-	// 构建规则链 DSL（参考 agent01.json 结构）
+	// Building a Rule Chain DSL (Reference agent01.json Structure)
 	agentDsl := fmt.Sprintf(`{
 		"ruleChain": {
 			"id": "vision_test_chain",
@@ -529,14 +529,14 @@ func TestIntegration_RuleChainVisionWithURL(t *testing.T) {
 		}
 	}`, cfg.Url, cfg.Key, visionModel)
 
-	// 创建规则引擎
+	// Create a rule engine
 	config := rulego.NewConfig()
 	engine, err := rulego.New("vision_test_chain", []byte(agentDsl), types.WithConfig(config))
 	require.NoError(t, err, "Failed to create rule engine")
 	defer engine.Stop(context.Background())
 
-	// 构建多模态消息（包含图片 URL）
-	// 使用 OpenAI 格式的多模态消息
+	// Build multimodal messages (including image URLs)
+	// Using multimodal messaging in OpenAI format
 	imageURL := "https://dashscope.oss-cn-beijing.aliyuncs.com/images/dog_and_girl.jpeg"
 	messagePayload := fmt.Sprintf(`{
 		"messages": [
@@ -553,7 +553,7 @@ func TestIntegration_RuleChainVisionWithURL(t *testing.T) {
 	meta := types.NewMetadata()
 	msg := types.NewMsg(0, "VISION_TEST", types.JSON, meta, messagePayload)
 
-	// 发送消息并等待结果
+	// Send messages and wait for results
 	done := make(chan string, 1)
 	var lastMsg types.RuleMsg
 	var callbackErr error
@@ -578,7 +578,7 @@ func TestIntegration_RuleChainVisionWithURL(t *testing.T) {
 		require.NotEmpty(t, result, "Response should not be empty")
 		t.Logf("✅ Vision response: %s", truncateString(result, 300))
 
-		// 验证响应包含图片描述相关内容
+		// Verification responses include image descriptions of relevant content
 		assert.True(t, len(result) > 10, "Response should contain meaningful content")
 	case <-time.After(120 * time.Second):
 		t.Fatal("Timeout waiting for vision response")
@@ -587,7 +587,7 @@ func TestIntegration_RuleChainVisionWithURL(t *testing.T) {
 	t.Logf("Final message type: %s", lastMsg.DataType)
 }
 
-// TestIntegration_RuleChainVisionWithBase64 使用规则链测试多模态图片识别（Base64 图片）
+// TestIntegration_RuleChainVisionWithBase64 Using Rule Chains to Test Multimodal Image Recognition (Base64 Images)
 func TestIntegration_RuleChainVisionWithBase64(t *testing.T) {
 	cfg := getIntegrationConfig()
 	if cfg.Key == "" {
@@ -596,7 +596,7 @@ func TestIntegration_RuleChainVisionWithBase64(t *testing.T) {
 
 	visionModel := getEnvOrDefault("LLM_VISION_MODEL", "glm-4.6v")
 
-	// 构建规则链 DSL
+	// Build a Rule Chain DSL
 	agentDsl := fmt.Sprintf(`{
 		"ruleChain": {
 			"id": "vision_base64_chain",
@@ -631,7 +631,7 @@ func TestIntegration_RuleChainVisionWithBase64(t *testing.T) {
 	require.NoError(t, err)
 	defer engine.Stop(context.Background())
 
-	// 创建一个简单的测试图片 Base64（1x1 红色 PNG）
+	// Create a simple test image of Base64 (1x1 red PNG)
 	base64Img := "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8DwHwAFBQIAX8jx0gAAAABJRU5ErkJggg=="
 
 	messagePayload := fmt.Sprintf(`{
@@ -668,7 +668,7 @@ func TestIntegration_RuleChainVisionWithBase64(t *testing.T) {
 	}
 }
 
-// TestIntegration_RuleChainVisionStream 使用规则链测试流式多模态图片识别
+// TestIntegration_RuleChainVisionStream Testing streaming multimodal image recognition using a chain of rules
 func TestIntegration_RuleChainVisionStream(t *testing.T) {
 	cfg := getIntegrationConfig()
 	if cfg.Key == "" {
@@ -725,7 +725,7 @@ func TestIntegration_RuleChainVisionStream(t *testing.T) {
 	}`, imageURL)
 
 	meta := types.NewMetadata()
-	meta.PutValue("stream", "true") // 启用流式模式
+	meta.PutValue("stream", "true") // Enable streaming mode
 	msg := types.NewMsg(0, "VISION_STREAM_TEST", types.JSON, meta, messagePayload)
 
 	done := make(chan string, 1)
@@ -741,12 +741,12 @@ func TestIntegration_RuleChainVisionStream(t *testing.T) {
 			done <- ""
 		} else {
 			chunkCount++
-			// 检查是否是流式完成的最终结果
+			// Check whether the final result is the flow stream completion
 			if outMsg.Metadata.GetValue("stream_completed") == "true" {
 				t.Logf("Final response (chunk #%d): %s", chunkCount, truncateString(outMsg.GetData(), 200))
 				done <- outMsg.GetData()
 			} else {
-				// 流式 chunk - 仅在调试模式下打印详细内容
+				// Streaming chunk - Prints detailed content only in debug mode
 				if isDebugMode() {
 					t.Logf("Chunk #%d: %s", chunkCount, truncateString(outMsg.GetData(), 100))
 				}
@@ -772,7 +772,7 @@ func TestIntegration_RuleChainVisionStream(t *testing.T) {
 	}
 }
 
-// TestIntegration_RuleChainVisionMultiTurn 使用规则链测试多轮图片对话
+// TestIntegration_RuleChainVisionMultiTurn Test multi-turn image dialogues using a chain of rules
 func TestIntegration_RuleChainVisionMultiTurn(t *testing.T) {
 	cfg := getIntegrationConfig()
 	if cfg.Key == "" {
@@ -817,7 +817,7 @@ func TestIntegration_RuleChainVisionMultiTurn(t *testing.T) {
 
 	imageURL := "https://dashscope.oss-cn-beijing.aliyuncs.com/images/dog_and_girl.jpeg"
 
-	// 第一轮：发送图片并提问
+	// Round 1: Send pictures and ask questions
 	messagePayload := fmt.Sprintf(`{
 		"messages": [
 			{
@@ -850,7 +850,7 @@ func TestIntegration_RuleChainVisionMultiTurn(t *testing.T) {
 		t.Fatal("Timeout in turn 1")
 	}
 
-	// 第二轮：追问（不带图片，测试记忆）
+	// Second round: Follow-up questions (no pictures, memory test)
 	messagePayload2 := `{
 		"messages": [
 			{
@@ -886,7 +886,7 @@ func TestIntegration_RuleChainVisionMultiTurn(t *testing.T) {
 	case result := <-done2:
 		require.NotEmpty(t, result)
 		t.Logf("✅ Turn 2 response: %s", truncateString(result, 150))
-		// 验证模型记住了图片内容
+		// The verification model remembers the image content
 		assert.True(t, strings.Contains(result, "狗") || strings.Contains(result, "dog"),
 			"Response should mention the dog from the image")
 	case <-time.After(120 * time.Second):
@@ -895,10 +895,10 @@ func TestIntegration_RuleChainVisionMultiTurn(t *testing.T) {
 }
 
 // ============================================
-// Skill 热更新测试
+// Skill Hot Update Test
 // ============================================
 
-// mockDynamicSkillLister 用于测试的动态技能工具 mock
+// mockDynamicSkillLister is a dynamic skill tool for testing mock
 type mockDynamicSkillLister struct {
 	skills      string
 	instruction string
@@ -916,24 +916,24 @@ func (m *mockDynamicSkillLister) GetSkillInstruction() string {
 	return m.instruction
 }
 
-// TestExtractOriginalSystemContent 测试从 system message 中提取原始内容
+// TestExtractOriginalSystemContent tests extracting the original content from the system message
 func TestExtractOriginalSystemContent(t *testing.T) {
-	// 没有 marker 的内容，应原样返回
+	// Content without markers should be returned as is
 	content := "You are a helpful assistant."
 	result := ExtractOriginalSystemContent(content)
 	assert.Equal(t, content, result)
 
-	// 有 marker 的内容，应返回 marker 之前的部分
+	// Content with markers should be returned to the part before the marker
 	contentWithSkill := "You are a helpful assistant.\n<!-- SKILL_LIST -->\nSkill system instructions\n<available_skills>...</available_skills>"
 	result = ExtractOriginalSystemContent(contentWithSkill)
 	assert.Equal(t, "You are a helpful assistant.", result)
 
-	// 空内容
+	// Empty content
 	result = ExtractOriginalSystemContent("")
 	assert.Equal(t, "", result)
 }
 
-// TestBuildSkillModifier 测试 MessageModifier 的行为
+// TestBuildSkillModifier tests the behavior of MessageModifier
 func TestBuildSkillModifier(t *testing.T) {
 	mock := &mockDynamicSkillLister{
 		skills:      "<available_skills>\n<skill>\n<name>test_skill</name>\n<description>Test</description>\n</skill>\n</available_skills>",
@@ -982,9 +982,9 @@ func TestBuildSkillModifier(t *testing.T) {
 
 		result := modifier(ctx, input)
 
-		// 原始消息不应被修改
+		// The original message should not be altered
 		assert.Equal(t, originalContent, originalMsg.Content)
-		// 结果中的 system message 应该是新对象
+		// The system message in the result should be a new object
 		assert.NotEqual(t, originalMsg, result[0])
 		assert.Contains(t, result[0].Content, "test_skill")
 	})
@@ -995,21 +995,21 @@ func TestBuildSkillModifier(t *testing.T) {
 			{Role: schema.User, Content: "Hello"},
 		}
 
-		// 第 1 轮
+		// Round 1
 		result1 := modifier(ctx, input)
-		// 第 2 轮：用第 1 轮的 system message 作为输入
+		// Round 2: Use the system message from round 1 as input
 		input2 := []*schema.Message{
-			result1[0], // 包含 marker 的 system message
+			result1[0], // System message containing a marker
 			{Role: schema.Assistant, Content: "Hi there!"},
 			{Role: schema.User, Content: "What skills do you have?"},
 		}
 		result2 := modifier(ctx, input2)
 
-		// system message 中技能提示词不应重复
+		// Skill prompts in system messages should not be repeated
 		sysContent := result2[0].Content
 		count := strings.Count(sysContent, "<available_skills>")
 		assert.Equal(t, 1, count, "技能提示词不应重复，出现次数: %d", count)
-		// 原始内容应保留
+		// The original content should be retained
 		assert.Contains(t, sysContent, "You are a helpful assistant.")
 	})
 
@@ -1025,20 +1025,20 @@ func TestBuildSkillModifier(t *testing.T) {
 		}
 		result := failModifier(ctx, input)
 
-		// 不应注入任何内容
+		// No content should be injected
 		assert.Len(t, result, 1)
 		assert.Equal(t, schema.User, result[0].Role)
 	})
 }
 
-// TestIntegration_SkillWithReactAgent 测试 skill 工具与 ReactAgent 的集成（需要 LLM）
+// TestIntegration_SkillWithReactAgent Test the integration of skill tools with ReactAgent (requires LLM)
 func TestIntegration_SkillWithReactAgent(t *testing.T) {
 	cfg := getIntegrationConfig()
 	if cfg.Key == "" {
 		t.Skip("LLM_API_KEY not set, skipping integration test")
 	}
 
-	// 创建技能目录
+	// Create a skill catalog
 	tmpDir := t.TempDir()
 	skillDir := filepath.Join(tmpDir, "greeting")
 	require.NoError(t, os.MkdirAll(skillDir, 0755))
@@ -1049,7 +1049,7 @@ description: A skill for greeting users in different languages
 When greeting users, always say "Hello from the greeting skill!" and then greet in 3 languages.
 `), 0644))
 
-	// 创建带有 skill 工具的智能体
+	// Create agents with skill tools
 	toolsConfig := []config.Tool{
 		{
 			Type: config.ToolTypeBuiltin,
@@ -1074,11 +1074,11 @@ When greeting users, always say "Hello from the greeting skill!" and then greet 
 	require.NoError(t, err)
 	require.NotEmpty(t, tools)
 
-	// 验证工具是 DynamicSkillLister
+	// The validation tool is DynamicSkillLister
 	_, isDynamic := tools[0].(aitool.DynamicSkillLister)
 	require.True(t, isDynamic, "skill tool should implement DynamicSkillLister")
 
-	// 创建 MessageModifier
+	// Create a MessageModifier
 	var messageModifier func(ctx context.Context, input []*schema.Message) []*schema.Message
 	for _, t := range tools {
 		if dst, ok := t.(aitool.DynamicSkillLister); ok {
@@ -1088,7 +1088,7 @@ When greeting users, always say "Hello from the greeting skill!" and then greet 
 	}
 	require.NotNil(t, messageModifier)
 
-	// 创建 React Agent
+	// Create a React Agent
 	agent, err := CreateReactAgent(context.Background(), chatModel, AgentOptions{
 		MaxStep:         10,
 		ToolsConfig:     buildToolsConfig(tools),
@@ -1097,7 +1097,7 @@ When greeting users, always say "Hello from the greeting skill!" and then greet 
 	})
 	require.NoError(t, err)
 
-	// 发送请求，验证 agent 能识别并使用技能
+	// Send requests to verify that agents can recognize and use skills
 	ctx := context.Background()
 	resp, err := agent.Generate(ctx, []*schema.Message{
 		{Role: schema.User, Content: "Please greet me using the greeting skill"},
@@ -1108,7 +1108,7 @@ When greeting users, always say "Hello from the greeting skill!" and then greet 
 	t.Logf("✅ Agent response: %s", truncateString(resp.Content, 200))
 }
 
-// TestIntegration_SkillHotReload 测试技能热更新（需要 LLM）
+// TestIntegration_SkillHotReload Test skills hot-updated (requires LLM)
 func TestIntegration_SkillHotReload(t *testing.T) {
 	cfg := getIntegrationConfig()
 	if cfg.Key == "" {
@@ -1117,7 +1117,7 @@ func TestIntegration_SkillHotReload(t *testing.T) {
 
 	tmpDir := t.TempDir()
 
-	// 初始技能
+	// Starting skills
 	skillDir := filepath.Join(tmpDir, "math")
 	require.NoError(t, os.MkdirAll(skillDir, 0755))
 	require.NoError(t, os.WriteFile(filepath.Join(skillDir, "SKILL.md"), []byte(`---
@@ -1168,14 +1168,14 @@ Always respond with "Math skill activated!"
 
 	ctx := context.Background()
 
-	// 1. 第一轮请求：只有 math 技能
+	// 1. First round request: Only math skills
 	resp, err := agent.Generate(ctx, []*schema.Message{
 		{Role: schema.User, Content: "What skills do you have? List them."},
 	})
 	require.NoError(t, err)
 	t.Logf("✅ Turn 1 (before hot-reload): %s", truncateString(resp.Content, 200))
 
-	// 2. 运行时新增一个技能
+	// 2. A new skill has been added during runtime
 	time.Sleep(100 * time.Millisecond)
 	newSkillDir := filepath.Join(tmpDir, "weather")
 	require.NoError(t, os.MkdirAll(newSkillDir, 0755))
@@ -1186,9 +1186,9 @@ description: Weather forecast skill
 Always respond with "Weather skill activated!"
 `), 0644))
 
-	// 3. 第二轮请求：应能看到新增的 weather 技能
-	// 注意：由于 react.Agent 是编译好的 graph，tool schema 不会变，
-	// 但 MessageModifier 会注入最新的技能列表到 system prompt
+	// 3. Second round of requests: You should be able to see the new weather skill
+	// Note: Since react.Agent is a precompiled graph, the tool schema will not change.
+	// However, MessageModifier injects the latest skill list into the system prompt
 	resp2, err := agent.Generate(ctx, []*schema.Message{
 		{Role: schema.User, Content: "What skills do you have now? List them."},
 	})
@@ -1196,7 +1196,7 @@ Always respond with "Weather skill activated!"
 	t.Logf("✅ Turn 2 (after hot-reload): %s", truncateString(resp2.Content, 200))
 }
 
-// TestIntegration_SkillDescriptionChange 测试修改技能描述后智能体能感知到（需要 LLM）
+// TestIntegration_SkillDescriptionChange After modifying the skill description, the intelligent agent can perceive it (requires LLM)
 func TestIntegration_SkillDescriptionChange(t *testing.T) {
 	cfg := getIntegrationConfig()
 	if cfg.Key == "" {
@@ -1205,7 +1205,7 @@ func TestIntegration_SkillDescriptionChange(t *testing.T) {
 
 	tmpDir := t.TempDir()
 
-	// 初始技能：描述为 "Math helper skill"
+	// Starting skill: described as "Math helper skill"
 	skillDir := filepath.Join(tmpDir, "calculator")
 	require.NoError(t, os.MkdirAll(skillDir, 0755))
 	require.NoError(t, os.WriteFile(filepath.Join(skillDir, "SKILL.md"), []byte(`---
@@ -1256,7 +1256,7 @@ This is a math skill.
 
 	ctx := context.Background()
 
-	// 1. 第一轮：描述为 "Math helper skill"
+	// 1. Round One: Described as a "Math helper skill"
 	resp, err := agent.Generate(ctx, []*schema.Message{
 		{Role: schema.User, Content: "What is the calculator skill about? Just tell me its description."},
 	})
@@ -1264,7 +1264,7 @@ This is a math skill.
 	t.Logf("✅ Turn 1 (original description): %s", truncateString(resp.Content, 200))
 	assert.Contains(t, resp.Content, "Math helper skill")
 
-	// 2. 修改技能描述
+	// 2. Modify skill descriptions
 	time.Sleep(100 * time.Millisecond)
 	require.NoError(t, os.WriteFile(filepath.Join(skillDir, "SKILL.md"), []byte(`---
 name: calculator
@@ -1273,7 +1273,7 @@ description: Advanced scientific calculator with graph plotting capabilities
 This is an advanced calculator skill.
 `), 0644))
 
-	// 3. 第二轮：应看到新描述
+	// 3. Second round: New descriptions should be seen
 	resp2, err := agent.Generate(ctx, []*schema.Message{
 		{Role: schema.User, Content: "What is the calculator skill about now? Just tell me its description."},
 	})

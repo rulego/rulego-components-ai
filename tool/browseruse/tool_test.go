@@ -80,7 +80,7 @@ func TestExtractContentMarkdown(t *testing.T) {
 
 func TestWebSearchWithBaidu(t *testing.T) {
 	skipIfNoBrowser(t)
-	// 配置使用百度搜索引擎
+	// Configure using Baidu search engine
 	config := DefaultConfig()
 	config.Headless = true
 	config.SearchEngine = "baidu"
@@ -93,7 +93,7 @@ func TestWebSearchWithBaidu(t *testing.T) {
 
 	ctx := context.Background()
 
-	// 测试调用 web_search 动作
+	// Test call web_search action
 	result, err := invokable.InvokableRun(ctx, `{"action": "web_search", "query": "rulego"}`)
 
 	if err != nil {
@@ -109,7 +109,7 @@ func TestWebSearchWithBaidu(t *testing.T) {
 
 	if err == nil {
 		assert.Contains(t, result, "successfully searched for 'rulego' using baidu")
-		// 百度可能会重定向到验证码页面，所以只要包含关键字即可，不强求完整URL
+		// Baidu may redirect to the CAPTCHA page, so just include keywords and don't insist on a full URL
 		assert.Contains(t, result, "rulego")
 	}
 
@@ -195,7 +195,7 @@ func TestInputTextWithoutParams(t *testing.T) {
 func TestNavigateToRuleGo(t *testing.T) {
 	skipIfNoBrowser(t)
 	config := DefaultConfig()
-	config.Headless = true // 无头模式，不显示浏览器窗口
+	config.Headless = true // Headless mode does not display browser windows
 
 	tTool, err := NewTool(config)
 	require.NoError(t, err)
@@ -259,7 +259,7 @@ func TestGetContentFromRuleGo(t *testing.T) {
 }
 
 func TestWebSearchWithoutTool(t *testing.T) {
-	// 默认配置不包含搜索工具
+	// By default, the configuration does not include a search tool
 	config := DefaultConfig()
 	config.Headless = true
 
@@ -271,11 +271,11 @@ func TestWebSearchWithoutTool(t *testing.T) {
 
 	ctx := context.Background()
 
-	// 测试调用 web_search 动作
-	// 预期行为：没有搜索工具时，自动跳转到 Google 搜索
+	// Test call web_search action
+	// Expected behavior: When there is no search tool, it automatically redirects to Google Search
 	result, err := invokable.InvokableRun(ctx, `{"action": "web_search", "query": "rulego"}`)
 
-	// 如果是因为没有浏览器导致的错误，我们跳过测试
+	// If the error is caused by not having a browser, we skip the test
 	if err != nil {
 		errStr := err.Error()
 		if strings.Contains(errStr, "Chrome browser not found") || strings.Contains(errStr, "exec: \"google-chrome\"") {
@@ -285,11 +285,11 @@ func TestWebSearchWithoutTool(t *testing.T) {
 		}
 	}
 
-	// 现在的行为是返回成功结果，包含 Baidu 搜索结果
+	// The current behavior is to return successful results, including Baidu search results
 	if err == nil {
 		assert.Contains(t, result, "successfully searched for 'rulego' using baidu")
-		// Google 可能会重定向到 google.com.hk 或者出现验证码页面 (sorry/index)
-		// 所以我们只检查是否尝试使用了 Google
+		// Google may redirect to google.com.hk or display a captcha page (sorry/index)
+		// So we only check whether Google has been tried out
 		// assert.Contains(t, result, "URL: https://www.google.com/search?q=rulego")
 	}
 
@@ -301,7 +301,7 @@ func TestWebSearchWithoutTool(t *testing.T) {
 
 func TestWebSearchWithCustomURL(t *testing.T) {
 	skipIfNoBrowser(t)
-	// 配置自定义搜索引擎 URL
+	// Configure custom search engine URLs
 	config := DefaultConfig()
 	config.Headless = true
 	config.SearchEngine = "https://www.bing.com/search?q=%s"
@@ -314,8 +314,8 @@ func TestWebSearchWithCustomURL(t *testing.T) {
 
 	ctx := context.Background()
 
-	// 测试调用 web_search 动作
-	// 预期行为：使用自定义 URL 进行搜索
+	// Test call web_search action
+	// Expected behavior: Search using custom URLs
 	result, err := invokable.InvokableRun(ctx, `{"action": "web_search", "query": "rulego"}`)
 
 	if err != nil {
@@ -327,7 +327,7 @@ func TestWebSearchWithCustomURL(t *testing.T) {
 		}
 	}
 
-	// 验证结果是否包含自定义引擎信息
+	// Verify whether the results contain custom engine information
 	if err == nil {
 		// Verify that the tool returned a response in the expected format
 		assert.Contains(t, result, "successfully searched for 'rulego' using custom")
@@ -341,7 +341,7 @@ func TestWebSearchWithCustomURL(t *testing.T) {
 	}
 }
 
-// TestMain 确保所有测试顺序执行
+// TestMain ensures that all tests are executed in order
 func TestMain(m *testing.M) {
 	m.Run()
 }

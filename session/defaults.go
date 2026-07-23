@@ -34,21 +34,21 @@ const (
 	DefaultKeepRecentCount = 10
 
 	// DefaultTargetTokens for compaction (fallback when percent not set)
-	// 当模型上下文大小未知时使用的固定阈值
+	// A fixed threshold used when the model context size is unknown
 	DefaultTargetTokens = 76800
 
-	// DefaultTargetTokensPercent 触发压缩的百分比阈值
-	// 例如 70 表示当 token 使用达到模型上下文的 70% 时触发压缩
+	// DefaultTargetTokensPercent triggers the percentage threshold for compression
+	// For example, 70 means compression is triggered when token usage reaches 70% of the model context
 	DefaultTargetTokensPercent = 70
 
 	// DefaultMinMessagesToCompact minimum messages before compaction
 	DefaultMinMessagesToCompact = 20
 
-	// MaxToolResultSize 工具结果直接保存的最大字符数
+	// MaxToolResultSize: The maximum number of characters the tool result can directly save
 	MaxToolResultSize = 2000
 
-	// MaxToolCallArgumentSize 工具调用参数字段的最大字符数
-	// 用于截断 content、new_content 等大字段
+	// MaxToolCallArgumentSize is the maximum number of characters the parameter field can call
+	// Used to truncate large fields such as content and new_content
 	MaxToolCallArgumentSize = 500
 )
 
@@ -61,8 +61,8 @@ var (
 	DefaultSessionIdleTimeout = 1 * time.Hour
 )
 
-// ProcessToolResult 处理工具结果
-// 未超过阈值直接保存，超过则截断
+// ProcessToolResult handles the tool result
+// If the threshold is not exceeded, it is stored directly; if exceeded, it will be truncated
 func ProcessToolResult(result string) string {
 	if len(result) <= MaxToolResultSize {
 		return result
@@ -70,39 +70,39 @@ func ProcessToolResult(result string) string {
 	return result[:MaxToolResultSize] + "\n...[已截断]"
 }
 
-// largeArgumentFields 需要截断的大参数字段名
+// largeArgumentFields: The name of the large parameter field to be truncated
 var largeArgumentFields = []string{
-	"content",     // write 工具
-	"new_content", // edit 工具
-	"search",      // edit 工具 (可能很大)
-	"replace",     // edit 工具 (可能很大)
-	"code",        // code 工具
-	"text",        // 通用文本字段
+	"content",     // write tool
+	"new_content", // edit tool
+	"search",      // edit tool (possibly very large)
+	"replace",     // edit tool (possibly very large)
+	"code",        // code tools
+	"text",        // Generic text fields
 	"body",        // HTTP body
-	"data",        // 通用数据字段
+	"data",        // General data field
 }
 
-// ProcessToolCallArguments 处理工具调用参数
-// 对大字段进行截断，保持 JSON 格式有效
-// 如果解析失败，返回空对象 {}
+// ProcessToolCallArguments handles the parameters called by the tool
+// Truncate large fields to keep JSON formatting valid
+// If parsing fails, returns an empty object {}
 func ProcessToolCallArguments(arguments string) string {
 	if arguments == "" || arguments == "null" {
 		return "{}"
 	}
 
-	// 尝试解析 JSON
+	// Try parsing JSON
 	var params map[string]interface{}
 	if err := json.Unmarshal([]byte(arguments), &params); err != nil {
-		// 解析失败，返回空对象（保证是有效 JSON）
+		// Parsing fails, returns an empty object (guaranteed to be valid JSON)
 		return "{}"
 	}
 
-	// 如果参数很短，直接返回
+	// If the parameter is short, return it directly
 	if len(arguments) <= MaxToolCallArgumentSize {
 		return arguments
 	}
 
-	// 对大字段进行截断
+	// Truncate large fields
 	modified := false
 	for _, field := range largeArgumentFields {
 		if val, ok := params[field]; ok {
@@ -114,13 +114,13 @@ func ProcessToolCallArguments(arguments string) string {
 	}
 
 	if !modified {
-		// 没有修改，但原始参数太长，返回截断版本
-		// 这种情况可能是其他字段很大，整体截断
+		// No modifications were made, but the original parameters were too long, so the version was cut off
+		// This situation may be that other fields are large and the whole is cut off
 		if len(arguments) > MaxToolCallArgumentSize*2 {
-			// 重新序列化，如果还是太长，返回简化版本
+			// Reserialization, if still too long, returns to the simplified version
 			result, err := json.Marshal(params)
 			if err != nil || len(result) > MaxToolCallArgumentSize*2 {
-				// 返回只包含操作类型和路径的简化版本
+				// Returns a simplified version that only includes the operation type and path
 				simplified := make(map[string]interface{})
 				if op, ok := params["operation"]; ok {
 					simplified["operation"] = op
@@ -137,7 +137,7 @@ func ProcessToolCallArguments(arguments string) string {
 		return arguments
 	}
 
-	// 重新序列化
+	// Reserialization
 	result, err := json.Marshal(params)
 	if err != nil {
 		return "{}"
@@ -145,7 +145,7 @@ func ProcessToolCallArguments(arguments string) string {
 	return string(result)
 }
 
-// truncateString 截断字符串辅助函数
+// truncateString is a string truncation auxiliary function
 func truncateString(s string, maxLen int) string {
 	if len(s) <= maxLen {
 		return s
@@ -153,7 +153,7 @@ func truncateString(s string, maxLen int) string {
 	return s[:maxLen] + "...[已截断]"
 }
 
-// isLargeField 判断字段是否需要截断
+// isLargeField checks whether a field needs to be truncated
 func isLargeField(field string) bool {
 	field = strings.ToLower(field)
 	for _, f := range largeArgumentFields {

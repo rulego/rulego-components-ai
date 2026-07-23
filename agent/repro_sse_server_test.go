@@ -1,8 +1,8 @@
 package agent
 
-// 用本地 SSE server 走真实 sashabaranov + eino-ext 全链路复现 “Error in input stream”。
-// 和 repro_midstream_test.go（fakeChatModel）不同，这里服务端是真实 HTTP，发 OpenAI SSE
-// 格式（含 data: {"error":...}），由 SDK 真实解析。
+// Using the local SSE server to run the real sashabaranov + eino-ext full-link reproduction of "Error in input stream".
+// Unlike repro_midstream_test.go (fakeChatModel), here the server is real HTTP, sending OpenAI SSE
+// Format (including data: {"error":...}), and the SDK provides real parsing.
 
 import (
 	"context"
@@ -18,9 +18,9 @@ import (
 	"github.com/rulego/rulego-components-ai/config"
 )
 
-// sseReproServer 本地 OpenAI 兼容 SSE server。
-// 第 breakOn 次请求：先发 chunks，再插入一个 SSE error 事件（模拟智谱 mid-stream 内部错误）；
-// 其他次：发 chunks 后正常 [DONE] 结束。
+// sseReproServer native OpenAI compatible with SSE server.
+// breakOn request: first send chunks, then insert an SSE error event (simulating an internal error in Zhipu mid-stream);
+// Other times: After sending chunks, normal [DONE] ends normally.
 type sseReproServer struct {
 	addr    string
 	breakOn int
@@ -72,7 +72,7 @@ func (s *sseReproServer) handle(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if s.calls == s.breakOn {
-		// 插入 SSE error 事件 —— 模拟智谱 GLM 流式生成途中的内部错误
+		// Insert SSE error event — simulates internal errors during Zhipu GLM stream generation
 		errJSON, _ := json.Marshal(map[string]any{
 			"error": map[string]any{
 				"message": "Error in input stream (Please retry the request.)",
@@ -80,13 +80,13 @@ func (s *sseReproServer) handle(w http.ResponseWriter, r *http.Request) {
 			},
 		})
 		writeSSE(string(errJSON))
-		return // 不发 [DONE]，连接关闭后 sashabaranov 读到 EOF 触发 unmarshalError
+		return // If [DONE] is not sent, after the connection closes, sashabaranov reads EOF and triggers unmarshalError
 	}
 
 	writeSSE("[DONE]")
 }
 
-// drainStreamErr 消费流，返回 (内容拼接, 错误)；正常结束 err=io.EOF。
+// drainStreamErr consumes stream, returns (content concatenation, error); Normal termination err=io.EOF.
 func drainStreamErr(sr *schema.StreamReader[*schema.Message]) (string, error) {
 	defer sr.Close()
 	var sb strings.Builder
@@ -101,21 +101,21 @@ func drainStreamErr(sr *schema.StreamReader[*schema.Message]) (string, error) {
 	}
 }
 
-// TestReproSSE_OffMode_MidStreamError 真实 SDK 路径复现（off 模式）：
-// 本地 server 第 1 次请求发 7 个 chunk 后插入 SSE error 事件。sashabaranov 解析出
-// "error, Error in input stream (Please retry the request.)"。off 模式探测窗口=3，
-// error 在窗口外 → 透传给调用方。
+// TestReproSSE_OffMode_MidStreamError Real SDK path reproduction (off mode):
+// After the local server sends 7 chunks on its first request, an SSE error event is inserted. Sashabaranov analyzed
+// "error, Error in input stream (Please retry the request.)". off mode detection window = 3,
+// error is passed → outside the window to the caller.
 func TestReproSSE_OffMode_MidStreamError(t *testing.T) {
-	srv := newSSEReproServer(t, 1, []string{"你", "好", "，", "这", "是", "回", "复"}) // 7 chunk > 窗口 3
+	srv := newSSEReproServer(t, 1, []string{"你", "好", "，", "这", "是", "回", "复"}) // 7 chunk > Window 3
 	defer srv.server.Close()
 
 	cfg := &config.LLMConfig{
-		Url:         "http://" + srv.addr + "/v1",
-		Key:         "test-key",
-		Model:       "test-model",
-		MaxRetries:  3,
+		Url:             "http://" + srv.addr + "/v1",
+		Key:             "test-key",
+		Model:           "test-model",
+		MaxRetries:      3,
 		StreamRetryMode: config.StreamRetryOff,
-		Params:      config.ModelParams{Temperature: 0.7, TopP: 0.9},
+		Params:          config.ModelParams{Temperature: 0.7, TopP: 0.9},
 	}
 	m, err := CreateChatModel(*cfg, ModelOptions{WrapRetry: true, MaxRetries: 3})
 	if err != nil {
@@ -126,30 +126,30 @@ func TestReproSSE_OffMode_MidStreamError(t *testing.T) {
 		[]*schema.Message{schema.UserMessage("hi")})
 	var gotErr error
 	if err != nil {
-		gotErr = err // 建立阶段/窗口内即返回错误
+		gotErr = err // Returns an error during the creation phase/window
 	} else {
-		_, gotErr = drainStreamErr(sr) // 窗口外错误在读取时透传
+		_, gotErr = drainStreamErr(sr) // Errors outside the window are transmitted during reading
 	}
 
 	if gotErr == nil || !strings.Contains(gotErr.Error(), "input stream") {
-		t.Fatalf("期望透传 'error, Error in input stream...'，got: %v", gotErr)
+		t.Fatalf("I hope to convey 'error, Error in input stream...', got: %v", gotErr)
 	}
-	t.Logf("✅ 真实 SDK 路径复现成功（off 模式）：服务端 SSE error 被解析并透传 -> %v", gotErr)
+	t.Logf("✅ True SDK path successfully reproduced (off mode): Server SSE error is parsed and transmitted as -> %v", gotErr)
 }
 
-// TestReproSSE_FullMode_Retries 真实 SDK 路径复现（full 模式）：
-// 同样的 server（第 1 次发 error），full 模式完整缓冲捕获 error → 重试 → 第 2 次成功。
+// TestReproSSE_FullMode_Retries True SDK path reproduction (full mode):
+// For the same server (first error issue), full mode fully buffers error capture→ retries → second successful attempt.
 func TestReproSSE_FullMode_Retries(t *testing.T) {
 	srv := newSSEReproServer(t, 1, []string{"你", "好", "回", "复"}) // 4 chunk
 	defer srv.server.Close()
 
 	cfg := &config.LLMConfig{
-		Url:         "http://" + srv.addr + "/v1",
-		Key:         "test-key",
-		Model:       "test-model",
-		MaxRetries:  3,
+		Url:             "http://" + srv.addr + "/v1",
+		Key:             "test-key",
+		Model:           "test-model",
+		MaxRetries:      3,
 		StreamRetryMode: config.StreamRetryFull,
-		Params:      config.ModelParams{Temperature: 0.7, TopP: 0.9},
+		Params:          config.ModelParams{Temperature: 0.7, TopP: 0.9},
 	}
 	m, err := CreateChatModel(*cfg, ModelOptions{WrapRetry: true, MaxRetries: 3})
 	if err != nil {
@@ -159,14 +159,14 @@ func TestReproSSE_FullMode_Retries(t *testing.T) {
 	sr, err := m.Stream(context.Background(),
 		[]*schema.Message{schema.UserMessage("hi")})
 	if err != nil {
-		t.Fatalf("full 模式应重试成功，got: %v", err)
+		t.Fatalf("full The mode should be successfully retried and got: %v", err)
 	}
 	content, recvErr := drainStreamErr(sr)
 	if recvErr != io.EOF {
-		t.Fatalf("重放后应 io.EOF，got: %v", recvErr)
+		t.Fatalf("After replaying, it should be io.EOF and got: %v", recvErr)
 	}
 	if srv.calls < 2 {
-		t.Fatalf("full 模式应至少调用 server 2 次（重试），got %d", srv.calls)
+		t.Fatalf("full mode should be called at least server twice (retry) got %d", srv.calls)
 	}
-	t.Logf("✅ 真实 SDK 路径：full 模式重试成功（server 调用 %d 次），内容: %q", srv.calls, content)
+	t.Logf("✅ True SDK path: full pattern retry successful (server call %d), content: %q", srv.calls, content)
 }

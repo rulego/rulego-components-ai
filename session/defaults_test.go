@@ -26,7 +26,7 @@ func TestProcessToolCallArguments(t *testing.T) {
 	tests := []struct {
 		name      string
 		input     string
-		wantValid bool // 结果是否应该是有效 JSON
+		wantValid bool // Should the result be valid JSON?
 		checkFunc func(t *testing.T, result string)
 	}{
 		{
@@ -64,10 +64,10 @@ func TestProcessToolCallArguments(t *testing.T) {
 					t.Error("content field missing or not string")
 					return
 				}
-				if len(content) > MaxToolCallArgumentSize+50 { // 允许截断标记的额外长度
+				if len(content) > MaxToolCallArgumentSize+50 { // Allow for additional length of truncated marks
 					t.Errorf("content not truncated, len=%d", len(content))
 				}
-				// 检查其他字段保留
+				// Check other fields to reserve
 				if params["operation"] != "file" {
 					t.Error("operation field lost")
 				}
@@ -135,7 +135,7 @@ func TestProcessToolCallArguments(t *testing.T) {
 					t.Errorf("result is not valid JSON: %v", err)
 					return
 				}
-				// 应该保留 operation 和 path
+				// Operation and path should be retained
 				if params["operation"] != "file" {
 					t.Error("operation field lost in simplified result")
 				}
@@ -150,7 +150,7 @@ func TestProcessToolCallArguments(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			result := ProcessToolCallArguments(tt.input)
 
-			// 验证结果是有效 JSON
+			// The verification result is a valid JSON
 			if tt.wantValid {
 				if !json.Valid([]byte(result)) {
 					t.Errorf("result is not valid JSON: %s", result)
@@ -169,8 +169,8 @@ func TestProcessToolResult(t *testing.T) {
 	tests := []struct {
 		name      string
 		input     string
-		wantLen   int  // 期望长度（大致）
-		truncated bool // 是否应该被截断
+		wantLen   int  // Expected length (approximate)
+		truncated bool // Should it be truncated?
 	}{
 		{
 			name:      "短结果不截断",
@@ -181,7 +181,7 @@ func TestProcessToolResult(t *testing.T) {
 		{
 			name:      "长结果被截断",
 			input:     string(make([]byte, 5000)),
-			wantLen:   MaxToolResultSize + 50, // 允许截断标记的额外长度
+			wantLen:   MaxToolResultSize + 50, // Allow for additional length of truncated marks
 			truncated: true,
 		},
 		{
@@ -209,7 +209,7 @@ func TestProcessToolResult(t *testing.T) {
 	}
 }
 
-// TestIsExecutableToolCallArgs 测试工具调用参数是否满足最基本的执行条件。
+// TestIsExecutableToolCallArgs tests whether the tool call parameters meet the most basic execution conditions.
 func TestIsExecutableToolCallArgs(t *testing.T) {
 	tests := []struct {
 		name      string

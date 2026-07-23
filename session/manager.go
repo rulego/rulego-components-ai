@@ -6,88 +6,88 @@ import (
 	"time"
 )
 
-// SessionManager 会话管理器接口
+// SessionManager session manager interface
 type SessionManager interface {
-	// GetOrCreate 获取或创建会话
+	// GetOrCreate to get or create a session
 	GetOrCreate(ctx context.Context, req SessionRequest) (*Session, error)
 
-	// Get 获取会话（不包含历史消息)
+	// Get the session (excluding historical messages)
 	Get(ctx context.Context, key string) (*Session, error)
 
-	// AddMessage 添加消息到会话
+	// AddMessage Adds a message to a session
 	AddMessage(ctx context.Context, sessionKey string, msg *SessionMessage) error
 
-	// GetHistory 获取会话历史消息
+	// GetHistory to get session history messages
 	GetHistory(ctx context.Context, sessionKey string, limit int) ([]*SessionMessage, error)
 
-	// Update 更新会话
+	// Update the session
 	Update(ctx context.Context, session *Session) error
 
-	// Delete 删除会话
+	// Delete: Delete the session
 	Delete(ctx context.Context, key string) error
 
-	// List 列出会话
+	// List Sessions
 	List(ctx context.Context, query *SessionQuery) ([]*Session, error)
 
-	// CompactIfNeeded 按需压缩会话
-	// 如果会话达到压缩阈值，执行压缩操作
-	// 返回值: 是否执行了压缩, 错误
+	// CompactIfNeeded compresses sessions on demand
+	// If the session reaches the compression threshold, perform the compression operation
+	// Return value: Whether compression was executed, error
 	CompactIfNeeded(ctx context.Context, sessionKey string) (bool, error)
 
-	// GetConfig 获取会话配置
+	// GetConfig obtains the session configuration
 	GetConfig() *SessionConfig
 }
 
-// SessionRequest 会话请求
+// SessionRequest Session request
 type SessionRequest struct {
-	AgentID  string
-	Channel  string
-	Scope    SessionScope
-	ScopeID  string
-	UserID   string
+	AgentID string
+	Channel string
+	Scope   SessionScope
+	ScopeID string
+	UserID  string
 }
 
-// SessionConfig 会话配置
+// SessionConfig session configuration
 type SessionConfig struct {
-	// MaxMessages 最大消息数
+	// MaxMessages maximum message count
 	MaxMessages int
 
-	// MaxTokenCount 最大Token数
+	// MaxTokenCount is the maximum number of tokens
 	MaxTokenCount int
 
-	// TTL 会话生存时间
+	// TTL session survival time
 	TTL time.Duration
 
-	// IdleTimeout 空闲超时
+	// IdleTimeout: idle timeout
 	IdleTimeout time.Duration
 
-	// PruningConfig 修剪配置
+	// PruningConfig trimming configuration
 	PruningConfig *PruningConfig
 
-	// CompactionConfig 压缩配置
+	// CompactionConfig Compressed configuration
 	CompactionConfig *CompactionConfig
 }
 
-// PruningConfig 修剪配置
+// PruningConfig trimming configuration
 type PruningConfig struct {
-	Enabled         bool
-	Mode            PruneMode
-	KeepRecentCount int
+	Enabled           bool
+	Mode              PruneMode
+	KeepRecentCount   int
 	MaxToolResultSize int
 
-	// SaveToolCalls 是否保存工具调用记录到会话历史
-	// true: 保存工具调用和结果（会被加载到历史消息中）
-	// false: 不保存工具调用记录（节省存储和 token）
+	// SaveToolCalls Whether to save the record of the tool call to the session history
+	// true: Saves tool calls and results (will be loaded into the history messages)
+	// false: Does not save tool call records (saves storage and tokens)
 	SaveToolCalls bool
 
-	// KeepToolCallsCount 加载历史时保留的最近工具调用数量
-	// 仅当 SaveToolCalls 为 true 时有效
-	// 0 表示不限制（加载所有）
-	// N 表示只保留最近 N 组工具调用
+	// KeepToolCallsCount The number of recent tool calls retained when loading history
+	// Valid only when SaveToolCalls is true
+	// 0 means unrestricted (load all)
+	// N means only the nearest N group of tool calls are retained
 	KeepToolCallsCount int
 }
 
-// PruneMode 修剪模式
+// PruneMode trimming mode
 type PruneMode string
 
 const (
@@ -96,47 +96,47 @@ const (
 	PruneModeCacheTTL PruneMode = "cache_ttl"
 )
 
-// CompactionConfig 压缩配置
+// CompactionConfig Compressed configuration
 type CompactionConfig struct {
-	Enabled            bool
-	MaxTokenCount      int
-	TriggerThreshold   float64
-	KeepRecentCount    int
+	Enabled              bool
+	MaxTokenCount        int
+	TriggerThreshold     float64
+	KeepRecentCount      int
 	MinMessagesToCompact int
 }
 
-// DefaultSessionConfig 默认会话配置
+// DefaultSessionConfig Default session configuration
 func DefaultSessionConfig() *SessionConfig {
 	return &SessionConfig{
-		MaxMessages:  100,
+		MaxMessages:   100,
 		MaxTokenCount: 128000,
-		TTL:          24 * time.Hour * 30, // 30天
-		IdleTimeout:  1 * time.Hour,
+		TTL:           24 * time.Hour * 30, // 30 days
+		IdleTimeout:   1 * time.Hour,
 		PruningConfig: &PruningConfig{
 			Enabled:            false,
 			Mode:               PruneModeSoft,
 			KeepRecentCount:    10,
 			MaxToolResultSize:  2000,
-			SaveToolCalls:      true,  // 默认保存工具调用
-			KeepToolCallsCount: 5,     // 默认保留最近 5 组
+			SaveToolCalls:      true, // By default, save tool calls
+			KeepToolCallsCount: 5,    // By default, the 5 most recent groups are retained
 		},
 		CompactionConfig: &CompactionConfig{
-			Enabled:            false,
-			MaxTokenCount:      100000,
-			TriggerThreshold:   0.8,
-			KeepRecentCount:    10,
+			Enabled:              false,
+			MaxTokenCount:        100000,
+			TriggerThreshold:     0.8,
+			KeepRecentCount:      10,
 			MinMessagesToCompact: 20,
 		},
 	}
 }
 
-// Manager 会话管理器实现
+// Manager Session Manager implementation
 type Manager struct {
 	storage SessionStorage
 	config  SessionConfig
 }
 
-// NewManager 创建新的会话管理器
+// NewManager creates a new session manager
 func NewManager(storage SessionStorage, config *SessionConfig) *Manager {
 	if config == nil {
 		config = DefaultSessionConfig()
@@ -147,18 +147,18 @@ func NewManager(storage SessionStorage, config *SessionConfig) *Manager {
 	}
 }
 
-// GetOrCreate 获取或创建会话
+// GetOrCreate to get or create a session
 func (m *Manager) GetOrCreate(ctx context.Context, req SessionRequest) (*Session, error) {
 	key := SessionKeyFromRequest(&req)
 
-	// 尝试获取现有会话
+	// Try to get an existing session
 	session, err := m.storage.Get(ctx, key)
 	if err == nil {
 		session.UpdateActivity()
 		return session, nil
 	}
 
-	// 会话不存在，创建新会话
+	// If the session doesn't exist, create a new one
 	if err == ErrSessionNotFound {
 		return m.createSession(ctx, req)
 	}
@@ -166,59 +166,59 @@ func (m *Manager) GetOrCreate(ctx context.Context, req SessionRequest) (*Session
 	return nil, err
 }
 
-// Get 获取会话
+// Get the session
 func (m *Manager) Get(ctx context.Context, key string) (*Session, error) {
 	return m.storage.Get(ctx, key)
 }
 
-// AddMessage 添加消息到会话
+// AddMessage Adds a message to a session
 func (m *Manager) AddMessage(ctx context.Context, sessionKey string, msg *SessionMessage) error {
 	return m.storage.AddMessage(ctx, sessionKey, msg)
 }
 
-// GetHistory 获取会话历史消息
+// GetHistory to get session history messages
 func (m *Manager) GetHistory(ctx context.Context, sessionKey string, limit int) ([]*SessionMessage, error) {
 	return m.storage.GetHistory(ctx, sessionKey, limit)
 }
 
-// Update 更新会话
+// Update the session
 func (m *Manager) Update(ctx context.Context, session *Session) error {
 	return m.storage.Update(ctx, session)
 }
 
-// Delete 删除会话
+// Delete: Delete the session
 func (m *Manager) Delete(ctx context.Context, key string) error {
 	return m.storage.Delete(ctx, key)
 }
 
-// List 列出会话
+// List Sessions
 func (m *Manager) List(ctx context.Context, query *SessionQuery) ([]*Session, error) {
 	return m.storage.List(ctx, query)
 }
 
-// CompactIfNeeded 按需压缩会话（默认实现不支持压缩）
+// CompactIfNeeded Compresses sessions on demand (compression is not supported by default)
 func (m *Manager) CompactIfNeeded(ctx context.Context, sessionKey string) (bool, error) {
-	// 默认 Manager 不支持压缩功能
-	// 实际的压缩由 SessionManagerAdapter 实现
+	// By default, Manager does not support compression
+	// The actual compression is performed by the SessionManagerAdapter
 	return false, nil
 }
 
-// GetConfig 获取会话配置
+// GetConfig obtains the session configuration
 func (m *Manager) GetConfig() *SessionConfig {
 	return &m.config
 }
 
-// createSession 创建新会话
+// createSession creates a new session
 func (m *Manager) createSession(ctx context.Context, req SessionRequest) (*Session, error) {
 	now := time.Now()
 
 	session := &Session{
-		Key:        SessionKeyFromRequest(&req),
-		AgentID:    req.AgentID,
-		Channel:    req.Channel,
-		Scope:      req.Scope,
-		ScopeID:    req.ScopeID,
-		Messages:   make([]*SessionMessage, 0),
+		Key:      SessionKeyFromRequest(&req),
+		AgentID:  req.AgentID,
+		Channel:  req.Channel,
+		Scope:    req.Scope,
+		ScopeID:  req.ScopeID,
+		Messages: make([]*SessionMessage, 0),
 		Metadata: SessionMetadata{
 			Title:        fmt.Sprintf("Session %s", req.ScopeID),
 			MessageCount: 0,
@@ -236,7 +236,7 @@ func (m *Manager) createSession(ctx context.Context, req SessionRequest) (*Sessi
 	return session, nil
 }
 
-// ShouldCompact 检查是否需要压缩
+// ShouldCompact checks whether compression is needed
 func (s *Session) ShouldCompact(config *CompactionConfig) bool {
 	if !config.Enabled {
 		return false
@@ -249,7 +249,7 @@ func (s *Session) ShouldCompact(config *CompactionConfig) bool {
 	return s.Metadata.TotalTokenCount >= int(float64(config.MaxTokenCount)*config.TriggerThreshold)
 }
 
-// ShouldPrune 检查是否需要修剪
+// ShouldPrune checks whether pruning is needed
 func (s *Session) ShouldPrune(config *PruningConfig) bool {
 	if !config.Enabled {
 		return false

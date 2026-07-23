@@ -10,7 +10,7 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-// TestNewTool 测试创建 MCP 工具
+// TestNewTool is a tool for creating MCPs
 func TestNewTool(t *testing.T) {
 	tests := []struct {
 		name    string
@@ -62,7 +62,7 @@ func TestNewTool(t *testing.T) {
 	}
 }
 
-// TestInfo 测试工具信息返回
+// TestInfo returns test tool information
 func TestInfo(t *testing.T) {
 	config := Config{
 		Server: "python server.py",
@@ -80,7 +80,7 @@ func TestInfo(t *testing.T) {
 	assert.NotNil(t, info.ParamsOneOf)
 }
 
-// TestDefaultConfig 测试默认配置
+// TestDefaultConfig Tests the default configuration
 func TestDefaultConfig(t *testing.T) {
 	config := DefaultConfig()
 	assert.Equal(t, 30, config.Timeout)
@@ -88,7 +88,7 @@ func TestDefaultConfig(t *testing.T) {
 	assert.Equal(t, "1.0.0", config.ClientVersion)
 }
 
-// TestInvokableRun_MissingToolName 测试缺少 tool_name 参数
+// TestInvokableRun_MissingToolName Testing lacks tool_name parameters
 func TestInvokableRun_MissingToolName(t *testing.T) {
 	tTool, err := NewTool(Config{Server: "python server.py"})
 	require.NoError(t, err)
@@ -106,7 +106,7 @@ func TestInvokableRun_MissingToolName(t *testing.T) {
 	assert.Empty(t, result)
 }
 
-// TestInvokableRun_EmptyToolName 测试空的 tool_name 参数
+// TestInvokableRun_EmptyToolName Testing empty tool_name parameters
 func TestInvokableRun_EmptyToolName(t *testing.T) {
 	tTool, err := NewTool(Config{Server: "python server.py"})
 	require.NoError(t, err)
@@ -125,7 +125,7 @@ func TestInvokableRun_EmptyToolName(t *testing.T) {
 	assert.Empty(t, result)
 }
 
-// TestInvokableRun_InvalidJSON 测试无效的 JSON 参数
+// TestInvokableRun_InvalidJSON Test for invalid JSON parameters
 func TestInvokableRun_InvalidJSON(t *testing.T) {
 	tTool, err := NewTool(Config{Server: "python server.py"})
 	require.NoError(t, err)
@@ -141,7 +141,7 @@ func TestInvokableRun_InvalidJSON(t *testing.T) {
 	assert.Empty(t, result)
 }
 
-// TestInvokableRun_ValidArguments 测试有效的参数解析
+// TestInvokableRun_ValidArguments Analyze effective parameters for testing
 func TestInvokableRun_ValidArguments(t *testing.T) {
 	tTool, err := NewTool(Config{Server: "python server.py"})
 	require.NoError(t, err)
@@ -163,7 +163,7 @@ func TestInvokableRun_ValidArguments(t *testing.T) {
 	assert.Empty(t, result)
 }
 
-// TestParseCommand 测试命令解析功能
+// TestParseCommand test command parsing function
 func TestParseCommand(t *testing.T) {
 	tests := []struct {
 		name     string
@@ -214,7 +214,7 @@ func TestParseCommand(t *testing.T) {
 	}
 }
 
-// TestRegister 测试工具注册
+// TestRegister test tool registration
 func TestRegister(t *testing.T) {
 	config := Config{
 		Server:        "python server.py",
@@ -227,13 +227,13 @@ func TestRegister(t *testing.T) {
 	assert.NoError(t, err)
 }
 
-// TestRegisterDefault 测试默认注册
+// TestRegisterDefault tests are registered by default
 func TestRegisterDefault(t *testing.T) {
 	err := RegisterDefault()
 	assert.NoError(t, err)
 }
 
-// TestInvokableRun_HTTPServer 测试 HTTP 服务器配置
+// TestInvokableRun_HTTPServer Test HTTP server configuration
 func TestInvokableRun_HTTPServer(t *testing.T) {
 	tTool, err := NewTool(Config{Server: "http://localhost:8080/mcp"})
 	require.NoError(t, err)
@@ -255,7 +255,7 @@ func TestInvokableRun_HTTPServer(t *testing.T) {
 	assert.Empty(t, result)
 }
 
-// TestInvokableRun_InvalidCommand 测试无效的命令
+// TestInvokableRun_InvalidCommand Test for invalid commands
 func TestInvokableRun_InvalidCommand(t *testing.T) {
 	tTool, err := NewTool(Config{Server: "invalid-command-that-does-not-exist-xyz123"})
 	require.NoError(t, err)
@@ -277,7 +277,7 @@ func TestInvokableRun_InvalidCommand(t *testing.T) {
 	assert.Empty(t, result)
 }
 
-// TestInvokableRun_NoArguments 测试没有 arguments 参数
+// TestInvokableRun_NoArguments tests do not have arguments parameters
 func TestInvokableRun_NoArguments(t *testing.T) {
 	tTool, err := NewTool(Config{Server: "python server.py"})
 	require.NoError(t, err)
@@ -298,7 +298,7 @@ func TestInvokableRun_NoArguments(t *testing.T) {
 	assert.Empty(t, result)
 }
 
-// TestToolWithEmptyServer 测试空服务器配置
+// TestToolWithEmptyServer tests the empty server configuration
 func TestToolWithEmptyServer(t *testing.T) {
 	config := Config{
 		Server:  "",
@@ -315,7 +315,7 @@ func TestToolWithEmptyServer(t *testing.T) {
 	assert.Contains(t, info.Desc, "")
 }
 
-// TestToolConcurrency 测试并发安全性
+// TestToolConcurrency tests concurrency security
 func TestToolConcurrency(t *testing.T) {
 	tTool, err := NewTool(Config{Server: "python server.py"})
 	require.NoError(t, err)

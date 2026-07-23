@@ -9,7 +9,7 @@ import (
 	"github.com/rulego/rulego/test/assert"
 )
 
-// TestMaskAPIKey 测试 maskAPIKey 函数
+// TestMaskAPIKey tests the maskAPIKey function
 func TestMaskAPIKey(t *testing.T) {
 	tests := []struct {
 		name     string
@@ -56,12 +56,12 @@ func TestMaskAPIKey(t *testing.T) {
 	}
 }
 
-// TestMaskAPIKey_Format 测试 maskAPIKey 返回格式
+// TestMaskAPIKey_Format Test the maskAPIKey return format
 func TestMaskAPIKey_Format(t *testing.T) {
 	apiKey := "sk-1234567890abcdefghijklmnopqrstuvwxyz"
 	result := maskAPIKey(apiKey)
 
-	// 检查格式：前4位 + **** + 后4位
+	// Check format: first 4 digits + **** + last 4 digits
 	// "sk-1234567890abcdefghijklmnopqrstuvwxyz" -> "sk-1****wxyz"
 	assert.True(t, strings.HasPrefix(result, "sk-1"))
 	assert.True(t, strings.HasSuffix(result, "wxyz"))
@@ -69,27 +69,27 @@ func TestMaskAPIKey_Format(t *testing.T) {
 		t.Errorf("Expected result to contain '****', got: %s", result)
 	}
 
-	// 验证长度
+	// Verify length
 	parts := strings.Split(result, "****")
 	assert.Equal(t, 2, len(parts))
 	assert.Equal(t, 4, len(parts[0]))
 	assert.Equal(t, 4, len(parts[1]))
 }
 
-// TestGenerateShortID 测试 generateShortID 函数
+// TestGenerateShortID tests the generateShortID function
 func TestGenerateShortID(t *testing.T) {
 	id := generateShortID()
 
-	// 检查长度
+	// Check the length
 	assert.Equal(t, 6, len(id))
 
-	// 检查只包含小写字母和数字
+	// Check only lowercase letters and numbers
 	for _, c := range id {
 		assert.True(t, (c >= 'a' && c <= 'z') || (c >= '0' && c <= '9'))
 	}
 }
 
-// TestGenerateShortID_Uniqueness 测试 generateShortID 唯一性
+// TestGenerateShortID_Uniqueness Test the uniqueness of generateShortID
 func TestGenerateShortID_Uniqueness(t *testing.T) {
 	ids := make(map[string]bool)
 	count := 1000
@@ -99,14 +99,14 @@ func TestGenerateShortID_Uniqueness(t *testing.T) {
 		ids[id] = true
 	}
 
-	// 由于是随机生成，可能有少量重复，但应该大部分唯一
-	// 6位字符，36^6 = 2,176,782,336 种可能
-	// 1000次调用应该几乎全部唯一
+	// Since it is generated randomly, there may be a few duplicates, but most should be unique
+	// 6 characters, 36^6 = 2,176,782,336 possible characters
+	// 1000 calls should be almost all unique
 	uniquenessRate := float64(len(ids)) / float64(count)
 	assert.True(t, uniquenessRate > 0.99, "Expected >99%% uniqueness, got %.2f%%", uniquenessRate*100)
 }
 
-// TestGenerateShortID_CharacterSet 测试 generateShortID 字符集
+// TestGenerateShortID_CharacterSet Test the generateShortID character set
 func TestGenerateShortID_CharacterSet(t *testing.T) {
 	charset := "abcdefghijklmnopqrstuvwxyz0123456789"
 	expectedChars := make(map[rune]bool)
@@ -114,7 +114,7 @@ func TestGenerateShortID_CharacterSet(t *testing.T) {
 		expectedChars[c] = true
 	}
 
-	// 生成多个 ID 并验证字符
+	// Generate multiple IDs and verify characters
 	foundChars := make(map[rune]bool)
 	for i := 0; i < 1000; i++ {
 		id := generateShortID()
@@ -125,7 +125,7 @@ func TestGenerateShortID_CharacterSet(t *testing.T) {
 	}
 }
 
-// TestApplyDefaultLLMParams 测试 applyDefaultLLMParams 方法
+// TestApplyDefaultLLMParams Test the applyDefaultLLMParams method
 func TestApplyDefaultLLMParams(t *testing.T) {
 	tests := []struct {
 		name                    string
@@ -193,19 +193,19 @@ func TestApplyDefaultLLMParams(t *testing.T) {
 	}
 }
 
-// TestReactAgentNode_New 测试 New 方法
+// TestReactAgentNode_New Test the New method
 func TestReactAgentNode_New(t *testing.T) {
 	node := &ReactAgentNode{}
 	newNode := node.New()
 
 	assert.NotNil(t, newNode)
 
-	// 验证类型
+	// Verification type
 	reactNode, ok := newNode.(*ReactAgentNode)
 	assert.True(t, ok)
 	assert.NotNil(t, reactNode)
 
-	// 验证默认值
+	// Verify the default value
 	assert.Equal(t, float32(0.7), reactNode.Config.Params.Temperature)
 	assert.Equal(t, float32(0.9), reactNode.Config.Params.TopP)
 	assert.Equal(t, float32(0.5), reactNode.Config.Params.FrequencyPenalty)

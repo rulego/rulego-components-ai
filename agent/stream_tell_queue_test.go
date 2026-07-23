@@ -12,7 +12,7 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-// recordingCtx 创建记录 TellNext 数据顺序的测试 RuleContext。slow>0 时每次 TellNext sleep，模拟慢前端。
+// recordingCtx creates a test RuleContext that records the TellNext data order. At slow>0, each TellNext sleeps to simulate a slow frontend.
 func recordingCtx(record *[]string, mu *sync.Mutex, slow time.Duration) types.RuleContext {
 	return rulegotest.NewRuleContext(types.NewConfig(), func(msg types.RuleMsg, relationType string, err error) {
 		if slow > 0 {
@@ -28,9 +28,9 @@ func sseMsg(data string) types.RuleMsg {
 	return types.NewMsg(0, "TEST", types.TEXT, types.NewMetadata(), data)
 }
 
-// TestStreamTellQueue_FIFOOrder chunk 与工具事件入同一队列，TellNext 顺序与入队一致。
-// 这是修复"chunk 与工具事件乱序"的核心：两条路径（onChunk / SSEHandler.sendEvent）都入队，
-// 单 goroutine 按 FIFO 消费，顺序由入队顺序决定。
+// TestStreamTellQueue_FIFOOrder chunk and tool events are queued in the same queue, and TellNext follows the queue order.
+// This is the core issue of fixing "chunk and tool event disorder": both paths (onChunk / SSEHandler.sendEvent) are joined,
+// Single goroutines are consumed according to FIFO, with the order determined by the order of joining the team.
 func TestStreamTellQueue_FIFOOrder(t *testing.T) {
 	var (
 		mu  sync.Mutex
@@ -41,7 +41,7 @@ func TestStreamTellQueue_FIFOOrder(t *testing.T) {
 	_, cancel := context.WithCancel(context.Background())
 	defer cancel()
 	q := NewStreamTellQueue(ctx, 64, cancel)
-	// 模拟真实时序：chunk1 → 工具事件 → chunk2
+	// Simulating real timing: chunk1 → tool event → chunk2
 	q.Enqueue(sseMsg("chunk1"))
 	q.Enqueue(sseMsg("tool_start"))
 	q.Enqueue(sseMsg("tool_result"))
@@ -51,7 +51,7 @@ func TestStreamTellQueue_FIFOOrder(t *testing.T) {
 	assert.Equal(t, []string{"chunk1", "tool_start", "tool_result", "chunk2"}, got)
 }
 
-// TestStreamTellQueue_AsyncDecouples 慢 TellNext（慢前端）不阻塞入队：入队连续快速，慢消费在后台。
+// TestStreamTellQueue_AsyncDecouples Slow TellNext (slow frontend) does not block onboarding: onboarding is continuous and fast, with slow spending in the background.
 func TestStreamTellQueue_AsyncDecouples(t *testing.T) {
 	const (
 		n    = 5
@@ -76,12 +76,12 @@ func TestStreamTellQueue_AsyncDecouples(t *testing.T) {
 	require.Len(t, got, n)
 	backpressure := time.Duration(n) * slow
 	if enqueueSpan > backpressure/2 {
-		t.Errorf("入队被慢 TellNext 阻塞：enqueueSpan=%v，预期 << %v", enqueueSpan, backpressure)
+		t.Errorf("Blocked by slow TellNext onboarding: enqueueSpan = %v, expected << %v", enqueueSpan, backpressure)
 	}
-	t.Logf("入队 %d 条耗时 %v（慢 TellNext sleep=%v，背压预期≈%v）", n, enqueueSpan, slow, backpressure)
+	t.Logf("Joining %d takes %v (slow, TellNext sleep = %v, expected backpressure ≈%v)", n, enqueueSpan, slow, backpressure)
 }
 
-// TestStreamTellQueue_WaitBlocks Wait 必须等所有 TellNext 完成才返回（保证不丢）。
+// TestStreamTellQueue_WaitBlocks Wait must wait until all TellNext finishes before returning (guaranteed not to be lost).
 func TestStreamTellQueue_WaitBlocks(t *testing.T) {
 	const (
 		n    = 3
@@ -104,15 +104,15 @@ func TestStreamTellQueue_WaitBlocks(t *testing.T) {
 	elapsed := time.Since(start)
 
 	require.Len(t, got, n)
-	// Wait 至少等到 n 条 TellNext 完成（n*slow），减容差
+	// Wait: At least wait until n TellNext lines complete (n*slow), reducing tolerance
 	minExpected := time.Duration(n)*slow - 50*time.Millisecond
 	if elapsed < minExpected {
-		t.Errorf("Wait 未等消费完：elapsed=%v，预期 ≥ %v", elapsed, minExpected)
+		t.Errorf("Wait Before spending is finished: elapsed = %v, expected ≥ %v", elapsed, minExpected)
 	}
 }
 
-// TestStreamTellQueue_CloseIdempotent Close 幂等（多次不 panic），与 Wait 混用安全。
-// 锁住 panic 兜底修复：defer Close + 正常 Wait 都会关闭，once 保证不重复 close panic。
+// TestStreamTellQueue_CloseIdempotent Close idempotency (multiple times without panic), safe mixed with Wait.
+// Lock the panic as a backup fix: Defer Close + normal Wait will both close, but once ensures no repeated close panic.
 func TestStreamTellQueue_CloseIdempotent(t *testing.T) {
 	var (
 		mu  sync.Mutex
@@ -123,36 +123,36 @@ func TestStreamTellQueue_CloseIdempotent(t *testing.T) {
 	defer cancel()
 	q := NewStreamTellQueue(ctx, 4, cancel)
 	q.Enqueue(sseMsg("a"))
-	q.Close() // 关闭入队口
-	q.Close() // 幂等，不 panic
-	q.Wait()  // 混用 Wait，也不 panic（once 保证）
-	q.Close() // Wait 后再 Close，仍不 panic
+	q.Close() // Closing the entry gate
+	q.Close() // Idempotent, no panic
+	q.Wait()  // Mix Wait, and don't panic (once guaranteed)
+	q.Close() // Wait and then close again, still no panic
 
 	mu.Lock()
 	defer mu.Unlock()
 	if len(got) != 1 || got[0] != "a" {
-		t.Errorf("期望 [a]，got %v", got)
+		t.Errorf("Expect [a], got %v", got)
 	}
-	// 未触发 abort
+	// ABORT was not triggered
 	select {
 	case <-sctx.Done():
-		t.Error("正常流不应触发 abort")
+		t.Error("Normal flow should not trigger abort")
 	default:
 	}
 }
 
-// TestStreamTellQueue_FastConsumerNoAbort 快消费（消费跟得上）→ 队列不满 → 不触发 abort（不误杀）。
+// TestStreamTellQueue_FastConsumerNoAbort Fast consumption (keep up with consumption) → If the queue is not full→ do not trigger ABORT (no accidental kill).
 func TestStreamTellQueue_FastConsumerNoAbort(t *testing.T) {
 	var (
 		mu  sync.Mutex
 		got []string
 	)
-	ctx := recordingCtx(&got, &mu, 0) // 快消费
+	ctx := recordingCtx(&got, &mu, 0) // Consume quickly
 	sctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
 	q := NewStreamTellQueue(ctx, 32, cancel)
-	for i := 0; i < 16; i++ { // 入队 16 < 容量 32，且消费快，缓冲不满
+	for i := 0; i < 16; i++ { // Joining the fleet at 16< with a capacity of 32, and fast consumption to buffer against incompleteness
 		q.Enqueue(sseMsg("m"))
 	}
 	q.Wait()
@@ -160,58 +160,58 @@ func TestStreamTellQueue_FastConsumerNoAbort(t *testing.T) {
 	require.Len(t, got, 16)
 	select {
 	case <-sctx.Done():
-		t.Fatal("快消费不应触发 abort（误杀正常流）")
+		t.Fatal("Fast consumption should not trigger abort (accidental killing of normal flow)")
 	default:
 	}
 }
 
-// TestStreamTellQueue_SlowConsumerAbortsUpstream 慢消费 → 缓冲满 → 触发 abort（取消上游流止损）。
-// 这是"有界 + 满则断流"的核心：前端失活时不阻塞 Recv、不无限吃内存，而是主动放弃上游流。
+// TestStreamTellQueue_SlowConsumerAbortsUpstream Slow consumption → Buffer full → triggers ABORT (cancel upstream stop loss).
+// This is the core of "bounded + full flow cutoff": when the frontend is inactive, it doesn't block Recv, doesn't consume unlimited memory, but actively abandons upstream streams.
 func TestStreamTellQueue_SlowConsumerAbortsUpstream(t *testing.T) {
 	var (
 		mu  sync.Mutex
 		got []string
 	)
-	ctx := recordingCtx(&got, &mu, 100*time.Millisecond) // 慢 TellNext
+	ctx := recordingCtx(&got, &mu, 100*time.Millisecond) // Tell Next
 	sctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
-	q := NewStreamTellQueue(ctx, 4, cancel) // 小容量，便于快速填满
-	// 快速入队超过容量；消费慢 → 缓冲满 → abort
+	q := NewStreamTellQueue(ctx, 4, cancel) // Small capacity makes it easy to fill quickly
+	// Rapid onboarding exceeds capacity; Slow consumption → buffer full → abort
 	for i := 0; i < 20; i++ {
 		q.Enqueue(sseMsg("m"))
 	}
 
 	select {
 	case <-sctx.Done():
-		// abort 触发 ✅
+		// abort trigger ✅
 	case <-time.After(2 * time.Second):
-		t.Fatal("慢消费缓冲满应触发 abort（cancel 上游流）")
+		t.Fatal("Slow consumption buffer should be fully buffered to trigger abort (cancel upstream flow)")
 	}
 	if !q.Aborted() {
-		t.Error("缓冲满 abort 后 Aborted() 应为 true")
+		t.Error("After buffering abort, Aborted() should be true")
 	}
 	q.Wait()
 }
 
-// TestStreamTellQueue_AbortedFlag 正常流 Aborted()=false；缓冲满 abort 后 Aborted()=true。
-// executeStream 据此区分"被截断"与"正常完成"。
+// TestStreamTellQueue_AbortedFlag Normal flow Aborted() = false; After buffering to full abort, Aborted()=true.
+// executeStream distinguishes between "truncated" and "completed normally" based on this.
 func TestStreamTellQueue_AbortedFlag(t *testing.T) {
 	var mu sync.Mutex
-	// 正常流：不入满，不 abort
+	// Normal flow: no fullness, no abort
 	ctx1 := recordingCtx(&[]string{}, &mu, 0)
 	_, cancel1 := context.WithCancel(context.Background())
 	defer cancel1()
 	q1 := NewStreamTellQueue(ctx1, 32, cancel1)
-	for i := 0; i < 8; i++ { // 8 < 容量 32，快消费
+	for i := 0; i < 8; i++ { // 8< Capacity 32, fast consumption
 		q1.Enqueue(sseMsg("m"))
 	}
 	q1.Wait()
 	if q1.Aborted() {
-		t.Error("正常流不应标记 aborted")
+		t.Error("Normal flow should not be marked aborted")
 	}
 
-	// 慢消费 → 缓冲满 → abort → Aborted()=true
+	// Slow consumption → buffer full → abort → aborted() = true
 	ctx2 := recordingCtx(&[]string{}, &mu, 100*time.Millisecond)
 	sctx2, cancel2 := context.WithCancel(context.Background())
 	defer cancel2()
@@ -219,67 +219,67 @@ func TestStreamTellQueue_AbortedFlag(t *testing.T) {
 	for i := 0; i < 20; i++ {
 		q2.Enqueue(sseMsg("m"))
 	}
-	<-sctx2.Done() // 等 abort 触发
+	<-sctx2.Done() // Wait for ABORT to trigger
 	if !q2.Aborted() {
-		t.Error("缓冲满 abort 后 Aborted() 应为 true")
+		t.Error("After buffering abort, Aborted() should be true")
 	}
 	q2.Wait()
 }
 
-// TestStreamTellQueue_FullMode_BlockOnFull full 模式（blockTimeout>0）：慢消费导致缓冲满时阻塞反压，
-// 不立即 abort；消费跟上后继续入队、全部送达。区别于 off 模式的"满则立即 abort"。
-// 这正是 full 模式重放突发流量不应误判前端失活的关键。
+// TestStreamTellQueue_FullMode_BlockOnFull full mode (blockTimeout>0): slow consumption causes buffer fullness when blocking backpressure,
+// Not immediately abort; After the consumption keeps up, they continue to join the queue and deliver everything. Unlike the 'full and immediately abort' mode in OFF mode.
+// This is precisely the key to replaying burst traffic in full mode and preventing the misjudgment of frontend inactivity.
 func TestStreamTellQueue_FullMode_BlockOnFull(t *testing.T) {
 	var (
 		mu  sync.Mutex
 		got []string
 	)
-	ctx := recordingCtx(&got, &mu, 20*time.Millisecond) // 慢但持续消费
+	ctx := recordingCtx(&got, &mu, 20*time.Millisecond) // Slow but steady consumption
 	sctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
-	q := NewStreamTellQueueWithBlock(ctx, 4, cancel, 3*time.Second) // full：满则阻塞 3s 才 abort
-	// 快速入队 > 容量 4：会阻塞反压等消费，但消费持续（20ms/条），不会超时
+	q := NewStreamTellQueueWithBlock(ctx, 4, cancel, 3*time.Second) // full: When full, it blocks for 3 seconds before abort
+	// Fast onboarding > Capacity 4: Blocks backlash and other consumption, but consumption continues (20ms per thread) and does not time out
 	for i := 0; i < 12; i++ {
 		q.Enqueue(sseMsg("m"))
 	}
 
-	// 入队期间不应 abort（阻塞反压，消费跟上）
+	// During joining, do not abort (blocking and pushing back, spending keeps up)
 	select {
 	case <-sctx.Done():
-		t.Fatal("full 模式慢消费应阻塞反压，不应 abort")
+		t.Fatal("full Slow consumption model should block backlash and not abort")
 	default:
 	}
 	q.Wait()
 	require.Len(t, got, 12)
 	if q.Aborted() {
-		t.Error("full 模式消费跟上后不应标记 aborted")
+		t.Error("full After following the pattern of consumption, aborted should not be marked")
 	}
 }
 
-// TestStreamTellQueue_FullMode_TimeoutAborts full 模式下前端持续不消费（真断开）→
-// 缓冲满后阻塞超时 → abort 止损。区别于 off 模式的"立即 abort"（full 给一个等待窗口）。
+// TestStreamTellQueue_FullMode_TimeoutAborts In full mode, the frontend continuously does not consume (truly disconnected) →
+// After buffering is full, block timeout → ABORT stop-loss. Unlike the "immediate abort" mode in off mode (full provides a waiting window).
 func TestStreamTellQueue_FullMode_TimeoutAborts(t *testing.T) {
-	// TellNext 永久阻塞（模拟前端断开，消费完全停止）
+	// TellNext permanent block (simulates frontend disconnection, consumption completely stops)
 	blockCtx := rulegotest.NewRuleContext(types.NewConfig(), func(msg types.RuleMsg, relationType string, err error) {
 		select {}
 	})
 	sctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
-	q := NewStreamTellQueueWithBlock(blockCtx, 1, cancel, 100*time.Millisecond) // full：满则阻塞 100ms
-	q.Enqueue(sseMsg("a")) // 入队（consume 取走后阻塞在 TellNext）
-	q.Enqueue(sseMsg("b")) // 填满（consume 卡在 TellNext(a)，ch:[b]）
-	q.Enqueue(sseMsg("c")) // 满 → 阻塞 100ms → 超时 abort
+	q := NewStreamTellQueueWithBlock(blockCtx, 1, cancel, 100*time.Millisecond) // Full: Blocks 100ms when full
+	q.Enqueue(sseMsg("a"))                                                      // Join the queue (consume takes and blocks in TellNext)
+	q.Enqueue(sseMsg("b"))                                                      // Fill (consume stuck in TellNext(a), ch:[b])
+	q.Enqueue(sseMsg("c"))                                                      // Full → blocks 100ms → timeout ABORT
 
 	select {
 	case <-sctx.Done():
-		// abort 触发 ✅
+		// abort trigger ✅
 	case <-time.After(1 * time.Second):
-		t.Fatal("full 模式持续不消费应超时 abort")
+		t.Fatal("full The pattern should not be consumed continuously abort the time limit")
 	}
 	if !q.Aborted() {
-		t.Error("超时 abort 后 Aborted() 应为 true")
+		t.Error("After timeout abort, Aborted() should be true")
 	}
-	// 不调 q.Wait()：consume goroutine 永久阻塞在 TellNext，Wait 会卡死
+	// Untuned q.Wait(): consume goroutine permanently blocks TellNext, Wait freezes
 }

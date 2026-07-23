@@ -18,33 +18,33 @@ package config
 
 // Agent defaults
 const (
-	// DefaultMaxStep 默认最大步数
+	// DefaultMaxStep The default maximum number of steps
 	DefaultMaxStep = 50
 
-	// MaxToolOutputLength 工具输出最大长度
+	// MaxToolOutputLength tool outputs the maximum length
 	MaxToolOutputLength = 50000
 
-	// DefaultToolTimeoutSec 默认工具超时时间（秒）
+	// DefaultToolTimeoutSec Default tool timeout time (seconds)
 	DefaultToolTimeoutSec = 120
 
-	// DefaultMaxRetries 默认最大重试次数
+	// DefaultMaxRetries defaults to the maximum number of retries by default
 	DefaultMaxRetries = 3
 
-	// MaxStreamChunks 流式输出最大 chunk 数量，防止无限循环
+	// MaxStreamChunks streams output the maximum number of chunks to prevent infinite loops
 	MaxStreamChunks = 10000
 )
 
 // Model parameter defaults
 const (
-	// DefaultTemperature 默认温度，避免输出过于随机或过于确定性
+	// DefaultTemperature Sets the default temperature, avoiding output that is too random or too certain
 	DefaultTemperature float32 = 0.7
 
-	// DefaultTopP 默认TopP，保持输出的多样性
+	// DefaultTopP: Default TopP, maintaining diversity in outputs
 	DefaultTopP float32 = 0.9
 
-	// DefaultFrequencyPenalty 默认频率惩罚，防止重复相同内容
+	// DefaultFrequencyPenalty Default frequency penalty to prevent duplicate content
 	DefaultFrequencyPenalty float32 = 0.5
 
-	// DefaultPresencePenalty 默认存在惩罚，鼓励谈论新话题
+	// DefaultPresencePenalty Includes a penalty by default, encouraging discussion of new topics
 	DefaultPresencePenalty float32 = 0.5
 )

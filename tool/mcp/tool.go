@@ -18,30 +18,30 @@ import (
 )
 
 const (
-	// ToolName MCP 工具名称
+	// ToolName MCP tool name
 	ToolName = "mcp_tool"
 )
 
-// Config MCP 工具配置
+// Config MCP tool configuration
 type Config struct {
-	// Server MCP 服务器地址，可以是命令行或 HTTP URL
-	// 例如: "python server.py" 或 "http://localhost:8080/mcp"
+	// Server MCP server address, which can be a command line or HTTP URL
+	// For example: "python server.py" or "http://localhost:8080/mcp"
 	Server string `json:"server" label:"MCP服务器" desc:"MCP 服务器地址，可以是命令行或 HTTP URL"`
 
-	// Timeout MCP 连接超时时间（秒）
+	// Timeout MCP connection timeout (seconds)
 	// Default: 30
 	Timeout int `json:"timeout" label:"超时时间" desc:"MCP 连接超时时间（秒）"`
 
-	// ClientName 客户端名称
+	// ClientName Client name
 	// Default: RuleGo AI Agent
 	ClientName string `json:"client_name" label:"客户端名称" desc:"MCP 客户端名称"`
 
-	// ClientVersion 客户端版本
+	// ClientVersion
 	// Default: 1.0.0
 	ClientVersion string `json:"client_version" label:"客户端版本" desc:"MCP 客户端版本"`
 }
 
-// DefaultConfig 获取默认配置
+// DefaultConfig obtains the default configuration
 func DefaultConfig() Config {
 	return Config{
 		Timeout:       30,
@@ -57,7 +57,7 @@ type mcpTool struct {
 	tools  []schema.ToolInfo
 }
 
-// NewTool 创建 MCP 工具
+// NewTool creates an MCP tool
 func NewTool(config Config) (tool.BaseTool, error) {
 	t := &mcpTool{
 		config: config,
@@ -76,7 +76,7 @@ func NewTool(config Config) (tool.BaseTool, error) {
 	return t, nil
 }
 
-// Info 返回工具信息
+// Info returns tool information
 func (t *mcpTool) Info(ctx context.Context) (*schema.ToolInfo, error) {
 	t.mu.RLock()
 	defer t.mu.RUnlock()
@@ -102,7 +102,7 @@ func (t *mcpTool) Info(ctx context.Context) (*schema.ToolInfo, error) {
 	}, nil
 }
 
-// InvokableRun 执行 MCP 工具调用
+// InvokableRun executes the MCP tool call
 func (t *mcpTool) InvokableRun(ctx context.Context, arguments string, opts ...tool.Option) (string, error) {
 	var params map[string]interface{}
 	if err := json.Unmarshal([]byte(arguments), &params); err != nil {
@@ -162,7 +162,7 @@ func (t *mcpTool) InvokableRun(ctx context.Context, arguments string, opts ...to
 	return strings.Join(contents, "\n"), nil
 }
 
-// getClient 获取或初始化 MCP 客户端
+// getClient to obtain or initialize the MCP client
 func (t *mcpTool) getClient(ctx context.Context) (*client.Client, error) {
 	t.mu.Lock()
 	defer t.mu.Unlock()
@@ -214,7 +214,7 @@ func (t *mcpTool) getClient(ctx context.Context) (*client.Client, error) {
 	return c, nil
 }
 
-// ParseCommand 解析命令字符串为命令和参数
+// ParseCommand parses command strings into commands and parameters
 func ParseCommand(cmd string) []string {
 	result := []string{}
 	var current string
@@ -250,7 +250,7 @@ func ParseCommand(cmd string) []string {
 	return result
 }
 
-// Close 关闭 MCP 客户端连接
+// Close: Close the MCP client connection
 func (t *mcpTool) Close() error {
 	t.mu.Lock()
 	defer t.mu.Unlock()
@@ -263,7 +263,7 @@ func (t *mcpTool) Close() error {
 	return nil
 }
 
-// Register 手动注册 MCP 工具
+// Register Manual registration of MCP tools
 func Register(config Config) error {
 	t, err := NewTool(config)
 	if err != nil {
@@ -272,7 +272,7 @@ func Register(config Config) error {
 	return aitool.Registry.Register(t)
 }
 
-// RegisterDefault 使用默认配置注册 MCP 工具到全局注册表
+// RegisterDefault uses the default configuration to register the MCP tool to the global registry
 func RegisterDefault() error {
 	def := aitool.ToolDefinition{
 		Name:   ToolName,

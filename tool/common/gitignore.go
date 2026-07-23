@@ -7,10 +7,10 @@ import (
 	"strings"
 )
 
-// GitignoreMatcher 解析 .gitignore，判断路径是否被忽略。
-// 遵循 git 官方 ignore 规则（http://git-scm.com/docs/gitignore）自实现。
-// 支持：# 注释、空行、! 取反、目录尾 /（仅目录）、* (不跨/)、** (跨/)、? (单字符)、锚定（含 / 从根）。
-// 语义：last-match-wins（后定义的 ! 可取消前者的忽略）。
+// GitignoreMatcher parses.gitignore to check if the path has been ignored.
+// Follow Git's official ignore rules (http://git-scm.com/docs/gitignore) for self-implementation.
+// Support: # Comments, blank lines,! Reverse the index, directory ending /(directory only), * (not cross/), ** (cross/),? (Single character), anchor (including / from root).
+// Semantics: last-match-wins (later defined! The former can be canceled).
 type GitignoreMatcher struct {
 	patterns []gitignorePattern
 }
@@ -18,10 +18,10 @@ type GitignoreMatcher struct {
 type gitignorePattern struct {
 	re      *regexp.Regexp
 	negate  bool
-	dirOnly bool // 尾部 / ：仅匹配目录
+	dirOnly bool // Tail /: Matches only the directory
 }
 
-// LoadGitignore 从 base 目录读 .gitignore（不存在或无有效模式返回 nil）。
+// LoadGitignore reads.gitignore from the base directory (returns nil if no existence or no valid mode is present).
 func LoadGitignore(base string) *GitignoreMatcher {
 	data, err := os.ReadFile(filepath.Join(base, ".gitignore"))
 	if err != nil {
@@ -34,7 +34,7 @@ func LoadGitignore(base string) *GitignoreMatcher {
 	return m
 }
 
-// CompileIgnoreLines 把 .gitignore 行编译成 matcher。
+// CompileIgnoreLines compiles the.gitignore line into a matcher.
 func CompileIgnoreLines(lines ...string) *GitignoreMatcher {
 	m := &GitignoreMatcher{}
 	for _, line := range lines {
@@ -45,7 +45,7 @@ func CompileIgnoreLines(lines ...string) *GitignoreMatcher {
 	return m
 }
 
-// gitignoreLineToPattern 把一行 gitignore 转 regexp。
+// gitignoreLineToPattern converts a line of gitignore to regexp.
 func gitignoreLineToPattern(line string) (gitignorePattern, bool) {
 	line = strings.TrimRight(line, "\r")
 	line = strings.Trim(line, " ")
@@ -57,7 +57,7 @@ func gitignoreLineToPattern(line string) (gitignorePattern, bool) {
 		negate = true
 		line = line[1:]
 	}
-	// 转义开头 \# \!（字面 # !）
+	// Escape Beginning \# \! (Literal #!)
 	if strings.HasPrefix(line, "\\#") || strings.HasPrefix(line, "\\!") {
 		line = line[1:]
 	}
@@ -69,23 +69,23 @@ func gitignoreLineToPattern(line string) (gitignorePattern, bool) {
 	if leadingSlash {
 		line = line[1:]
 	}
-	// **/ 前缀 = 任意层（含零层），相当于非锚定
+	// **/ Prefix = Any layer (including zero layers), equivalent to non-anchoring
 	leadingAny := strings.HasPrefix(line, "**/")
-	// 锚定：前导 / 或含 /（但 **/ 前缀算任意层）
+	// Anchoring: Pre-order / or with /(but **/ prefix counts as any layer)
 	anchored := leadingSlash || (strings.Contains(line, "/") && !leadingAny)
 	if leadingAny {
 		line = strings.TrimPrefix(line, "**/")
 	}
 
-	// glob → regex：用占位符避免 * ** ? 被 QuoteMeta 转义
+	// glob → regex: Use placeholders to avoid * **? Escaped by QuoteMeta
 	const star, dstar, ques = "\x00", "\x01", "\x02"
 	s := strings.ReplaceAll(line, "**", dstar)
 	s = strings.ReplaceAll(s, "*", star)
 	s = strings.ReplaceAll(s, "?", ques)
 	s = regexp.QuoteMeta(s)
-	s = strings.ReplaceAll(s, dstar, ".*")   // ** 跨 /
-	s = strings.ReplaceAll(s, star, "[^/]*") // * 不跨 /
-	s = strings.ReplaceAll(s, ques, "[^/]")  // ? 单字符（不跨 /）
+	s = strings.ReplaceAll(s, dstar, ".*")   // ** Cross /
+	s = strings.ReplaceAll(s, star, "[^/]*") // * Not crossing /
+	s = strings.ReplaceAll(s, ques, "[^/]")  // ? Single character (not crossing /)
 
 	expr := s + "(/.*)?$"
 	if anchored {
@@ -100,8 +100,8 @@ func gitignoreLineToPattern(line string) (gitignorePattern, bool) {
 	return gitignorePattern{re: re, negate: negate, dirOnly: dirOnly}, true
 }
 
-// Ignored 判断 relPath（相对 .gitignore 根，正斜杠）是否被忽略。
-// isDir 区分目录/文件（目录尾 / 的模式只匹配目录）。
+// Ignored checks whether relPath (relative to the.gitignore root, positive slash) is ignored.
+// isDir distinguishes directories/files (the directory end / mode only matches directories).
 func (m *GitignoreMatcher) Ignored(relPath string, isDir bool) bool {
 	if m == nil {
 		return false

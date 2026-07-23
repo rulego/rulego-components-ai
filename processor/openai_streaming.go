@@ -33,7 +33,7 @@ import (
 )
 
 // OpenAI Streaming Response Constants
-// OpenAI 流式响应常量
+// OpenAI streaming response constant
 
 const (
 	// HeaderKeyXStreamEnabled is a custom header key for enabling streaming.
@@ -106,16 +106,16 @@ const (
 	// OpenAI usage sub-keys
 	KeyPromptTokensDetails = "prompt_tokens_details"
 
-	// 调用方流式协议标识。客户端需要流式展示工具调用过程（调用、参数、结果）时，
-	// 在请求头带 X-Stream-Protocol: agui 走 AG-UI 扩展模式；不带时走标准 OpenAI 模式，
-	// 不发 tool_calls、只返回最终文本（适用于严格遵循 OpenAI 规范的客户端）。
+	// Call the Stream protocol identifier. When the client needs to stream display the tool call process (call, parameters, results),
+	// In the request header, the X-Stream-Protocol: agui followed the AG-UI extension mode; When not wearing it, it follows the standard OpenAI model,
+	// No tool_calls is issued, only the final text is returned (applicable to clients strictly following OpenAI specifications).
 	HeaderStreamProtocol = "X-Stream-Protocol"
 	ValueAGUI            = "agui"
 )
 
 func init() {
 	// Register output processor for OpenAI streaming response handling
-	// 注册 OpenAI 流式响应处理的输出处理器
+	// Register the output processor for OpenAI streaming response processing
 	processor.OutBuiltins.Register("openaiStreamingResponse", openaiStreamingResponse)
 }
 
@@ -153,14 +153,14 @@ func handleError(exchange *endpoint.Exchange, isSSE bool, err error) {
 		errorBytes, _ := json.Marshal(errorResp)
 		errorData := fmt.Sprintf("%s%s\n\n", SSEDataPrefix, string(errorBytes))
 		exchange.Out.SetBody([]byte(errorData))
-		// 确保 Flush - 使用统一的 Flusher 接口
+		// Ensure Flush – Use a unified Flusher interface
 		if flusher, ok := exchange.Out.(endpoint.Flusher); ok {
 			flusher.Flush()
 		}
 	} else {
 		// Handle initial error
 		exchange.Out.SetStatusCode(http.StatusBadRequest)
-		// 使用 HeaderModifier 接口设置 Content-Type（线程安全）
+		// Setting Content-Type (thread safety) using the HeaderModifier interface
 		if t, ok := exchange.Out.(endpoint.HeaderModifier); ok {
 			t.SetHeader(processor.HeaderKeyContentType, processor.HeaderValueApplicationJson)
 		}
@@ -184,8 +184,8 @@ func handleMessage(exchange *endpoint.Exchange, msg *types.RuleMsg, isSSE bool) 
 	isChunk := msg.Metadata.GetValue(KeyChunk) == ValueTrue
 	isCompleted := msg.Metadata.GetValue(KeyStreamCompleted) == ValueTrue
 
-	// 如果是流式请求的完整内容消息（full_content=true），跳过处理
-	// 流式内容已通过 chunk 发送，token 统计已在 handleCompletion 中处理
+	// If it is the full content message of the stream request (full_content=true), skip the processing
+	// The streaming content has been sent via chunk, and token statistics have been processed in handleCompletion mode
 	if msg.Metadata.GetValue(KeyStream) == ValueTrue && msg.Metadata.GetValue(KeyFullContent) == ValueTrue {
 		return
 	}
@@ -208,14 +208,14 @@ func handleMessage(exchange *endpoint.Exchange, msg *types.RuleMsg, isSSE bool) 
 		handleFullResponse(exchange, msg, id, model)
 	}
 
-	// 尝试刷新响应流
-	// 使用统一的 Flusher 接口，支持 rest 和 fasthttp 等 endpoint
+	// Try to refresh the response stream
+	// It uses a unified Flusher interface and supports endpoints such as REST and Fasthttp
 	if flusher, ok := exchange.Out.(endpoint.Flusher); ok {
 		flusher.Flush()
 	}
 }
 
-// isAGUIConsumer 判断请求头是否带 X-Stream-Protocol: agui（即是否走 AG-UI 扩展模式）。
+// isAGUIConsumer checks whether the request header includes X-Stream-Protocol: agui (i.e., whether it uses AG-UI extended mode).
 func isAGUIConsumer(exchange *endpoint.Exchange) bool {
 	if exchange != nil && exchange.In != nil {
 		if h := exchange.In.Headers(); h != nil {
@@ -234,7 +234,7 @@ func handleChunk(exchange *endpoint.Exchange, msg *types.RuleMsg, id, model stri
 	// Check if this is a tool call chunk
 	isToolCall := msg.Metadata.GetValue(KeyToolCall) == ValueTrue
 
-	// 标准模式下跳过工具调用 chunk（只返回最终文本）；AG-UI 扩展模式透传工具调用过程。
+	// In standard mode, skip tool calls to chunk (only returns the final text); AG-UI extended mode transparenting tool call process.
 	if isToolCall && !isAGUIConsumer(exchange) {
 		return
 	}
@@ -246,7 +246,7 @@ func handleChunk(exchange *endpoint.Exchange, msg *types.RuleMsg, id, model stri
 		delta["reasoning_content"] = reasoning
 	}
 	if isToolCall {
-		// AG-UI 扩展模式：透传工具调用事件（type/toolCallName/content）
+		// AG-UI Extension Mode: Propagation Tool Call Event (type/toolCallName/content)
 		var toolCallData map[string]interface{}
 		if err := json.Unmarshal([]byte(msg.GetData()), &toolCallData); err == nil {
 			delta["tool_calls"] = []interface{}{toolCallData}
@@ -275,18 +275,18 @@ func handleChunk(exchange *endpoint.Exchange, msg *types.RuleMsg, id, model stri
 
 // handleCompletion processes the final streaming completion response.
 func handleCompletion(exchange *endpoint.Exchange, msg *types.RuleMsg, id, model string, isSSE bool) {
-	// 确保 SSE headers 已设置（如果之前没有设置）
+	// Make sure SSE headers are set (if not set before)
 	if !isSSE {
 		setSSEHeaders(exchange)
 	}
 
-	// 从 metadata 中获取 token 使用统计
+	// Obtain token usage statistics from metadata
 	_, _, totalTokens := getTokenUsage(msg)
 
-	// 先发送最终内容（如果有）
+	// Send the final content first (if available)
 	var finalData string
 	if msg.GetData() != "" {
-		// 发送最终内容
+		// Send the final content
 		contentResp := map[string]interface{}{
 			KeyID:      id,
 			KeyObject:  ValueChatCompletionChunk,
@@ -306,7 +306,7 @@ func handleCompletion(exchange *endpoint.Exchange, msg *types.RuleMsg, id, model
 		finalData = fmt.Sprintf("%s%s\n\n", SSEDataPrefix, string(contentBytes))
 	}
 
-	// 发送完成信号（包含标准 token 使用统计）
+	// Send completion signal (including standard token usage statistics)
 	chunkResp := map[string]interface{}{
 		KeyID:      id,
 		KeyObject:  ValueChatCompletionChunk,
@@ -320,19 +320,19 @@ func handleCompletion(exchange *endpoint.Exchange, msg *types.RuleMsg, id, model
 			},
 		},
 	}
-	// 如果有 token 统计，添加标准 usage 结构
+	// If token statistics are available, add the standard usage structure
 	if totalTokens > 0 {
 		chunkResp[KeyUsage] = buildUsageObject(msg)
 	}
 	chunkBytes, _ := json.Marshal(chunkResp)
-	// 格式: [finalData]data: {chunk}\n\ndata: [DONE]\n\n
+	// Format: [finalData]data: {chunk}\n\ndata: [DONE]\n\n
 	completeData := finalData + fmt.Sprintf("%s%s\n\n%s%s\n\n", SSEDataPrefix, string(chunkBytes), SSEDataPrefix, SSEDone)
 	exchange.Out.SetBody([]byte(completeData))
 }
 
 // handleFullResponse processes non-streaming full responses.
 func handleFullResponse(exchange *endpoint.Exchange, msg *types.RuleMsg, id, model string) {
-	// 使用 HeaderModifier 接口设置 Content-Type（线程安全）
+	// Setting Content-Type (thread safety) using the HeaderModifier interface
 	if t, ok := exchange.Out.(endpoint.HeaderModifier); ok {
 		t.SetHeader(processor.HeaderKeyContentType, processor.HeaderValueApplicationJson)
 	}
@@ -361,14 +361,14 @@ func handleFullResponse(exchange *endpoint.Exchange, msg *types.RuleMsg, id, mod
 // setSSEHeaders sets the required headers for Server-Sent Events.
 // Uses HeaderModifier interface for thread-safe header operations.
 func setSSEHeaders(exchange *endpoint.Exchange) {
-	// 始终使用 HeaderModifier 接口，它是线程安全的
+	// Always use the HeaderModifier interface, which is thread-safe
 	if t, ok := exchange.Out.(endpoint.HeaderModifier); ok {
 		t.SetHeader(processor.HeaderKeyContentType, processor.HeaderValueEventStream)
 		t.SetHeader(processor.HeaderKeyCacheControl, processor.HeaderValueNoCache+", no-transform")
 		t.SetHeader(processor.HeaderKeyConnection, processor.HeaderValueKeepAlive)
 		t.SetHeader("X-Accel-Buffering", "no")
 	}
-	// 如果不支持 HeaderModifier，跳过设置（避免并发写入 map）
+	// If HeaderModifier is not supported, skip the settings (avoid concurrent map writes)
 }
 
 // getTokenUsage extracts token usage statistics from message metadata.
@@ -380,8 +380,8 @@ func getTokenUsage(msg *types.RuleMsg) (int, int, int) {
 	return promptTokens, completionTokens, totalTokens
 }
 
-// buildUsageObject 构建标准 OpenAI usage 对象。
-// 只有 cached_tokens > 0 时才返回 prompt_tokens_details，兼容不支持缓存的接口。
+// buildUsageObject Builds the standard OpenAI usage object.
+// prompt_tokens_details is returned only at cached_tokens > 0, compatible with interfaces that do not support caching.
 func buildUsageObject(msg *types.RuleMsg) map[string]interface{} {
 	promptTokens, completionTokens, totalTokens := getTokenUsage(msg)
 	cachedTokens := parseIntFromString(msg.Metadata.GetValue(KeyCachedTokensMetadata))
@@ -392,7 +392,7 @@ func buildUsageObject(msg *types.RuleMsg) map[string]interface{} {
 		KeyTotalTokens:      totalTokens,
 	}
 
-	// 仅在有缓存数据时返回 prompt_tokens_details，兼容不支持缓存的 LLM
+	// Returns prompt_tokens_details only when cached data is present, compatible with LLMs that do not support cache
 	if cachedTokens > 0 {
 		usage[KeyPromptTokensDetails] = map[string]interface{}{
 			"cached_tokens": cachedTokens,

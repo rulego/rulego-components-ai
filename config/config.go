@@ -23,90 +23,90 @@ import (
 	"github.com/rulego/rulego/api/types"
 )
 
-// LLMConfig 组件配置
+// LLMConfig component configuration
 type LLMConfig struct {
-	Url             string             `json:"url"`             // 请求地址
+	Url             string             `json:"url"`             // Request address
 	Key             string             `json:"key"`             // API Key
-	Model           string             `json:"model"`           // 模型名称
-	SystemPrompt    string             `json:"systemPrompt"`    // 系统提示，用于预先定义模型的基础行为框架和响应风格。可以使用${} 占位符变量，支持 ${include("/path/to/file")} 包含文件（使用绝对路径）
-	Messages        []ChatMessage      `json:"messages"`        // 上下文/用户消息列表
-	Images          []string           `json:"images"`          // 允许模型输入图片，并根据图像内容的理解回答用户问题
-	Tools           []Tool             `json:"tools"`           // 工具列表
-	Params          ModelParams        `json:"params"`          //大模型参数
-	MaxRetries      int                `json:"maxRetries"`      // 同模型重试次数，0 表示使用默认值 3。对 429/5xx/网络错误/超时/流建立中断自动重试
-	StreamRetryMode string             `json:"streamRetryMode"` // 流式 mid-stream 重试模式："off"(默认，仅探测窗口内重试，保留实时) / "full"(完整缓冲重放，牺牲实时换中途断流可重试)
-	Failover        []FailoverEndpoint `json:"failover"`        // 故障转移备用端点，按优先级；主端点重试耗尽后依次切换。空=关闭 failover
-	// 熔断器（仅 Failover 启用时生效）：主端点 retry 耗尽即熔断，冷却期内跳过主直接用备用。
-	// 主持续故障时探测冷却逐次翻倍（探测失败翻倍，封顶 10 分钟），探测成功重置回基础冷却。
-	CircuitCooldownSec int `json:"circuitCooldownSec"` // 熔断基础冷却秒数，0=默认 60。主持续故障时探测冷却逐次翻倍封顶 10 分钟
+	Model           string             `json:"model"`           // Model name
+	SystemPrompt    string             `json:"systemPrompt"`    // System prompts are used to predefine the basic behavioral framework and response style of the model. You can use the ${} placeholder variable to support ${include("/path/to/file")} to include files (using absolute paths)
+	Messages        []ChatMessage      `json:"messages"`        // Context/user message list
+	Images          []string           `json:"images"`          // Allows the model to input images and answer user questions based on its understanding of the image content
+	Tools           []Tool             `json:"tools"`           // Tool list
+	Params          ModelParams        `json:"params"`          //Large model parameters
+	MaxRetries      int                `json:"maxRetries"`      // For the same model, the number of retries is zero, meaning the default value is 3. Automatic retry of interrupts for 429/5xx/network errors/timeout/stream establishment
+	StreamRetryMode string             `json:"streamRetryMode"` // Streaming Mid-Stream Retry Mode: "off" (default, only retries within the detection window, reserving real-time) / "full" (full buffer replay, sacrificing real-time to replace mid-stream interruptions for retry)
+	Failover        []FailoverEndpoint `json:"failover"`        // Failover backup endpoints, by priority; After the main endpoint retries exhausts the limit, it switches sequentially. Empty = Close failover
+	// Fuse (effective only when Failover is enabled): The master endpoint retries exhaust and the fuse blows; during cooldown, skip the main and use it as a backup.
+	// During a main persistent fault, detection cooldown doubles each time (detection failure doubles, capped at 10 minutes), and if detection succeeds, reset to base cooling.
+	CircuitCooldownSec int `json:"circuitCooldownSec"` // Fuse base cooldown seconds: 0 = default 60. During a main persistent fault, the detection cooling is doubled and capped at 10 minutes each time
 }
 
-// FailoverEndpoint 故障转移备用端点
+// FailoverEndpoint failover backup endpoint
 type FailoverEndpoint struct {
-	Url    string       `json:"url"`              // 备用请求地址
-	Key    string       `json:"key"`              // 备用 API Key
-	Model  string       `json:"model"`            // 备用模型名称，空则沿用主模型名
-	Params *ModelParams `json:"params,omitempty"` // 可选：覆盖主端点参数；nil=继承主端点 Params
+	Url    string       `json:"url"`              // Backup request address
+	Key    string       `json:"key"`              // Backup API Key
+	Model  string       `json:"model"`            // Alternate model name; empty ones retain the primary model name
+	Params *ModelParams `json:"params,omitempty"` // Optional: Override main endpoint parameters; nil = inherits from the master endpoint Params
 }
 
-// 流式 mid-stream 重试模式（LLMConfig.StreamRetryMode 取值）
+// Streaming mid-stream retry mode (LLMConfig.StreamRetryMode values)
 const (
-	// StreamRetryOff 默认：仅探测窗口内重试，保留实时。
+	// StreamRetryOff default: only retries within the probe window, keeping the real-time experience.
 	StreamRetryOff = "off"
-	// StreamRetryFull 完整 mid-stream 重试（缓冲重放，牺牲实时）。
+	// StreamRetryFull full mid-stream retry (buffered replay, sacrificing real-time).
 	StreamRetryFull = "full"
 )
 
-// ModelParams 大模型参数
+// ModelParams Large Model Parameters
 type ModelParams struct {
-	Temperature      float32        `json:"temperature"`      //采样温度控制输出的随机性。温度值在 [0.0, 2.0] 范围内，值越高，输出越随机和创造性；值越低，输出越稳定。
-	TopP             float32        `json:"topP"`             // 采样方法的取值范围为 [0.0,1.0]。top_p 值确定模型从概率最高的前p%的候选词中选取 tokens；当 top_p 为 0 时，此参数无效。
-	PresencePenalty  float32        `json:"presencePenalty"`  //存在惩罚 对文本中已有的标记的对数概率施加惩罚。取值范围[0.0,1.0]
-	FrequencyPenalty float32        `json:"frequencyPenalty"` //频率惩罚 对文本中出现的标记的对数概率施加惩罚。取值范围[0.0,1.0]
-	MaxTokens        int            `json:"maxTokens"`        // 最大输出长度
-	Stop             []string       `json:"stop"`             // 模型停止输出的标记
-	ResponseFormat   string         `json:"responseFormat"`   // 输出结果的格式。支持：text、json_object、json_schema。默认为 text。
+	Temperature      float32        `json:"temperature"`      //Sampling temperature controls the randomness of output output. Temperature values within the range of [0.0, 2.0]; the higher the value, the more random and creative the output; The lower the value, the more stable the output.
+	TopP             float32        `json:"topP"`             // The sampling method ranges from [0.0, 1.0]. top_p Value determination: The model selects tokens from the top p% candidate terms with the highest probability; When top_p is 0, this parameter is invalid.
+	PresencePenalty  float32        `json:"presencePenalty"`  //There is a penalty imposed on the logarithmic probability of existing markers in the text. Value range: [0.0, 1.0]
+	FrequencyPenalty float32        `json:"frequencyPenalty"` //Frequency penalty: Punishes the logarithmic probability of markings appearing in the text. Value range: [0.0, 1.0]
+	MaxTokens        int            `json:"maxTokens"`        // Maximum output length
+	Stop             []string       `json:"stop"`             // Marker when the model stops output
+	ResponseFormat   string         `json:"responseFormat"`   // Format of output results. Supported: text, json_object, json_schema. The default is text.
 	JsonSchema       string         `json:"jsonSchema"`       // JSON Schema
-	KeepThink        bool           `json:"keepThink"`        //是否保留思考过程，只对text响应格式生效
-	ExtraFields      map[string]any `json:"extraFields"`      // 扩展字段，用于传递模型特定参数。例如：thinking_type, thinking_budget_tokens, reasoning_effort 等
+	KeepThink        bool           `json:"keepThink"`        //Whether to keep the thought process and only apply to the text response format
+	ExtraFields      map[string]any `json:"extraFields"`      // Extension fields used to pass model-specific parameters. For example: thinking_type, thinking_budget_tokens, reasoning_effort, etc
 }
 
-// ChatMessage 上下文消息/用户消息
-// 支持 OpenAI 标准格式：content 可以是字符串或数组
+// ChatMessage Context Messages / User Messages
+// Supports OpenAI standard format: content can be strings or arrays
 type ChatMessage struct {
-	Role       string         `json:"role"`                   // 消息角色 user/assistant/system/tool
-	Content    interface{}    `json:"content"`                // 消息内容。可以是字符串或 []ContentPart 数组（OpenAI 多模态格式）
-	ToolCalls  []ChatToolCall `json:"tool_calls,omitempty"`   // assistant 消息的工具调用历史
-	ToolCallID string         `json:"tool_call_id,omitempty"` // tool 消息关联的 tool call ID
+	Role       string         `json:"role"`                   // Message role: user/assistant/system/tool
+	Content    interface{}    `json:"content"`                // News content. It can be a string or a []ContentPart array (OpenAI multimodal format)
+	ToolCalls  []ChatToolCall `json:"tool_calls,omitempty"`   // Tool call history for assistant messages
+	ToolCallID string         `json:"tool_call_id,omitempty"` // tool call ID associated with the tool message
 }
 
-// ChatToolCall OpenAI 兼容的工具调用结构。
+// ChatToolCall OpenAI compatible tool call structure.
 type ChatToolCall struct {
-	ID       string           `json:"id"`       // 工具调用 ID
-	Type     string           `json:"type"`     // 工具调用类型，通常为 function
-	Function ChatFunctionCall `json:"function"` // 工具函数信息
+	ID       string           `json:"id"`       // Tool call ID
+	Type     string           `json:"type"`     // Tool call type, usually function
+	Function ChatFunctionCall `json:"function"` // Tool function information
 }
 
-// ChatFunctionCall OpenAI 兼容的函数调用结构。
+// ChatFunctionCall OpenAI-compatible function call structure.
 type ChatFunctionCall struct {
-	Name      string `json:"name"`      // 工具名称
-	Arguments string `json:"arguments"` // JSON 字符串参数
+	Name      string `json:"name"`      // Tool name
+	Arguments string `json:"arguments"` // JSON string parameters
 }
 
-// ContentPart OpenAI 标准的消息内容部分
+// ContentPart OpenAI's standard message content section
 type ContentPart struct {
-	Type     string    `json:"type"`      // 类型：text, image_url
-	Text     string    `json:"text"`      // 文本内容（type=text 时）
-	ImageURL *ImageURL `json:"image_url"` // 图片URL（type=image_url 时）
+	Type     string    `json:"type"`      // Type: text, image_url
+	Text     string    `json:"text"`      // Text content (when type=text)
+	ImageURL *ImageURL `json:"image_url"` // Image URL (type=image_url time)
 }
 
-// ImageURL 图片URL结构
+// ImageURL image URL structure
 type ImageURL struct {
-	URL    string `json:"url"`    // 图片URL
-	Detail string `json:"detail"` // 图片细节级别：auto, low, high
+	URL    string `json:"url"`    // Image URL
+	Detail string `json:"detail"` // Image detail levels: auto, low, high
 }
 
-// GetContentAsString 获取消息内容作为字符串
+// GetContentAsString retrieves the message content as a string
 func (m *ChatMessage) GetContentAsString() string {
 	if m.Content == nil {
 		return ""
@@ -115,7 +115,7 @@ func (m *ChatMessage) GetContentAsString() string {
 	case string:
 		return v
 	case []interface{}:
-		// OpenAI 数组格式，提取文本部分
+		// OpenAI array format, extracting the text section
 		for _, item := range v {
 			if part, ok := item.(map[string]interface{}); ok {
 				if partType, _ := part["type"].(string); partType == "text" {
@@ -131,7 +131,7 @@ func (m *ChatMessage) GetContentAsString() string {
 	}
 }
 
-// GetContentParts 获取消息内容作为 ContentPart 数组（OpenAI 格式）
+// GetContentParts retrieves message content as an array of ContentParts (OpenAI format)
 func (m *ChatMessage) GetContentParts() []ContentPart {
 	if m.Content == nil {
 		return nil
@@ -139,13 +139,13 @@ func (m *ChatMessage) GetContentParts() []ContentPart {
 
 	switch v := m.Content.(type) {
 	case string:
-		// 字符串格式，返回单个文本部分
+		// String format, returns a single text part
 		if v != "" {
 			return []ContentPart{{Type: "text", Text: v}}
 		}
 		return nil
 	case []interface{}:
-		// OpenAI 数组格式
+		// OpenAI array format
 		var parts []ContentPart
 		for _, item := range v {
 			if part, ok := item.(map[string]interface{}); ok {
@@ -174,7 +174,7 @@ func (m *ChatMessage) GetContentParts() []ContentPart {
 	}
 }
 
-// IsMultimodal 检查消息是否包含多模态内容（图片）
+// IsMultimodal checks whether messages contain multimodal content (image)
 func (m *ChatMessage) IsMultimodal() bool {
 	parts := m.GetContentParts()
 	for _, part := range parts {
@@ -185,11 +185,11 @@ func (m *ChatMessage) IsMultimodal() bool {
 	return false
 }
 
-// GetAllImages 获取消息中的所有图片URL
+// GetAllImages retrieves all image URLs in the message
 func (m *ChatMessage) GetAllImages() []string {
 	var images []string
 
-	// 从 OpenAI 格式的 content 数组中提取
+	// Extracted from an array of content in OpenAI format
 	parts := m.GetContentParts()
 	for _, part := range parts {
 		if part.Type == "image_url" && part.ImageURL != nil && part.ImageURL.URL != "" {
@@ -200,127 +200,127 @@ func (m *ChatMessage) GetAllImages() []string {
 	return images
 }
 
-// MultiTurnChatRequest 多轮对话请求结构体
+// MultiTurnChatRequest Multi-turn Conversation Request Struct
 type MultiTurnChatRequest struct {
-	Model    string        `json:"model"`    // 模型名称，可选
-	Messages []ChatMessage `json:"messages"` // 对话消息列表
-	Stream   bool          `json:"stream"`   // 是否启用流式响应，可选
-	Params   *ModelParams  `json:"params"`   // 大模型参数，可选
-	Tools    []Tool        `json:"tools"`    // 工具列表，可选
+	Model    string        `json:"model"`    // Model name, optional
+	Messages []ChatMessage `json:"messages"` // Talk to the message list
+	Stream   bool          `json:"stream"`   // Enable streaming response, optional
+	Params   *ModelParams  `json:"params"`   // Large model parameters, optional
+	Tools    []Tool        `json:"tools"`    // Tool list, optional
 }
 
-// Tool 工具配置
+// Tool configuration
 type Tool struct {
-	Type        string              `json:"type"`        // 工具类型：rulechain, builtin, agent, mcp
-	Name        string              `json:"name"`        // 工具名称
-	Description string              `json:"description"` // 工具描述
-	TargetId    string              `json:"targetId"`    // 目标规则链ID（type=rulechain/agent时使用）
-	Parameters  string              `json:"parameters"`  // 工具参数JSON Schema
-	Config      types.Configuration `json:"config"`      // 工具初始化配置，支持 ${global.xxx} 变量替换
-	Timeout     int64               `json:"timeout"`     // 超时时间（毫秒），默认 120000 (120秒)
+	Type        string              `json:"type"`        // Tool types: rulechain, builtin, agent, mcp
+	Name        string              `json:"name"`        // Tool name
+	Description string              `json:"description"` // Tool description
+	TargetId    string              `json:"targetId"`    // Target rulechain ID (used when type=rulechain/agent)
+	Parameters  string              `json:"parameters"`  // Tool parameter JSON Schema
+	Config      types.Configuration `json:"config"`      // Tool initialization configuration supports ${global.xxx} variable replacement
+	Timeout     int64               `json:"timeout"`     // Timeout time (milliseconds), default 120,000 (120 seconds)
 }
 
 const (
-	// ToolTypeRuleChain 规则链工具类型
+	// ToolTypeRuleChain tool type
 	ToolTypeRuleChain = "rulechain"
-	// ToolTypeBuiltin 内置工具类型
+	// ToolTypeBuiltin includes built-in tool types
 	ToolTypeBuiltin = "builtin"
-	// ToolTypeAgent 子智能体类型（rulechain的语义别名，用于调用子智能体）
+	// ToolTypeAgent sub-agent type (semantic alias for rulechain, used to call sub-agents)
 	ToolTypeAgent = "agent"
-	// ToolTypeMCP MCP 工具类型，从 MCP Server 发现并加载工具。
-	// 支持 self（进程内）和远程（http/stdio）两种模式。
-	// self 模式通过 RuleConfig UDF 获取 MCPToolProvider 实现零网络调用。
-	// 远程模式通过 MCP 协议的 tools/list 自动发现全部工具。
+	// ToolTypeMCP is the MCP tool type, discovering and loading the tool from the MCP Server.
+	// Supports both self (in-process) and remote (http/stdio) modes.
+	// Self mode obtains MCPToolProvider via RuleConfig UDF to achieve zero network calls.
+	// Remote mode automatically discovers all tools through the MCP protocol's tools/list.
 	ToolTypeMCP = "mcp"
 
-	// DefaultRole 默认角色
+	// DefaultRole
 	DefaultRole = "user"
-	// DefaultResponseFormat 默认响应格式
+	// DefaultResponseFormat: The default response format
 	DefaultResponseFormat = "text"
-	// ResponseFormatJSONObject JSON对象响应格式
+	// ResponseFormatJSONObject JSON object response format
 	ResponseFormatJSONObject = "json_object"
-	// ResponseFormatJSONSchema JSON Schema响应格式
+	// ResponseFormatJSONSchema JSON Schema response format
 	ResponseFormatJSONSchema = "json_schema"
-	// DefaultMaxStep 默认最大迭代次数 - 定义在 defaults.go 中
-	// KeyStream 流式标志键
+	// DefaultMaxStep Default maximum iteration count - defined in defaults.go
+	// KeyStream flag key
 	KeyStream = "stream"
-	// KeyModel 模型名称键
+	// KeyModel model name key
 	KeyModel = "model"
-	// KeyPromptTokens 输入 token 键
+	// KeyPromptTokens Enter the token key
 	KeyPromptTokens = "prompt_tokens"
-	// KeyCompletionTokens 输出 token 键
+	// KeyCompletionTokens outputs the token key
 	KeyCompletionTokens = "completion_tokens"
-	// KeyTotalTokens 总 token 键
+	// KeyTotalTokens Total token key
 	KeyTotalTokens = "total_tokens"
-	// KeyCachedTokens 缓存 token 键
+	// KeyCachedTokens caches token keys
 	KeyCachedTokens = "cached_tokens"
-	// KeyToolCalls 工具调用键
+	// KeyToolCalls: The tool calls key
 	KeyToolCalls = "tool_calls"
-	// KeyFinishReason 结束原因键
+	// KeyFinishReason key
 	KeyFinishReason = "finish_reason"
-	// KeyChunk 数据块键
+	// KeyChunk data block key
 	KeyChunk = "chunk"
-	// KeyStreamCompleted 流式完成键
+	// KeyStreamCompleted key
 	KeyStreamCompleted = "stream_completed"
-	// KeyStreamStart 流式开始键
+	// KeyStreamStart key
 	KeyStreamStart = "stream_start"
-	// KeyReasoningContent 思考过程内容键
+	// KeyReasoningContent: Thinking process content key
 	KeyReasoningContent = "reasoning_content"
-	// KeyToolCall 单个工具调用键
+	// KeyToolCall is a single tool call key
 	KeyToolCall = "tool_call"
-	// KeyFullContent 完整内容键，用于标记流式请求的最终消息（包含完整合并内容）
+	// KeyFullContent Full Content key, used to mark the final message of the stream request (containing the full merged content)
 	KeyFullContent = "full_content"
-	// MsgTypeToolCall 工具调用消息类型
+	// MsgTypeToolCall tool calls message types
 	MsgTypeToolCall = "TOOL_CALL"
-	// TypeFunction 函数类型
+	// TypeFunction type
 	TypeFunction = "function"
-	// FinishReasonToolCalls 工具调用结束原因
+	// FinishReasonToolCalls: The reason for the end of the tool call
 	FinishReasonToolCalls = "tool_calls"
-	// KeyRuleConfig 规则配置键
+	// KeyRuleConfig Rule configuration key
 	KeyRuleConfig = "rule_config"
 
-	// ValueTrue 真值字符串
+	// ValueTrue truth string
 	ValueTrue = "true"
-	// ValueFalse 假值字符串
+	// ValueFalse is a false value string
 	ValueFalse = "false"
 
-	// ShareRuleContextKey 用于在 Context 中传递 RuleContext
+	// ShareRuleContextKey is used to pass RuleContext within a Context
 	ShareRuleContextKey = "share_rule_context"
 )
 
-// Default model parameters - 定义在 defaults.go 中
+// Default model parameters - defined in defaults.go
 
-// ModelCapability 模型能力类型
+// ModelCapability: Model capability type
 type ModelCapability string
 
 const (
-	// CapabilityVision 视觉能力（支持图片输入）
+	// CapabilityVision Visual Capability (supports image input)
 	CapabilityVision ModelCapability = "vision"
-	// CapabilityFunctionCalling 函数调用能力
+	// CapabilityFunctionCalling function call capability
 	CapabilityFunctionCalling ModelCapability = "function_calling"
-	// CapabilityStreaming 流式输出能力
+	// CapabilityStreaming: streaming output capability
 	CapabilityStreaming ModelCapability = "streaming"
-	// CapabilityReasoning 推理能力（如 o1 系列的深度思考）
+	// CapabilityReasoning (such as deep thinking in the o1 series)
 	CapabilityReasoning ModelCapability = "reasoning"
-	// CapabilityEmbedding 向量嵌入能力
+	// CapabilityEmbedding: Vector embedding capability
 	CapabilityEmbedding ModelCapability = "embedding"
 )
 
-// ModelInfo 模型信息
+// ModelInfo Model information
 type ModelInfo struct {
-	Name         string            // 模型名称
-	Capabilities []ModelCapability // 模型能力列表
+	Name         string            // Model name
+	Capabilities []ModelCapability // Model Competency List
 }
 
-// modelCapabilityRegistry 模型能力注册表（应用层可覆盖内置配置）
-// key: 模型名称（小写）, value: 能力列表
+// modelCapabilityRegistry (application layer can override built-in configurations)
+// key: model name (lowercase), value: capability list
 var modelCapabilityRegistry = make(map[string][]ModelCapability)
 var capabilityRegistryMutex sync.RWMutex
 
-// defaultModelCapabilities 内置的默认模型能力配置
-// 应用层可以通过 RegisterModelCapabilities 覆盖
+// defaultModelCapabilities provides the built-in default model capability configuration
+// The application layer can be overridden by RegisterModelCapabilities
 var defaultModelCapabilities = map[string][]ModelCapability{
-	// === OpenAI 系列 ===
+	// === OpenAI Series ===
 	"gpt-4o":       {CapabilityVision, CapabilityFunctionCalling, CapabilityStreaming},
 	"gpt-4-turbo":  {CapabilityVision, CapabilityFunctionCalling, CapabilityStreaming},
 	"gpt-4-vision": {CapabilityVision, CapabilityFunctionCalling, CapabilityStreaming},
@@ -331,11 +331,11 @@ var defaultModelCapabilities = map[string][]ModelCapability{
 	"o3":           {CapabilityVision, CapabilityReasoning},
 	"o4":           {CapabilityVision, CapabilityReasoning},
 
-	// === Claude 系列（全部支持视觉）===
+	// === Claude Series (all visual supports) ===
 	"claude-3": {CapabilityVision, CapabilityFunctionCalling, CapabilityStreaming},
 	"claude-4": {CapabilityVision, CapabilityFunctionCalling, CapabilityStreaming},
 
-	// === 智谱 GLM 系列 ===
+	// === Zhipu GLM Series ===
 	"glm-4v":       {CapabilityVision, CapabilityFunctionCalling, CapabilityStreaming},
 	"glm-4.6v":     {CapabilityVision, CapabilityFunctionCalling, CapabilityStreaming},
 	"glm-4-vision": {CapabilityVision, CapabilityFunctionCalling, CapabilityStreaming},
@@ -344,7 +344,7 @@ var defaultModelCapabilities = map[string][]ModelCapability{
 	"glm-5":        {CapabilityFunctionCalling, CapabilityStreaming},
 	"chatglm":      {CapabilityStreaming},
 
-	// === 阿里通义系列 ===
+	// === Alibaba Tongyi Series ===
 	"qwen-vl":    {CapabilityVision, CapabilityStreaming},
 	"qwen2-vl":   {CapabilityVision, CapabilityStreaming},
 	"qwen2.5-vl": {CapabilityVision, CapabilityStreaming},
@@ -355,11 +355,11 @@ var defaultModelCapabilities = map[string][]ModelCapability{
 	"qwen3":      {CapabilityVision, CapabilityFunctionCalling, CapabilityStreaming},
 	"qwen3.5":    {CapabilityVision, CapabilityFunctionCalling, CapabilityStreaming},
 
-	// === Google 系列 ===
+	// === Google Series ===
 	"gemini":  {CapabilityVision, CapabilityFunctionCalling, CapabilityStreaming},
 	"gemma-3": {CapabilityVision, CapabilityStreaming},
 
-	// === 其他常见模型 ===
+	// === Other Common Models ===
 	"llama-2":  {CapabilityStreaming},
 	"llama-3":  {CapabilityStreaming},
 	"mistral":  {CapabilityFunctionCalling, CapabilityStreaming},
@@ -370,16 +370,16 @@ var defaultModelCapabilities = map[string][]ModelCapability{
 	"yi-vl":    {CapabilityVision},
 }
 
-// RegisterModelCapabilities 注册单个模型的能力
-// 应用层调用此函数注册或覆盖模型的能力列表
+// RegisterModelCapabilities: The ability to register individual models
+// The application layer calls this function to register or overwrite the model's ability list
 func RegisterModelCapabilities(modelName string, capabilities []ModelCapability) {
 	capabilityRegistryMutex.Lock()
 	defer capabilityRegistryMutex.Unlock()
 	modelCapabilityRegistry[strings.ToLower(modelName)] = capabilities
 }
 
-// RegisterModelCapabilitiesFromConfig 批量注册模型能力
-// 应用层启动时从配置文件读取并调用此函数批量注册
+// RegisterModelCapabilitiesFromConfig Batch registration model capabilities
+// When the application layer starts, it reads from the configuration file and calls this function for batch registration
 func RegisterModelCapabilitiesFromConfig(models []ModelInfo) {
 	capabilityRegistryMutex.Lock()
 	defer capabilityRegistryMutex.Unlock()
@@ -388,30 +388,30 @@ func RegisterModelCapabilitiesFromConfig(models []ModelInfo) {
 	}
 }
 
-// UnregisterModelCapabilities 取消注册模型能力
+// UnregisterModelCapabilities
 func UnregisterModelCapabilities(modelName string) {
 	capabilityRegistryMutex.Lock()
 	defer capabilityRegistryMutex.Unlock()
 	delete(modelCapabilityRegistry, strings.ToLower(modelName))
 }
 
-// ClearModelCapabilitiesRegistry 清空模型能力注册表
-// 用于重新加载配置时清空旧数据
+// ClearModelCapabilitiesRegistry Clears the model capabilities registry
+// Used to clear old data when reloading configurations
 func ClearModelCapabilitiesRegistry() {
 	capabilityRegistryMutex.Lock()
 	defer capabilityRegistryMutex.Unlock()
 	modelCapabilityRegistry = make(map[string][]ModelCapability)
 }
 
-// GetModelCapabilities 获取模型的能力列表
-// 检测顺序：1. 应用层注册表（覆盖） -> 2. 内置默认配置 -> 3. 保守默认能力
+// GetModelCapabilities: A list of the capabilities of a model to obtain
+// Testing sequence: 1. Application Layer Registry (Override) -> 2. Built-in default configuration -> 3. Conservative default ability
 func GetModelCapabilities(modelName string) []ModelCapability {
 	if modelName == "" {
 		return nil
 	}
 	modelLower := strings.ToLower(modelName)
 
-	// 1. 检查应用层注册表（可覆盖默认配置）
+	// 1. Check the application layer registry (can override default configurations)
 	capabilityRegistryMutex.RLock()
 	if caps, ok := modelCapabilityRegistry[modelLower]; ok {
 		capabilityRegistryMutex.RUnlock()
@@ -419,8 +419,8 @@ func GetModelCapabilities(modelName string) []ModelCapability {
 	}
 	capabilityRegistryMutex.RUnlock()
 
-	// 2. 检查内置默认配置（模式匹配）
-	// 使用“最长匹配优先”避免短模式误匹配长模型名（例如 glm-4 命中 glm-4-vision）
+	// 2. Check the built-in default configuration (mode matching)
+	// Use "Longest Match First" to avoid mismatched long model names in short modes (e.g., glm-4 hitting glm-4-vision)
 	var (
 		matchedCaps  []ModelCapability
 		matchedLen   int
@@ -439,11 +439,11 @@ func GetModelCapabilities(modelName string) []ModelCapability {
 		return matchedCaps
 	}
 
-	// 3. 保守默认能力：假设支持所有常见能力（避免丢失功能）
+	// 3. Conservative default capability: Assuming support for all common abilities (avoiding missing features)
 	return []ModelCapability{CapabilityVision, CapabilityFunctionCalling, CapabilityStreaming}
 }
 
-// HasCapability 检测模型是否具有指定能力
+// HasCapability detects whether the model has specified capabilities
 func HasCapability(modelName string, capability ModelCapability) bool {
 	capabilities := GetModelCapabilities(modelName)
 	for _, cap := range capabilities {
@@ -454,17 +454,17 @@ func HasCapability(modelName string, capability ModelCapability) bool {
 	return false
 }
 
-// SupportsVision 检测模型是否支持视觉（图片）能力
+// SupportsVision checks whether the model supports visual (image) capabilities
 func SupportsVision(modelName string) bool {
 	return HasCapability(modelName, CapabilityVision)
 }
 
-// SupportsFunctionCalling 检测模型是否支持函数调用能力
+// SupportsFunctionCalling checks whether the model supports function call capability
 func SupportsFunctionCalling(modelName string) bool {
 	return HasCapability(modelName, CapabilityFunctionCalling)
 }
 
-// SupportsReasoning 检测模型是否支持推理能力
+// SupportsReasoning checks whether the model supports reasoning capabilities
 func SupportsReasoning(modelName string) bool {
 	return HasCapability(modelName, CapabilityReasoning)
 }

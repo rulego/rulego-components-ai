@@ -11,13 +11,13 @@ import (
 	"github.com/rulego/rulego/api/types"
 )
 
-// MCPToolAdapter 将 MCPToolProvider 的工具定义适配为 eino tool.InvokableTool。
+// MCPToolAdapter adapts the MCPToolProvider tooldefinition to eino tool.InvokableTool.
 type MCPToolAdapter struct {
 	def      types.MCPToolDefinition
 	provider types.MCPToolProvider
 }
 
-// Info 返回工具信息，从 MCPToolDefinition.InputSchema 构造 ToolInfo。
+// Info returns tool information, constructing ToolInfo from MCPToolDefinition.InputSchema.
 func (a *MCPToolAdapter) Info(ctx context.Context) (*schema.ToolInfo, error) {
 	var paramsOneOf *schema.ParamsOneOf
 	if len(a.def.InputSchema) > 0 {
@@ -27,7 +27,7 @@ func (a *MCPToolAdapter) Info(ctx context.Context) (*schema.ToolInfo, error) {
 		}
 	}
 	if paramsOneOf == nil {
-		// 无 schema 时使用空 object
+		// When there is no schema, use an empty object
 		paramsOneOf = schema.NewParamsOneOfByJSONSchema(&jsonschema.Schema{
 			Type:       "object",
 			Properties: nil,
@@ -40,7 +40,7 @@ func (a *MCPToolAdapter) Info(ctx context.Context) (*schema.ToolInfo, error) {
 	}, nil
 }
 
-// InvokableRun 调用 MCPToolProvider 执行工具。
+// InvokableRun calls the MCPToolProvider execution tool.
 func (a *MCPToolAdapter) InvokableRun(ctx context.Context, arguments string, opts ...tool.Option) (string, error) {
 	var args map[string]interface{}
 	if arguments != "" {
@@ -54,8 +54,8 @@ func (a *MCPToolAdapter) InvokableRun(ctx context.Context, arguments string, opt
 	return a.provider.CallTool(ctx, a.def.Name, args)
 }
 
-// CreateToolsFromProvider 从 MCPToolProvider 创建 eino 工具列表。
-// toolNames 为过滤器：nil 或空切片表示加载全部，["*"] 也表示全部。
+// CreateToolsFromProvider creates a list of eino tools from MCPToolProvider.
+// toolNames means filter: nil or empty slice means loading all, and ["*"] also means all.
 func CreateToolsFromProvider(provider types.MCPToolProvider, toolNames []string) ([]tool.BaseTool, error) {
 	defs, err := provider.ListToolDefinitions()
 	if err != nil {
@@ -71,7 +71,7 @@ func CreateToolsFromProvider(provider types.MCPToolProvider, toolNames []string)
 	return tools, nil
 }
 
-// MatchTool 检查工具名是否匹配过滤器。filter 为 nil/空/包含 "*" 均表示全部匹配。
+// MatchTool checks whether the tool name matches the filter. Filter is nil/empty/contains "*", all indicating a full match.
 func MatchTool(name string, filter []string) bool {
 	if len(filter) == 0 {
 		return true

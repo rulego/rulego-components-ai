@@ -134,17 +134,17 @@ type Tool struct {
 	cm              model.BaseChatModel
 	tpl             prompt.ChatTemplate
 
-	// timeout 操作超时时间（秒）
+	// timeout operation timeout (seconds)
 	timeout int
-	// headless 是否使用无头模式
+	// Headless: Whether to use headless mode
 	headless bool
 
-	// 延迟初始化
+	// Delayed initialization
 	pendingConfig *Config
 	initialized   bool
 
-	// cleanupOnce 确保 allocatorCancel 只被调用一次，避免 close of closed channel panic
-	// 使用指针类型以便在重新初始化时可以重置
+	// cleanupOnce ensures allocatorCancel is called only once, avoiding a close of closed channel panic
+	// Use pointer types so they can be reset during reinitialization
 	cleanupOnce *sync.Once
 }
 
@@ -159,7 +159,7 @@ func (b *Tool) InvokableRun(ctx context.Context, argumentsInJSON string, opts ..
 		}
 	}()
 
-	// 延迟初始化：第一次调用时才启动浏览器
+	// Delayed initialization: The browser only starts on the first call
 	if err := b.ensureInitialized(ctx); err != nil {
 		return "", fmt.Errorf("failed to initialize browser: %w", err)
 	}
@@ -177,17 +177,17 @@ func (b *Tool) InvokableRun(ctx context.Context, argumentsInJSON string, opts ..
 	return content, nil
 }
 
-// ensureInitialized 确保浏览器已初始化（延迟初始化）
+// ensureInitialized ensures the browser has been initialized (delayed initialization)
 func (b *Tool) ensureInitialized(ctx context.Context) error {
 	b.mu.Lock()
 	defer b.mu.Unlock()
 
 	if b.initialized {
-		// 检查 context 是否已取消
+		// Check if the context has been canceled
 		if b.ctx != nil && b.ctx.Err() == nil {
 			return nil
 		}
-		// 如果 context 已取消，安全地清理并重新初始化
+		// If the context has been removed, clean up safely and reinitialize
 		b.safeCleanup()
 	}
 
@@ -203,13 +203,13 @@ func (b *Tool) ensureInitialized(ctx context.Context) error {
 	return nil
 }
 
-// safeCleanup 安全地清理浏览器资源，避免 close of closed channel panic
+// safeCleanup securely cleans browser resources, avoiding close of closed channel panic
 func (b *Tool) safeCleanup() {
 	if b.allocatorCancel != nil {
-		// 使用 recover 捕获可能的 "close of closed channel" panic
+		// Use recover to capture possible "close of closed channel" panics
 		defer func() {
 			if r := recover(); r != nil {
-				// 忽略 close of closed channel panic，这是 chromedp 内部的问题
+				// Ignoring the Close of Closed Channel Panic is an internal issue within ChromeDP
 			}
 		}()
 		b.allocatorCancel()
@@ -222,7 +222,7 @@ func (b *Tool) safeCleanup() {
 	b.tabs = nil
 	b.initialized = false
 
-	// 重置 cleanupOnce，以便下次可以使用
+	// Reset cleanupOnce so you can use it next time
 	b.cleanupOnce = &sync.Once{}
 }
 
@@ -250,11 +250,11 @@ func NewBrowserUseTool(ctx context.Context, config *Config) (*Tool, error) {
 	if config.DDGSearchTool != nil {
 		actions = append(actions, string(ActionWebSearch))
 	} else {
-		// 如果没有搜索工具，也启用 web_search，但使用默认的 Baidu 搜索
+		// If you don't have a search tool, web_search is also enabled, but use the default Baidu search
 		actions = append(actions, string(ActionWebSearch))
 	}
 
-	// 获取超时配置，默认 30 秒
+	// Get the timeout configuration, default is 30 seconds
 	timeout := 30
 	if config.Timeout > 0 {
 		timeout = config.Timeout
@@ -371,13 +371,13 @@ func NewBrowserUseTool(ctx context.Context, config *Config) (*Tool, error) {
 		searchEngine: config.SearchEngine,
 		cm:           config.ExtractChatModel,
 		tpl:          prompt.FromMessages(schema.FString, schema.UserMessage(extractContentPrompt)),
-		timeout:     timeout,
+		timeout:      timeout,
 		headless:     config.Headless,
 		cleanupOnce:  &sync.Once{},
 	}
 
-	// 保存配置，延迟初始化浏览器
-	// 浏览器会在第一次调用 InvokableRun 时才启动
+	// Save the configuration and delay browser initialization
+	// The browser only starts when InvokableRun is called for the first time
 	but.pendingConfig = config
 
 	return but, nil
@@ -408,17 +408,17 @@ func (b *Tool) initialize(ctx context.Context, config *Config) error {
 		opts = append(opts, chromedp.Flag("allow-running-insecure-content", true))
 	}
 
-	// 处理布尔类型的额外参数
+	// Handling additional parameters of Boolean types
 	for _, arg := range config.ExtraChromiumArgs {
 		opts = append(opts, chromedp.Flag(arg, true))
 	}
 
-	// 处理带值的 Chromium 参数
+	// Handling Chromium parameters with values
 	for name, value := range config.ChromiumFlags {
 		opts = append(opts, chromedp.Flag(name, value))
 	}
 
-	// 处理 UserDataDir（用户数据目录，用于保留登录状态）
+	// Handling UserDataDir (user data directory, used to maintain login status)
 	if config.UserDataDir != "" {
 		opts = append(opts, chromedp.UserDataDir(config.UserDataDir))
 	}
@@ -445,7 +445,7 @@ func (b *Tool) initialize(ctx context.Context, config *Config) error {
 	)
 
 	if err := chromedp.Run(b.ctx); err != nil {
-		// 如果启动失败，可能是找不到浏览器，返回友好提示
+		// If startup fails, it may be because the browser cannot be found, and a friendly prompt will return
 		if strings.Contains(err.Error(), "executable file not found") || strings.Contains(err.Error(), "exec: \"google-chrome\"") {
 			return fmt.Errorf("Chrome browser not found. Please install Google Chrome or Chromium to use this tool.\nError: %v\n\nTips: You can install Chrome manually or specify the path in the configuration.", err)
 		}
@@ -500,11 +500,11 @@ type Param struct {
 type Action string
 
 const (
-	ActionGoToURL         Action = "go_to_url"
-	ActionClickElement    Action = "click_element"
-	ActionInputText       Action = "input_text"
-	ActionScrollDown      Action = "scroll_down"
-	ActionScrollUp        Action = "scroll_up"
+	ActionGoToURL      Action = "go_to_url"
+	ActionClickElement Action = "click_element"
+	ActionInputText    Action = "input_text"
+	ActionScrollDown   Action = "scroll_down"
+	ActionScrollUp     Action = "scroll_up"
 	//ActionSendKeys       Action = "send_keys"
 	ActionWebSearch       Action = "web_search"
 	ActionWait            Action = "wait"
@@ -512,8 +512,8 @@ const (
 	ActionSwitchTab       Action = "switch_tab"
 	ActionOpenTab         Action = "open_tab"
 	ActionCloseTab        Action = "close_tab"
-	ActionSetTimeout       Action = "set_timeout"
-	ActionSetSearchEngine  Action = "set_search_engine"
+	ActionSetTimeout      Action = "set_timeout"
+	ActionSetSearchEngine Action = "set_search_engine"
 	ActionSetHeadless     Action = "set_headless"
 )
 
@@ -562,7 +562,7 @@ func (b *Tool) Execute(params *Param) (*ToolResult, error) {
 			return &ToolResult{Error: fmt.Sprintf("failed to click element %d: %v", index, err)}, nil
 		}
 
-		// 增加等待时间，确保页面加载完成（特别是搜索结果页跳转）
+		// Increase waiting time to ensure the page loads fully (especially the search results page redirects)
 		err = chromedp.Run(b.ctx, chromedp.Sleep(3*time.Second))
 
 		if err := b.updateElements(b.ctx); err != nil {
@@ -586,8 +586,8 @@ func (b *Tool) Execute(params *Param) (*ToolResult, error) {
 
 		element := b.elements[index]
 
-		// 使用 JavaScript 直接设置值，避免 chromedp.Clear/SendKeys 在某些情况下（如 textarea）报错
-		// 错误示例：textarea node 181 does not have child #text node
+		// Use JavaScript to set values directly to avoid chromedp.Clear/SendKeys can cause errors in certain situations (such as textarea).
+		// Error example: textarea node 181 does not have child #text node
 		textJSON, err := sonic.MarshalString(text)
 		if err != nil {
 			return &ToolResult{Error: fmt.Sprintf("failed to marshal text: %v", err)}, nil
@@ -603,12 +603,12 @@ func (b *Tool) Execute(params *Param) (*ToolResult, error) {
 					el.focus();
 					const target = %s;
 
-					// 特殊处理 SELECT 元素：尝试匹配文本或值
+					// Handle SELECT elements specially by matching their text or value
 					if (el.tagName === 'SELECT') {
 						const options = Array.from(el.options);
 						let found = false;
 						
-						// 1. 精确匹配 value
+						// 1. Match value exactly
 						for (let i = 0; i < options.length; i++) {
 							if (options[i].value === target) {
 								el.selectedIndex = i;
@@ -617,7 +617,7 @@ func (b *Tool) Execute(params *Param) (*ToolResult, error) {
 							}
 						}
 						
-						// 2. 如果没找到，尝试模糊匹配 text
+						// 2. If not found, try a fuzzy text match
 						if (!found) {
 							const lowerTarget = target.toLowerCase();
 							for (let i = 0; i < options.length; i++) {
@@ -630,11 +630,11 @@ func (b *Tool) Execute(params *Param) (*ToolResult, error) {
 						}
 
 						if (!found) {
-							// 尝试直接设置值
+							// Try setting the value directly
 							el.value = target;
 						}
 					} else {
-						// 普通 Input/Textarea
+						// Regular Input/Textarea
 						el.value = target;
 					}
 
@@ -648,7 +648,7 @@ func (b *Tool) Execute(params *Param) (*ToolResult, error) {
 			return &ToolResult{Error: fmt.Sprintf("failed to input text to element %d: %v", index, err)}, nil
 		}
 
-		// 如果文本以 \n 结尾，尝试模拟回车键
+		// If the text ends with \n, try to simulate the Enter key
 		if len(text) > 0 && text[len(text)-1] == '\n' {
 			err = chromedp.Run(b.ctx,
 				chromedp.Evaluate(fmt.Sprintf(`
@@ -660,24 +660,24 @@ func (b *Tool) Execute(params *Param) (*ToolResult, error) {
 							el.dispatchEvent(new KeyboardEvent('keypress', { key: 'Enter', code: 'Enter', keyCode: 13, bubbles: true }));
 							el.dispatchEvent(new KeyboardEvent('keyup', { key: 'Enter', code: 'Enter', keyCode: 13, bubbles: true }));
 							
-							// 尝试提交表单
+							// Try submitting the form
 							if (el.form) {
-								// el.form.submit(); // 直接提交可能绕过验证，暂时注释
+								// el.form.submit(); // Direct submission may bypass validation, so keep this disabled for now
 							}
 						}
 					})()
 				`, element.XPath), nil),
 			)
 			if err != nil {
-				// 忽略回车模拟错误，不影响主要功能
+				// Ignoring the Enter simulation error does not affect the main function
 			}
 
-			// 如果模拟了回车，稍微多等待一会儿
+			// If you simulate Enter, wait a little longer
 			chromedp.Run(b.ctx, chromedp.Sleep(2*time.Second))
 		}
 
-		// 输入完成后，刷新页面元素，因为输入可能会触发 DOM 变化（如下拉框、验证信息等）
-		// 同时返回最新的交互元素列表，方便 AI 进行下一步操作
+		// After entering it, refresh the page elements, as input may trigger DOM changes (such as drop-down boxes, validation information, etc.)
+		// It also returns the latest list of interactive elements, making it easier for the AI to take the next step
 		if err := b.updateElements(b.ctx); err != nil {
 			return &ToolResult{Error: fmt.Sprintf("failed to update elements: %v", err)}, nil
 		}
@@ -717,7 +717,7 @@ func (b *Tool) Execute(params *Param) (*ToolResult, error) {
 		if params.Seconds != nil {
 			seconds = *params.Seconds
 		}
-		// 限制最大等待时间为 60 秒
+		// The maximum waiting time limit is 60 seconds
 		if seconds > 60 {
 			seconds = 60
 		}
@@ -737,7 +737,7 @@ func (b *Tool) Execute(params *Param) (*ToolResult, error) {
 		result = &ToolResult{Output: fmt.Sprintf("successfully waited for %d seconds\n\n%s", seconds, b.getPageContext())}
 
 	case ActionWebSearch:
-		// 如果配置了 searchTool，使用 searchTool (DuckDuckGo API)
+		// If searchTool is configured, use searchTool (DuckDuckGo API)
 		if b.searchTool != nil {
 			if params.Query == nil {
 				return &ToolResult{Error: "query is required for 'web_search' action"}, nil
@@ -769,22 +769,22 @@ func (b *Tool) Execute(params *Param) (*ToolResult, error) {
 
 			result = &ToolResult{Output: "successfully search web and opened new tab: " + searchResults.Results[0].URL + "\n\n" + b.getPageContext()}
 		} else {
-			// 如果没有配置 searchTool，回退到使用 搜索引擎
+			// If searchTool is not configured, it will revert to using the search engine
 			if params.Query == nil {
 				return &ToolResult{Error: "query is required for 'web_search' action"}, nil
 			}
 
-			// 构造搜索 URL
+			// Construct search URLs
 			var searchURL string
 			query := url.QueryEscape(*params.Query)
 
-			// 默认使用 baidu，如果配置了 SearchEngine 则使用配置的引擎
+			// By default, baidu is used; if SearchEngine is configured, the configured engine will be used
 			engine := strings.ToLower(b.searchEngine)
 			if engine == "" {
 				engine = "baidu"
 			}
 
-			// 检查是否是自定义 URL 模板 (包含 %s)
+			// Check if it is a custom URL template (including %s)
 			if strings.Contains(b.searchEngine, "%s") {
 				searchURL = fmt.Sprintf(b.searchEngine, query)
 				engine = "custom"
@@ -797,13 +797,13 @@ func (b *Tool) Execute(params *Param) (*ToolResult, error) {
 				case "duckduckgo":
 					searchURL = fmt.Sprintf("https://duckduckgo.com/?q=%s", query)
 				default:
-					// 默认为 Baidu
+					// The default is Baidu
 					searchURL = fmt.Sprintf("https://www.baidu.com/s?wd=%s", query)
 					engine = "baidu"
 				}
 			}
 
-			// 直接在当前标签页导航
+			// Navigate directly from the current tab
 			err := chromedp.Run(b.ctx,
 				chromedp.Navigate(searchURL),
 				chromedp.WaitReady("body", chromedp.ByQuery),
@@ -825,51 +825,51 @@ func (b *Tool) Execute(params *Param) (*ToolResult, error) {
 		}
 
 		var content string
-		// 使用 Turndown.js 将 HTML 转换为 Markdown
-		// 我们通过 CDN 动态加载 TurndownService，或者直接注入其核心逻辑
-		// 这里采用注入简化版逻辑的方式，将关键 HTML 元素转换为 Markdown 格式
+		// Use Turndown.js to convert HTML to Markdown
+		// We dynamically load TurndownService via CDN or directly inject its core logic
+		// Here, a simplified logic is injected to convert key HTML elements into Markdown format
 		err := chromedp.Run(b.ctx,
 			chromedp.Evaluate(`
 				(() => {
-					// 辅助函数：转义 Markdown 特殊字符
+					// Helper function that escapes Markdown special characters
 					function escape(text) {
 						return text.replace(/([\\*_{}\[\]()#+\-.!])/g, '\\$1');
 					}
 
-					// 递归遍历 DOM 树并生成 Markdown
+					// Recursively traverse the DOM tree and generate Markdown
 					function walk(node) {
 						let result = "";
 						
-						// 处理文本节点
+						// Process text nodes
 						if (node.nodeType === Node.TEXT_NODE) {
 							let text = node.textContent.replace(/\s+/g, ' ');
-							// 如果父节点是块级元素，则 trim，否则保留空格
+							// Trim text under block-level parents; otherwise preserve spaces
 							if (['P', 'DIV', 'LI', 'H1', 'H2', 'H3', 'H4', 'H5', 'H6', 'BLOCKQUOTE', 'PRE', 'CODE'].includes(node.parentNode.nodeName)) {
-								// text = text.trim(); // 暂时不 trim，保留部分格式
+								// text = text.trim(); // Do not trim yet so some formatting is preserved
 							}
 							return text;
 						}
 
-						// 忽略注释和不可见元素
+						// Ignore comments and invisible elements
 						if (node.nodeType !== Node.ELEMENT_NODE) return "";
 						const style = window.getComputedStyle(node);
 						if (style.display === 'none' || style.visibility === 'hidden') return "";
 
-						// 处理特定标签
+						// Process specific tags
 						const tagName = node.tagName.toLowerCase();
 						
-						// 忽略无关标签
+						// Ignore unrelated tags
 						if (['script', 'style', 'noscript', 'svg', 'img', 'video', 'audio', 'iframe', 'link', 'meta'].includes(tagName)) {
 							return "";
 						}
 
-						// 递归处理子节点
+						// Recursively process child nodes
 						let childrenMarkdown = "";
 						node.childNodes.forEach(child => {
 							childrenMarkdown += walk(child);
 						});
 
-						// 根据标签类型包装 Markdown
+						// Wrap Markdown according to the tag type
 						switch (tagName) {
 							case 'h1': return '\n# ' + childrenMarkdown.trim() + '\n\n';
 							case 'h2': return '\n## ' + childrenMarkdown.trim() + '\n\n';
@@ -891,7 +891,7 @@ func (b *Tool) Execute(params *Param) (*ToolResult, error) {
 							case 'ol': return '\n' + childrenMarkdown + '\n';
 							case 'li': return '- ' + childrenMarkdown.trim() + '\n';
 							case 'code': return '\x60' + childrenMarkdown + '\x60';
-							case 'pre': return '\n\x60\x60\x60\n' + node.innerText + '\n\x60\x60\x60\n\n'; // pre 特殊处理，直接取 innerText
+							case 'pre': return '\n\x60\x60\x60\n' + node.innerText + '\n\x60\x60\x60\n\n'; // Handle pre specially by using innerText directly
 							case 'blockquote': return '\n> ' + childrenMarkdown.trim() + '\n\n';
 							case 'div': 
 							case 'section':
@@ -913,7 +913,7 @@ func (b *Tool) Execute(params *Param) (*ToolResult, error) {
 			return &ToolResult{Error: fmt.Sprintf("extract content fail: %v", err)}, nil
 		}
 
-		// 限制内容长度，防止超出上下文限制
+		// Limit content length to prevent exceeding contextual limits
 		const maxContentLength = 50000
 		if len(content) > maxContentLength {
 			content = content[:maxContentLength] + "...(truncated)"
@@ -1036,7 +1036,7 @@ func (b *Tool) Execute(params *Param) (*ToolResult, error) {
 			return &ToolResult{Error: "search_engine is required for 'set_search_engine' action"}, nil
 		}
 		newEngine := *params.SearchEngine
-		// 验证搜索引擎是否有效
+		// Verify whether the search engine is effective
 		validEngines := map[string]bool{"google": true, "baidu": true, "bing": true, "duckduckgo": true}
 		engineLower := strings.ToLower(newEngine)
 		if !validEngines[engineLower] && !strings.Contains(newEngine, "%s") {
@@ -1054,15 +1054,15 @@ func (b *Tool) Execute(params *Param) (*ToolResult, error) {
 		oldHeadless := b.headless
 		b.headless = newHeadless
 
-		// 如果 headless 值发生变化，需要重启浏览器
+		// If the headless value changes, you need to restart the browser
 		if oldHeadless != newHeadless && b.pendingConfig != nil {
-			// 更新 pendingConfig 中的 Headless 值
+			// Update the Headless value in pendingConfig
 			b.pendingConfig.Headless = newHeadless
 
-			// 清理当前浏览器
+			// Clean the current browser
 			b.safeCleanup()
 
-			// 重新初始化浏览器（延迟到下次操作时）
+			// Reinitialize the browser (delayed until the next operation)
 			b.initialized = false
 
 			result = &ToolResult{Output: fmt.Sprintf("successfully set headless from %t to %t. Browser will restart with new settings on next action.", oldHeadless, newHeadless)}
@@ -1095,7 +1095,7 @@ func (b *Tool) getInteractiveElements() string {
 }
 
 func (b *Tool) updateElements(ctx context.Context) error {
-	// 设置超时，防止页面元素过多导致卡死
+	// Set timeout to prevent freezing caused by too many page elements
 	timeout := b.timeout
 	if timeout <= 0 {
 		timeout = 30
@@ -1111,15 +1111,15 @@ func (b *Tool) updateElements(ctx context.Context) error {
 		return err
 	}
 
-	// 限制处理的节点数量，避免性能问题
+	// Limit the number of nodes processed to avoid performance issues
 	if len(nodes) > 500 {
 		nodes = nodes[:500]
 	}
 
 	b.elements = make([]ElementInfo, 0, len(nodes))
 
-	// 批量检查可见性，减少 RPC 调用
-	// 先构建所有节点的 XPath 列表
+	// Batch check visibility to reduce RPC calls
+	// First, build a list of XPath for all nodes
 	xpaths := make([]string, len(nodes))
 	for i, node := range nodes {
 		xpaths[i] = node.FullXPath()
@@ -1131,8 +1131,8 @@ func (b *Tool) updateElements(ctx context.Context) error {
 	}
 
 	var visibleIndices []int
-	// 限制返回的元素数量，避免 token 超限
-	// 增加到 100 个，以覆盖更多搜索结果
+	// Limit the number of returned elements to avoid token overlimits
+	// Increase to 100 to cover more search results
 	const maxElements = 100
 
 	err = chromedp.Run(ctx, chromedp.Evaluate(fmt.Sprintf(`
@@ -1141,22 +1141,22 @@ func (b *Tool) updateElements(ctx context.Context) error {
 			const visibleIndices = [];
 			const maxElements = %d;
 			
-			// 辅助函数：检查元素是否可见
+			// Helper function that checks whether an element is visible
 			function isElementVisible(el) {
 				if (!el) return false;
 				
-				// 检查元素是否在文档中
+				// Check whether the element is in the document
 				if (!document.contains(el)) return false;
 
-				// 检查元素尺寸
+				// Check the element dimensions
 				const rect = el.getBoundingClientRect();
 				if (rect.width === 0 || rect.height === 0) return false;
 				
-				// 检查 CSS 样式
+				// Check CSS styles
 				const style = window.getComputedStyle(el);
 				if (style.display === 'none' || style.visibility === 'hidden' || style.opacity === '0') return false;
 				
-				// 检查是否在 viewport 内（可选，目前只检查是否渲染）
+				// Optionally check whether it is in the viewport; currently only check whether it is rendered
 				// const viewHeight = Math.max(document.documentElement.clientHeight, window.innerHeight);
 				// if (rect.bottom < 0 || rect.top - viewHeight >= 0) return false;
 
@@ -1173,7 +1173,7 @@ func (b *Tool) updateElements(ctx context.Context) error {
 						visibleIndices.push(i);
 					}
 				} catch (e) {
-					// 忽略错误的 XPath
+					// Ignore invalid XPath expressions
 				}
 			}
 			return visibleIndices;
@@ -1184,7 +1184,7 @@ func (b *Tool) updateElements(ctx context.Context) error {
 		return fmt.Errorf("failed to check visibility: %v", err)
 	}
 
-	// 根据可见性索引构建 elements 列表
+	// Build a list of elements based on the visibility index
 	for _, idx := range visibleIndices {
 		if idx < 0 || idx >= len(nodes) {
 			continue
@@ -1193,9 +1193,9 @@ func (b *Tool) updateElements(ctx context.Context) error {
 
 		var description string
 
-		// 获取节点的文本内容，辅助描述
+		// Retrieves the text content of nodes to assist description
 		var textContent string
-		// 对于 Link 和 Button，尝试获取 innerText
+		// For Link and Button, try to get innerText
 		if node.NodeName == "A" || node.NodeName == "BUTTON" {
 			err = chromedp.Run(ctx, chromedp.Evaluate(fmt.Sprintf(`
 				(() => {
@@ -1207,11 +1207,11 @@ func (b *Tool) updateElements(ctx context.Context) error {
 			if err != nil {
 				// ignore error
 			}
-			// 限制文本长度
+			// Limit text length
 			if len(textContent) > 50 {
 				textContent = textContent[:50] + "..."
 			}
-			// 如果有换行，替换为空格
+			// If there is a line break, replace it with a space
 			textContent = strings.ReplaceAll(textContent, "\n", " ")
 		}
 
@@ -1219,7 +1219,7 @@ func (b *Tool) updateElements(ctx context.Context) error {
 		case "A":
 			description = fmt.Sprintf("Link: %s (href=%s)", textContent, node.AttributeValue("href"))
 		case "BUTTON":
-			// 优先使用获取到的 textContent，如果为空则尝试 attribute
+			// Prioritize using the obtained textContent; if empty, attempt to attribute
 			if textContent == "" {
 				textContent = node.AttributeValue("textContent")
 			}
@@ -1229,7 +1229,7 @@ func (b *Tool) updateElements(ctx context.Context) error {
 			description = fmt.Sprintf("Button: %s", textContent)
 		case "INPUT":
 			inputType := node.AttributeValue("type")
-			// 尝试获取 value 属性（对于 submit 按钮很有用）
+			// Try to get the value attribute (useful for the submit button)
 			value := node.AttributeValue("value")
 			placeholder := node.AttributeValue("placeholder")
 
@@ -1242,7 +1242,7 @@ func (b *Tool) updateElements(ctx context.Context) error {
 			}
 			description = desc
 		case "SELECT":
-			// 获取选项列表
+			// Get the list of options
 			var options []string
 			err = chromedp.Run(ctx, chromedp.Evaluate(fmt.Sprintf(`
 				(() => {
@@ -1261,8 +1261,8 @@ func (b *Tool) updateElements(ctx context.Context) error {
 			description = fmt.Sprintf("TextArea: %s", node.AttributeValue("placeholder"))
 		}
 
-		// 使用当前 visibleNodes 的索引作为 ElementInfo 的 Index
-		// 注意：这里的 Index 是用户交互时使用的索引，应该连续
+		// Use the current visibleNodes index as the ElementInfo index
+		// Note: Here, the Index refers to the index used by users during interactions and should be consecutive
 		currentIndex := len(b.elements)
 		b.elements = append(b.elements, ElementInfo{
 			Index:       currentIndex,
@@ -1281,10 +1281,10 @@ func (b *Tool) Cleanup() {
 
 	b.cleanupOnce.Do(func() {
 		if b.allocatorCancel != nil {
-			// 使用 recover 捕获可能的 "close of closed channel" panic
+			// Use recover to capture possible "close of closed channel" panics
 			defer func() {
 				if r := recover(); r != nil {
-					// 忽略 close of closed channel panic，这是 chromedp 内部的问题
+					// Ignoring the Close of Closed Channel Panic is an internal issue within ChromeDP
 				}
 			}()
 			b.allocatorCancel()
@@ -1356,21 +1356,21 @@ func (b *Tool) GetCurrentState() (*BrowserState, error) {
 	}
 	err = chromedp.Run(b.ctx, chromedp.Evaluate(fmt.Sprintf(`
 		(() => {
-			// 移除之前可能存在的标记
+			// Remove any existing markers
 			const oldMarkers = document.querySelectorAll('.eino-element-marker, .eino-element-border');
 			oldMarkers.forEach(marker => marker.remove());
 			
-			// 使用XPath查找元素并添加标记
+			// Find elements with XPath and add markers
 			const elements = [%s];
 			
 			elements.forEach(elem => {
 				try {
-					// 使用XPath查找元素
+					// Find an element with XPath
 					const result = document.evaluate(elem.xpath, document, null, XPathResult.FIRST_ORDERED_NODE_TYPE, null);
 					const el = result.singleNodeValue;
 					if (!el) return;
 					
-					// 创建序号标记
+					// Create a numbered marker
 					const marker = document.createElement('div');
 					marker.className = 'eino-element-marker';
 					marker.textContent = elem.index;
@@ -1384,12 +1384,12 @@ func (b *Tool) GetCurrentState() (*BrowserState, error) {
 					marker.style.fontWeight = 'bold';
 					marker.style.boxShadow = '0 0 2px rgba(0,0,0,0.3)';
 					
-					// 获取元素位置
+					// Get the element position
 					const rect = el.getBoundingClientRect();
 					marker.style.top = (window.scrollY + rect.top - 10) + 'px';
 					marker.style.left = (window.scrollX + rect.left - 5) + 'px';
 					
-					// 创建元素边框
+					// Create an element border
 					const border = document.createElement('div');
 					border.className = 'eino-element-border';
 					border.style.position = 'absolute';
@@ -1398,7 +1398,7 @@ func (b *Tool) GetCurrentState() (*BrowserState, error) {
 					border.style.borderRadius = '3px';
 					border.style.pointerEvents = 'none';
 					
-					// 设置边框位置和大小
+					// Set the border position and size
 					border.style.top = (window.scrollY + rect.top) + 'px';
 					border.style.left = (window.scrollX + rect.left) + 'px';
 					border.style.width = rect.width + 'px';

@@ -33,10 +33,10 @@ import (
 	"github.com/rulego/rulego/api/types"
 )
 
-// contextKeySessionModel 是 context 中 session_model 的 key
+// contextKeySessionModel is the key of session_model in context
 type contextKeySessionModel struct{}
 
-// SessionModelFromContext 从 context 中获取 session_model
+// SessionModelFromContext retrieves session_model from the context
 func SessionModelFromContext(ctx context.Context) string {
 	if v := ctx.Value(contextKeySessionModel{}); v != nil {
 		if s, ok := v.(string); ok {
@@ -46,15 +46,15 @@ func SessionModelFromContext(ctx context.Context) string {
 	return ""
 }
 
-// ContextWithSessionModel 将 session_model 注入到 context
+// ContextWithSessionModel injects session_model into the context
 func ContextWithSessionModel(ctx context.Context, model string) context.Context {
 	return context.WithValue(ctx, contextKeySessionModel{}, model)
 }
 
-// contextKeySessionExtraFields 是 context 中 session_extra_fields 的 key
+// contextKeySessionExtraFields is the key to session_extra_fields in context
 type contextKeySessionExtraFields struct{}
 
-// SessionExtraFieldsFromContext 从 context 中获取会话级扩展参数覆盖（思考强度等）
+// SessionExtraFieldsFromContext Obtain session-level extended parameter coverage (such as thought intensity) from context
 func SessionExtraFieldsFromContext(ctx context.Context) map[string]any {
 	if v := ctx.Value(contextKeySessionExtraFields{}); v != nil {
 		if m, ok := v.(map[string]any); ok {
@@ -64,7 +64,7 @@ func SessionExtraFieldsFromContext(ctx context.Context) map[string]any {
 	return nil
 }
 
-// ContextWithSessionExtraFields 将会话级扩展参数注入到 context
+// ContextWithSessionExtraFields injects conversation-level extension parameters into context
 func ContextWithSessionExtraFields(ctx context.Context, fields map[string]any) context.Context {
 	if len(fields) == 0 {
 		return ctx
@@ -72,22 +72,22 @@ func ContextWithSessionExtraFields(ctx context.Context, fields map[string]any) c
 	return context.WithValue(ctx, contextKeySessionExtraFields{}, fields)
 }
 
-// maxCachedModels 动态模型缓存的最大数量
+// maxCachedModels: The maximum number of dynamic model caches
 const maxCachedModels = 32
 
-// DynamicModelWrapper 动态模型包装器
-// 支持根据 context 中的 session_model 动态切换模型
+// DynamicModelWrapper
+// Supports dynamic model switching based on the session_model in context
 type DynamicModelWrapper struct {
 	baseModel    model.ToolCallingChatModel
 	llmConfig    config.LLMConfig
-	modelCache   *sync.Map // modelID -> model.ToolCallingChatModel（指针，WithTools 派生实例共享）
-	cacheCount   *int32    // 缓存中的模型数量（指针，WithTools 派生实例共享）
+	modelCache   *sync.Map // modelID -> model.ToolCallingChatModel (pointer, shared with WithTools derived instances)
+	cacheCount   *int32    // Number of models in cache (pointer, shared with WithTools derived instances)
 	logger       types.Logger
 	modelOptions ModelOptions
-	tools        []*schema.ToolInfo // 绑定的工具列表（重建模型时需重新绑定，否则工具调用失效）
+	tools        []*schema.ToolInfo // List of bound tools (rebinding when rebuilding the model, otherwise the tool call will become invalid)
 }
 
-// NewDynamicModelWrapper 创建动态模型包装器
+// NewDynamicModelWrapper creates a dynamic model wrapper
 func NewDynamicModelWrapper(baseModel model.ToolCallingChatModel, llmConfig config.LLMConfig, opts ModelOptions) *DynamicModelWrapper {
 	return &DynamicModelWrapper{
 		baseModel:    baseModel,
@@ -99,19 +99,19 @@ func NewDynamicModelWrapper(baseModel model.ToolCallingChatModel, llmConfig conf
 	}
 }
 
-// getModelForContext 根据 context 获取合适的模型
-// 触发重建的条件：切了模型（session_model 与默认不同）或有会话级扩展参数覆盖（思考强度等）
+// getModelForContext Retrieves the appropriate model based on the context
+// Conditions for triggering reconstruction: model cutoff (session_model different from default) or session-level extended parameter coverage (such as thinking intensity)
 func (w *DynamicModelWrapper) getModelForContext(ctx context.Context) model.ToolCallingChatModel {
 	sessionModel := SessionModelFromContext(ctx)
 	sessionExtra := SessionExtraFieldsFromContext(ctx)
 	modelChanged := sessionModel != "" && sessionModel != w.llmConfig.Model
 
-	// 既没切模型、也没扩展参数覆盖 → 用基础模型
+	// No model cut, no parameter overlays→ using the base model
 	if !modelChanged && len(sessionExtra) == 0 {
 		return w.baseModel
 	}
 
-	// 缓存键 = 模型名 + extraFields 哈希；同模型同 extra 命中缓存，避免每条消息重建
+	// Cache key = model name + extraFields hash; Same model and extra hit cache to avoid reconstructing every message
 	cacheKey := w.llmConfig.Model
 	if modelChanged {
 		cacheKey = sessionModel
@@ -125,12 +125,12 @@ func (w *DynamicModelWrapper) getModelForContext(ctx context.Context) model.Tool
 		}
 	}
 
-	// 创建新模型配置
+	// Create a new model configuration
 	newConfig := w.llmConfig
 	if modelChanged {
 		newConfig.Model = sessionModel
 	}
-	// 会话级扩展参数覆盖（思考强度等）：session override 优先合并到模型默认 ExtraFields
+	// Session-level extended parameter coverage (such as thought intensity): session override is prioritized and merged into the model's default ExtraFields
 	if len(sessionExtra) > 0 {
 		merged := make(map[string]any, len(newConfig.Params.ExtraFields)+len(sessionExtra))
 		for k, v := range newConfig.Params.ExtraFields {
@@ -142,7 +142,7 @@ func (w *DynamicModelWrapper) getModelForContext(ctx context.Context) model.Tool
 		newConfig.Params.ExtraFields = merged
 	}
 
-	// 创建新模型
+	// Create new models
 	newModel, err := CreateChatModel(newConfig, w.modelOptions)
 	if err != nil {
 		if w.logger != nil {
@@ -150,7 +150,7 @@ func (w *DynamicModelWrapper) getModelForContext(ctx context.Context) model.Tool
 		}
 		return w.baseModel
 	}
-	// 重建的模型默认未绑工具，需重新绑定（否则 session 级切换模型/思考后工具调用失效）
+	// The reconstructed model is not bound to tools by default and must be rebounded (otherwise, after switching models at the session level or thinking about the tool, the call becomes invalid).
 	if len(w.tools) > 0 {
 		if tm, err := newModel.WithTools(w.tools); err == nil {
 			newModel = tm
@@ -159,7 +159,7 @@ func (w *DynamicModelWrapper) getModelForContext(ctx context.Context) model.Tool
 		}
 	}
 
-	// 缓存（达到上限时不再缓存，但仍返回新模型）
+	// Caching (no longer cached when the limit is reached, but still returns to the new model)
 	if atomic.LoadInt32(w.cacheCount) < maxCachedModels {
 		w.modelCache.Store(cacheKey, newModel)
 		atomic.AddInt32(w.cacheCount, 1)
@@ -168,11 +168,11 @@ func (w *DynamicModelWrapper) getModelForContext(ctx context.Context) model.Tool
 	return newModel
 }
 
-// Generate 生成方法
+// Generate Generation Method
 func (w *DynamicModelWrapper) Generate(ctx context.Context, input []*schema.Message, opts ...model.Option) (*schema.Message, error) {
 	sessionModel := SessionModelFromContext(ctx)
-	// 覆盖 opts 里可能存在的 WithModel（eino compose 会注入节点默认 model），
-	// 否则会盖掉 getModelForContext 按 session_model 重建的模型
+	// Override possible WithModel in opts (eino compose injects the node's default model),
+	// Otherwise, the model reconstructed by getModelForContext with session_model will be overwhelmed
 	if sessionModel != "" {
 		opts = append(opts, model.WithModel(sessionModel))
 	}
@@ -180,7 +180,7 @@ func (w *DynamicModelWrapper) Generate(ctx context.Context, input []*schema.Mess
 	return m.Generate(ctx, input, opts...)
 }
 
-// Stream 流式生成方法
+// Stream generation method
 func (w *DynamicModelWrapper) Stream(ctx context.Context, input []*schema.Message, opts ...model.Option) (*schema.StreamReader[*schema.Message], error) {
 	sessionModel := SessionModelFromContext(ctx)
 	if sessionModel != "" {
@@ -190,13 +190,13 @@ func (w *DynamicModelWrapper) Stream(ctx context.Context, input []*schema.Messag
 	return m.Stream(ctx, input, opts...)
 }
 
-// WithTools 设置工具并返回新模型，新实例共享同一个 modelCache
+// WithTools sets up the tool and returns a new model; the new instance shares the same modelCache
 func (w *DynamicModelWrapper) WithTools(tools []*schema.ToolInfo) (model.ToolCallingChatModel, error) {
 	newModel, err := w.baseModel.WithTools(tools)
 	if err != nil {
 		return nil, err
 	}
-	// modelCache/cacheCount 为指针，派生实例与原实例共享同一份缓存与计数
+	// modelCache/cacheCount are pointers, and the derived instance shares the same cache and count with the original instance
 	return &DynamicModelWrapper{
 		baseModel:    newModel,
 		llmConfig:    w.llmConfig,
@@ -204,7 +204,7 @@ func (w *DynamicModelWrapper) WithTools(tools []*schema.ToolInfo) (model.ToolCal
 		cacheCount:   w.cacheCount,
 		logger:       w.logger,
 		modelOptions: w.modelOptions,
-		tools:        tools, // 记住工具，重建模型（切模型/extra 覆盖）时重新绑定
+		tools:        tools, // Remember the tools and rebind when rebuilding the model (cutting the model/extra override).
 	}, nil
 }
 
@@ -212,31 +212,31 @@ func (w *DynamicModelWrapper) WithTools(tools []*schema.ToolInfo) (model.ToolCal
 var _ model.ToolCallingChatModel = (*DynamicModelWrapper)(nil)
 
 // ============================================
-// AgentAwareModelWrapper - 支持 Agent 级别的模型切换
+// AgentAwareModelWrapper - Supports model switching at the agent level
 // ============================================
 
-// AgentAwareModelWrapper 支持在 Agent 执行时动态切换模型的包装器
-// 与 DynamicModelWrapper 不同，它支持在创建 React Agent 时就包装模型
+// AgentAwareModelWrapper supports dynamic switching of the model's wrapper during agent execution
+// Unlike DynamicModelWrapper, it supports wrapping models when creating a React Agent
 type AgentAwareModelWrapper struct {
 	*DynamicModelWrapper
 }
 
-// NewAgentAwareModelWrapper 创建支持 Agent 的模型包装器
+// NewAgentAwareModelWrapper creates a model wrapper that supports Agents
 func NewAgentAwareModelWrapper(baseModel model.ToolCallingChatModel, llmConfig config.LLMConfig, opts ModelOptions) *AgentAwareModelWrapper {
 	return &AgentAwareModelWrapper{
 		DynamicModelWrapper: NewDynamicModelWrapper(baseModel, llmConfig, opts),
 	}
 }
 
-// WithTools 设置工具
+// WithTools setup tool
 func (w *AgentAwareModelWrapper) WithTools(tools []*schema.ToolInfo) (model.ToolCallingChatModel, error) {
-	// 委托给 DynamicModelWrapper
+	// Delegate to DynamicModelWrapper
 	newModel, err := w.DynamicModelWrapper.WithTools(tools)
 	if err != nil {
 		return nil, err
 	}
 
-	// 如果返回的是 DynamicModelWrapper，则包装为 AgentAwareModelWrapper
+	// If the returned DynamicModelWrapper is AgentAwareModelWrapper
 	if dm, ok := newModel.(*DynamicModelWrapper); ok {
 		return &AgentAwareModelWrapper{
 			DynamicModelWrapper: dm,
@@ -253,20 +253,20 @@ var _ model.ToolCallingChatModel = (*AgentAwareModelWrapper)(nil)
 // Helper Functions
 // ============================================
 
-// WrapModelWithDynamicSupport 包装模型以支持动态切换
-// 如果提供了 logger，会在切换模型时输出日志
+// WrapModelWithDynamicSupport Wrap models to support dynamic switching
+// If a logger is provided, it will output logs when switching models
 func WrapModelWithDynamicSupport(baseModel model.ToolCallingChatModel, llmConfig config.LLMConfig, opts ModelOptions) model.ToolCallingChatModel {
 	return NewAgentAwareModelWrapper(baseModel, llmConfig, opts)
 }
 
-// InjectSessionModelToContext 将 session_model 注入到 context 的辅助函数
-// 可以在执行 Agent 前调用
+// InjectSessionModelToContext injects session_model into the context as an auxiliary function
+// You can call it before executing the Agent
 func InjectSessionModelToContext(ctx context.Context, metadata map[string]string) context.Context {
 	if metadata == nil {
 		return ctx
 	}
 
-	// 从 metadata 中读取 session_model
+	// Reading session_model from metadata
 	if sessionModel, ok := metadata[aspect.MetaSessionModel]; ok && sessionModel != "" {
 		return ContextWithSessionModel(ctx, sessionModel)
 	}
@@ -274,7 +274,7 @@ func InjectSessionModelToContext(ctx context.Context, metadata map[string]string
 	return ctx
 }
 
-// InjectSessionExtraFieldsToContext 从 metadata 中读取 session_extra_fields（JSON 字符串）并注入 context
+// InjectSessionExtraFieldsToContext reads the session_extra_fields (JSON string) from metadata and injects context into it
 func InjectSessionExtraFieldsToContext(ctx context.Context, metadata map[string]string) context.Context {
 	if metadata == nil {
 		return ctx
@@ -288,8 +288,8 @@ func InjectSessionExtraFieldsToContext(ctx context.Context, metadata map[string]
 	return ctx
 }
 
-// extraFieldsHash 对扩展参数 map 计算稳定哈希（key 排序后拼接，避免 map 遍历顺序不定）。
-// 用于动态模型缓存键，使"同模型 + 同 extra"命中缓存、不必每条消息重建模型。
+// extraFieldsHash calculates a stable hash for the extension parameter map (key sorted and concatenated to avoid uncertain map traversal order).
+// Used for dynamic model caching keys, allowing "same model + same extra" to hit the cache, eliminating the need to rebuild the model for each message.
 func extraFieldsHash(m map[string]any) string {
 	if len(m) == 0 {
 		return ""

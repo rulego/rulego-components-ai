@@ -9,7 +9,7 @@ import (
 	"github.com/rulego/rulego/test/assert"
 )
 
-// TestNewRuleGoTool 测试 NewRuleGoTool 函数
+// TestNewRuleGoTool Test the NewRuleGoTool function
 func TestNewRuleGoTool(t *testing.T) {
 	toolConfig := config.Tool{
 		Name:        "test_tool",
@@ -27,7 +27,7 @@ func TestNewRuleGoTool(t *testing.T) {
 	assert.Equal(t, "test_chain", tool.Config.TargetId)
 }
 
-// TestRuleGoTool_Info 测试 Info 方法
+// TestRuleGoTool_Info Test the Info method
 func TestRuleGoTool_Info(t *testing.T) {
 	tests := []struct {
 		name        string
@@ -94,7 +94,7 @@ func TestRuleGoTool_Info(t *testing.T) {
 	}
 }
 
-// TestRuleGoTool_Info_ParameterFormats 测试不同参数格式
+// TestRuleGoTool_Info_ParameterFormats Test different parameter formats
 func TestRuleGoTool_Info_ParameterFormats(t *testing.T) {
 	tests := []struct {
 		name       string
@@ -145,7 +145,7 @@ func TestRuleGoTool_Info_ParameterFormats(t *testing.T) {
 	}
 }
 
-// TestRuleGoTool_InvokableRun_NoContext 测试没有 RuleContext 的情况
+// TestRuleGoTool_InvokableRun_NoContext Test cases without RuleContext
 func TestRuleGoTool_InvokableRun_NoContext(t *testing.T) {
 	toolConfig := config.Tool{
 		Name:        "test_tool",
@@ -156,7 +156,7 @@ func TestRuleGoTool_InvokableRun_NoContext(t *testing.T) {
 
 	tool := NewRuleGoTool(toolConfig)
 
-	// 没有注入 RuleContext 的 context
+	// No context is injected into RuleContext
 	ctx := context.Background()
 	result, err := tool.InvokableRun(ctx, `{"input": "test"}`)
 
@@ -164,7 +164,7 @@ func TestRuleGoTool_InvokableRun_NoContext(t *testing.T) {
 	assert.Equal(t, "", result)
 }
 
-// TestRuleGoTool_InvokableRun_InvalidContextType 测试无效的 RuleContext 类型
+// TestRuleGoTool_InvokableRun_InvalidContextType Test for invalid RuleContext types
 func TestRuleGoTool_InvokableRun_InvalidContextType(t *testing.T) {
 	toolConfig := config.Tool{
 		Name:        "test_tool",
@@ -175,7 +175,7 @@ func TestRuleGoTool_InvokableRun_InvalidContextType(t *testing.T) {
 
 	tool := NewRuleGoTool(toolConfig)
 
-	// 注入错误类型的值
+	// Inject a value of the wrong type
 	ctx := context.WithValue(context.Background(), config.ShareRuleContextKey, "not a RuleContext")
 	result, err := tool.InvokableRun(ctx, `{"input": "test"}`)
 
@@ -183,7 +183,7 @@ func TestRuleGoTool_InvokableRun_InvalidContextType(t *testing.T) {
 	assert.Equal(t, "", result)
 }
 
-// TestRuleGoTool_InvokableRun_UnsupportedType 测试不支持的工具类型
+// TestRuleGoTool_InvokableRun_UnsupportedType Types of tools not supported for testing
 func TestRuleGoTool_InvokableRun_UnsupportedType(t *testing.T) {
 	toolConfig := config.Tool{
 		Name:        "test_tool",
@@ -194,7 +194,7 @@ func TestRuleGoTool_InvokableRun_UnsupportedType(t *testing.T) {
 
 	tool := NewRuleGoTool(toolConfig)
 
-	// 创建带有 mock RuleContext 的 context
+	// Create a context with mock RuleContext
 	mockCtx := &mockRuleContextForTool{}
 	ctx := context.WithValue(context.Background(), config.ShareRuleContextKey, mockCtx)
 
@@ -204,7 +204,7 @@ func TestRuleGoTool_InvokableRun_UnsupportedType(t *testing.T) {
 	assert.Equal(t, "", result)
 }
 
-// TestRuleGoTool_InvokableRun_AgentType 测试 Agent 类型工具
+// TestRuleGoTool_InvokableRun_AgentType Test the Agent type tool
 func TestRuleGoTool_InvokableRun_AgentType(t *testing.T) {
 	toolConfig := config.Tool{
 		Name:        "sub_agent",
@@ -215,29 +215,29 @@ func TestRuleGoTool_InvokableRun_AgentType(t *testing.T) {
 
 	tool := NewRuleGoTool(toolConfig)
 
-	// 创建带有 mock RuleContext 的 context
+	// Create a context with mock RuleContext
 	mockCtx := &mockRuleContextForTool{}
 	ctx := context.WithValue(context.Background(), config.ShareRuleContextKey, mockCtx)
 
-	// Agent 类型应该与 RuleChain 类型一样被处理
-	// 由于 mock 没有实现 TellFlow，会返回错误，但我们可以验证类型检查通过了
+	// Agent types should be handled the same way as RuleChain types
+	// Since mock does not implement TellFlow, it returns an error, but we can verify that the type check passed
 	_, err := tool.InvokableRun(ctx, `{"input": "test"}`)
 
-	// 由于 mock 实现不完整，我们预期会有错误
-	// 但错误不应该是 "不支持的工具类型"
+	// Since the mock implementation is incomplete, we expect errors
+	// But the error should not be "unsupported tool type."
 	if err != nil && err.Error() == "不支持的工具类型: agent" {
 		t.Error("Agent type should be supported as rulechain alias")
 	}
 }
 
-// TestRuleGoTool_ConfigDefaults 测试配置默认值
+// TestRuleGoTool_ConfigDefaults Test the default values
 func TestRuleGoTool_ConfigDefaults(t *testing.T) {
 	toolConfig := config.Tool{
 		Name:        "test_tool",
 		Description: "A test tool",
 		Type:        config.ToolTypeRuleChain,
 		TargetId:    "test_chain",
-		// Timeout 未设置 (int64 类型)
+		// Timeout not set (int64 type)
 	}
 
 	tool := NewRuleGoTool(toolConfig)
@@ -246,14 +246,14 @@ func TestRuleGoTool_ConfigDefaults(t *testing.T) {
 	assert.Equal(t, tool.Config.Parameters, "")
 }
 
-// TestRuleGoTool_ConfigWithTimeout 测试带超时配置
+// TestRuleGoTool_ConfigWithTimeout Test belt timeout configuration
 func TestRuleGoTool_ConfigWithTimeout(t *testing.T) {
 	toolConfig := config.Tool{
 		Name:        "test_tool",
 		Description: "A test tool",
 		Type:        config.ToolTypeRuleChain,
 		TargetId:    "test_chain",
-		Timeout:     int64(60), // 60 秒
+		Timeout:     int64(60), // 60 seconds
 	}
 
 	tool := NewRuleGoTool(toolConfig)
@@ -261,19 +261,19 @@ func TestRuleGoTool_ConfigWithTimeout(t *testing.T) {
 	assert.Equal(t, tool.Config.Timeout, int64(60))
 }
 
-// TestRuleGoTool_Interface 测试接口实现
+// TestRuleGoTool_Interface Test interface implementation
 func TestRuleGoTool_Interface(t *testing.T) {
-	// 确保 RuleGoTool 实现了接口
+	// Make sure RuleGoTool implements the interface
 	tool := NewRuleGoTool(config.Tool{})
 	assert.NotNil(t, tool)
 
-	// 验证 Info 方法签名
+	// Verify the Info method signature
 	info, err := tool.Info(context.Background())
 	_ = info
 	_ = err
 }
 
-// mockRuleContextForTool 用于测试的模拟 RuleContext
+// mockRuleContextForTool is used for testing a simulated RuleContext
 type mockRuleContextForTool struct {
 	types.RuleContext
 }
@@ -283,10 +283,10 @@ func (m *mockRuleContextForTool) NewMsg(msgType string, metadata *types.Metadata
 }
 
 func (m *mockRuleContextForTool) TellFlow(chainId string, msg types.RuleMsg, opts ...types.Option) {
-	// 空实现
+	// Empty realization
 }
 
-// TestRuleGoTool_Info_ReturnsCorrectSchema 测试 Info 返回正确的 schema
+// TestRuleGoTool_Info_ReturnsCorrectSchema Test Info returns the correct schema
 func TestRuleGoTool_Info_ReturnsCorrectSchema(t *testing.T) {
 	toolConfig := config.Tool{
 		Name:        "test_tool",
@@ -306,7 +306,7 @@ func TestRuleGoTool_Info_ReturnsCorrectSchema(t *testing.T) {
 	assert.NotNil(t, info.ParamsOneOf)
 }
 
-// TestRuleGoTool_EmptyConfig 测试空配置
+// TestRuleGoTool_EmptyConfig Test the empty configuration
 func TestRuleGoTool_EmptyConfig(t *testing.T) {
 	tool := NewRuleGoTool(config.Tool{})
 	assert.NotNil(t, tool)
@@ -314,7 +314,7 @@ func TestRuleGoTool_EmptyConfig(t *testing.T) {
 	assert.Equal(t, "", tool.Config.Description)
 }
 
-// BenchmarkRuleGoTool_Info 基准测试 Info 方法
+// BenchmarkRuleGoTool_Info Benchmark Info method
 func BenchmarkRuleGoTool_Info(b *testing.B) {
 	toolConfig := config.Tool{
 		Name:        "test_tool",
@@ -333,7 +333,7 @@ func BenchmarkRuleGoTool_Info(b *testing.B) {
 	}
 }
 
-// BenchmarkNewRuleGoTool 基准测试 NewRuleGoTool
+// BenchmarkNewRuleGoTool Benchmark NewRuleGoTool
 func BenchmarkNewRuleGoTool(b *testing.B) {
 	toolConfig := config.Tool{
 		Name:        "test_tool",
@@ -348,5 +348,5 @@ func BenchmarkNewRuleGoTool(b *testing.B) {
 	}
 }
 
-// 确保接口实现检查（编译时）
+// Ensure interface implementation check (compile time)
 var _ *RuleGoTool = NewRuleGoTool(config.Tool{})

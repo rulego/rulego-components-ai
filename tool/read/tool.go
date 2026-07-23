@@ -22,16 +22,16 @@ import (
 
 const ToolName = "read"
 
-// maxFullReadSize 全文读取的最大文件大小（10MB）
+// maxFullReadSize Maximum file size for full-text reading (10MB)
 const maxFullReadSize = 10 * 1024 * 1024
 
-// binarySampleSize 二进制嗅探读取的前 4KB
+// binarySampleSize binary sniff read for the first 4KB
 const binarySampleSize = 4 * 1024
 
-// binaryNonPrintRatio 非打印字节占比阈值，超过判定为二进制
+// binaryNonPrintRatio: The threshold for the proportion of non-printable bytes is exceeded, and the threshold is determined to be binary
 const binaryNonPrintRatio = 0.3
 
-// binaryExtBlacklist 二进制文件扩展名黑名单（命中即判二进制，不再尝试解码）
+// binaryExtBlacklist binary file extension blacklist (binary is determined upon hit, no attempt to decode again)
 var binaryExtBlacklist = map[string]bool{
 	".zip": true, ".tar": true, ".gz": true, ".tgz": true, ".bz2": true,
 	".7z": true, ".rar": true,
@@ -69,15 +69,15 @@ type readTool struct {
 	cache  *common.ResolverCache
 }
 
-// resolverFor 取本次调用的有效 resolver：优先用 ctx 注入的 workDir（common.WorkDirFromCtx，
-// 主 agent 派子 agent 时注入），空则回退 config.WorkDir 默认（保留原行为）。
+// resolverFor: Takes the valid resolver used this time: prioritizes the workDir (common.WorkDirFromCtx) injected with ctx,
+// When the main agent sends a sub-agent, it is injected; if empty, it is reverted config.WorkDir default (retain the original behavior).
 func (t *readTool) resolverFor(ctx context.Context) (*common.SecurePathResolver, error) {
 	return t.cache.GetWithAllowDirs(common.WorkDirFromCtx(ctx), common.AllowDirsFromCtx(ctx), common.AllowCrossDirFromCtx(ctx))
 }
 
-// readPathSecurity 读取操作的路径安全策略：允许隐藏文件（代码审查需读 .env/node_modules 等），
-// 排除目录读全局默认（config.yaml fileAccess.excludeDirs，未设则不排除）。仅 Resolve 单文件校验层生效，
-// 不影响 search 内部 walk（避免过度校验引入搜索 bug）。
+// readPathSecurity: Path security policy for read operations: allows hiding files (code review requires reading.env/node_modules, etc.),
+// Exclude directory reading by global default (config.yaml fileAccess.excludeDirs; if not set, exclude it). Only the single file validation layer in Resolve is effective,
+// This does not affect the internal search walk (to avoid over-checking and introducing search bugs).
 func readPathSecurity() common.PathSecurityConfig {
 	cfg := common.DefaultPathSecurityConfig()
 	cfg.AllowHiddenFiles = true
@@ -211,7 +211,7 @@ func (t *readTool) InvokableRun(ctx context.Context, arguments string, opts ...t
 		return "", fmt.Errorf("parse params: %w", err)
 	}
 
-	// 取本次调用的有效 resolver（ctx 注入的 workDir 优先，否则 config 默认）。
+	// Take the valid resolver used for this call (the workDir injected by ctx takes priority; otherwise, the config defaults).
 	r, err := t.resolverFor(ctx)
 	if err != nil {
 		return common.ErrPathInvalid(err.Error()).Error(), nil
@@ -256,7 +256,7 @@ func (t *readTool) readFile(params OperationParams, r *common.SecurePathResolver
 	lineFrom := params.LineFrom
 	lineTo := params.LineTo
 
-	// 二进制嗅探：命中黑名单扩展名或字节启发式判定为二进制，返回友好说明而非乱码
+	// Binary sniff: Hits blacklist extensions or byte heuristics are determined as binary, returning friendly instructions rather than garbled text
 	if isBinaryFile(path) {
 		return fmt.Sprintf("File: %s\n---\nThis looks like a binary file (image/archive/executable/etc). The read tool does not decode binary content into text. Use a dedicated tool or extract text first.", params.Path), nil
 	}
@@ -266,7 +266,7 @@ func (t *readTool) readFile(params OperationParams, r *common.SecurePathResolver
 		return t.readFileWithScanner(path, params.Path, lineFrom, lineTo)
 	}
 
-	// 大文件防护：全文读取前检查文件大小，超过阈值时改用 scanner 逐行读取
+	// Large file protection: Check file size before reading full-text; if thresholds are exceeded, switch to scanner for line by line
 	if info.Size() > maxFullReadSize {
 		return t.readFileWithScanner(path, params.Path, 1, 0)
 	}
@@ -280,8 +280,8 @@ func (t *readTool) readFile(params OperationParams, r *common.SecurePathResolver
 	lines := strings.Split(string(content), "\n")
 	totalLines := len(lines)
 
-	// byte + line 双闸截断：复用统一截断服务（Head 方向，行数/字节任一超限即截断）。
-	// MaxReadLines 作为行预算；字节预算用统一默认（50KB）。
+	// byte + line Double Gate Truncation: Multiplexing unified truncation service (Head direction, any line or byte exceeds limit when truncated).
+	// MaxReadLines as the line budget; Byte budget uses the unified default (50KB).
 	maxLines := t.config.MaxReadLines
 	tr := common.Truncate(string(content), common.TruncateOptions{
 		MaxLines:  &maxLines,
@@ -372,7 +372,7 @@ func (t *readTool) search(ctx context.Context, params OperationParams, r *common
 		return common.ErrQueryEmpty().Error(), nil
 	}
 
-	// 编译正则（use_regex=true）或构造字面子串匹配器
+	// Compiling regex (use_regex=true) or constructing literal substring matchers
 	var lineMatcher func(line string) bool
 	if params.UseRegex {
 		if len(query) > 1000 {
@@ -390,10 +390,10 @@ func (t *readTool) search(ctx context.Context, params OperationParams, r *common
 
 	pattern := params.Pattern
 	if pattern == "" {
-		pattern = "*" // 默认匹配所有文件，避免误导模型只搜 markdown
+		pattern = "*" // Matches all files by default to avoid misleading the model into searching only for markdown
 	}
 
-	// 上下文行设置：context 同时设置则覆盖 context_before/after
+	// Context line settings: If both context are set together, context_before/after will be overridden
 	before, after := params.ContextBefore, params.ContextAfter
 	if params.Context > 0 {
 		before = params.Context
@@ -424,11 +424,11 @@ func (t *readTool) search(ctx context.Context, params OperationParams, r *common
 
 	type fileHit struct {
 		relPath string
-		matches []int // 命中的 1-indexed 行号
+		matches []int // Hit 1-indexed line number
 		lines   []string
 	}
 	var hits []fileHit
-	// real* 为遍历到的真实总数，不受 head_limit 截断影响；shown* 为实际展示数量。
+	// real* is the total number of true traversals reached, unaffected by head_limit truncation; shown* indicates the actual number of displays.
 	shownMatches := 0
 	realMatchTotal := 0
 	realFileTotal := 0
@@ -445,7 +445,7 @@ func (t *readTool) search(ctx context.Context, params OperationParams, r *common
 		if err != nil || info.IsDir() {
 			return nil
 		}
-		// 跳过软链/junction 逃出 searchDir 的路径
+		// Bypass the soft link/junction to escape the path of searchDir
 		if !isWithinResolved(path, searchDir) {
 			return nil
 		}
@@ -456,7 +456,7 @@ func (t *readTool) search(ctx context.Context, params OperationParams, r *common
 			return nil
 		}
 
-		// 仅读取前 100KB；大文件尾部不参与搜索，全文搜索请用 grep 工具
+		// Only the first 100KB is read; Large files at the end do not participate in search; for full-text search, please use the grep tool
 		content, rerr := readLimited(path, 100000)
 		if rerr != nil {
 			return nil
@@ -474,7 +474,7 @@ func (t *readTool) search(ctx context.Context, params OperationParams, r *common
 		realMatchTotal += len(matched)
 		realFileTotal++
 		relPath, _ := filepath.Rel(r.Workspace(), path)
-		// content 模式 head_limit 按匹配行数计，其它模式按文件数计
+		// Content Mode head_limit is based on the number of matching lines; other modes are based on the number of files
 		if outputMode == "content" {
 			if shownMatches >= headLimit {
 				truncated = true
@@ -496,7 +496,7 @@ func (t *readTool) search(ctx context.Context, params OperationParams, r *common
 		return nil
 	})
 	if err != nil && err != context.Canceled && err != context.DeadlineExceeded {
-		// 忽略遍历过程中的单文件错误，继续返回已收集结果
+		// Single-file errors during traversal are ignored, and the collected results are returned
 	}
 
 	var result strings.Builder
@@ -525,8 +525,8 @@ func (t *readTool) search(ctx context.Context, params OperationParams, r *common
 	return result.String(), nil
 }
 
-// writeMatchesMerged 输出多行匹配及其上下文（-A/-B/-C 语义）。
-// 相邻或重叠的上下文区间合并，行号不重复，匹配行用 "> " 前缀标记。
+// writeMatchesMerged outputs multi-line matches and their context (-A/-B/-C semantics).
+// Adjacent or overlapping context intervals are merged, line numbers are not duplicated, and matching lines are marked with the "> " prefix.
 func writeMatchesMerged(w *strings.Builder, lines []string, matches []int, before, after int) {
 	if len(matches) == 0 {
 		return
@@ -536,12 +536,12 @@ func writeMatchesMerged(w *strings.Builder, lines []string, matches []int, befor
 		matchSet[m] = struct{}{}
 	}
 
-	// 复制后排序，避免修改入参
+	// Copy and sort to avoid modifying the parameter
 	sorted := make([]int, len(matches))
 	copy(sorted, matches)
 	sortInts(sorted)
 
-	// 计算每个 match 的 [start,end]，合并相邻/重叠区间
+	// Calculate the [start, end] for each match and merge the adjacent or overlapping intervals
 	type span struct{ start, end int }
 	var spans []span
 	for _, m := range sorted {
@@ -576,7 +576,7 @@ func writeMatchesMerged(w *strings.Builder, lines []string, matches []int, befor
 	}
 }
 
-// sortInts 原地升序排序（插入排序，集合小）
+// sortInts sort in ascending order in place (insertion sort, set small)
 func sortInts(a []int) {
 	for i := 1; i < len(a); i++ {
 		for j := i; j > 0 && a[j-1] > a[j]; j-- {
@@ -604,7 +604,7 @@ func readLimited(path string, maxBytes int) (string, error) {
 	return string(buf[:n]), nil
 }
 
-// isBinaryFile 综合扩展名黑名单 + 字节启发式判定是否为二进制文件。
+// isBinaryFile Comprehensive Extension Blacklist + Byte Heuristic to determine if it is a binary file.
 func isBinaryFile(path string) bool {
 	ext := strings.ToLower(filepath.Ext(path))
 	if binaryExtBlacklist[ext] {
@@ -623,9 +623,9 @@ func isBinaryFile(path string) bool {
 	return isBinaryBytes(sample[:n])
 }
 
-// isBinaryBytes 判定字节样本是否为二进制：含 NUL 直接判定；
-// 否则统计无效 UTF-8 字节与控制字符占比，超过 binaryNonPrintRatio 即二进制。
-// 合法的 UTF-8 多字节序列（含中文）不计入非打印。
+// isBinaryBytes determines whether a byte sample is binary: includes NUL for direct verification;
+// Otherwise, the count is invalid. The ratio of UTF-8 bytes to control characters exceeding binaryNonPrintRatio is binary.
+// Valid UTF-8 multibyte sequences (including Chinese) are not counted as non-printable.
 func isBinaryBytes(b []byte) bool {
 	if len(b) == 0 {
 		return false
@@ -641,29 +641,29 @@ func isBinaryBytes(b []byte) bool {
 			i++
 			continue
 		}
-		if c < 0x20 { // 其他 C0 控制字符
+		if c < 0x20 { // Other C0 control characters
 			nonPrint++
 			i++
 			continue
 		}
-		if c >= 0x7f { // DEL 或多字节首字节
+		if c >= 0x7f { // DEL or multibyte initial byte
 			r, size := decodeRune(b[i:])
-			if r == 0xFFFD && size == 1 { // 非法 UTF-8 字节
+			if r == 0xFFFD && size == 1 { // Illegal UTF-8 bytes
 				nonPrint++
 				i++
 				continue
 			}
-			// 合法多字节序列整体跳过（含中文等）
+			// Valid multibyte sequences are skipped in the whole (including Chinese, etc.)
 			i += size
 			continue
 		}
-		// 普通 ASCII 可打印 (0x20-0x7e)
+		// Standard ASCII printable (0x20-0x7e)
 		i++
 	}
 	return float64(nonPrint)/float64(len(b)) > binaryNonPrintRatio
 }
 
-// decodeRune 解码单个 UTF-8 rune，返回 rune 与消耗字节数。非法字节返回 (0xFFFD, 1)。
+// decodeRune decodes a single UTF-8 rune, returning the rune and byte consumption. Illegal byte returns (0xFFFD, 1).
 func decodeRune(b []byte) (rune, int) {
 	if len(b) == 0 {
 		return 0xFFFD, 0
@@ -672,7 +672,7 @@ func decodeRune(b []byte) (rune, int) {
 	switch {
 	case c0 < 0x80:
 		return rune(c0), 1
-	case c0 < 0xC2: // 0x80-0xC1：续字节或非法首字节
+	case c0 < 0xC2: // 0x80-0xC1: Extension byte or illegal first byte
 		return 0xFFFD, 1
 	case c0 < 0xE0:
 		if len(b) < 2 || b[1]&0xC0 != 0x80 {
@@ -689,12 +689,12 @@ func decodeRune(b []byte) (rune, int) {
 			return 0xFFFD, 1
 		}
 		return rune(c0&0x07)<<18 | rune(b[1]&0x3F)<<12 | rune(b[2]&0x3F)<<6 | rune(b[3]&0x3F), 4
-	default: // 0xF5-0xFF：超出 Unicode 范围
+	default: // 0xF5-0xFF: Beyond Unicode scope
 		return 0xFFFD, 1
 	}
 }
 
-// bytesIndex 兼容 helper：返回字节 c 在 b 中首次出现的下标，-1 表示不存在。
+// bytesIndex compatible helper: Returns the subscript of byte c that first appears in b; -1 means it does not exist.
 func bytesIndex(b []byte, c byte) int {
 	for i, v := range b {
 		if v == c {
@@ -704,12 +704,12 @@ func bytesIndex(b []byte, c byte) int {
 	return -1
 }
 
-// isWithinResolved 校验 path 解析符号链接后仍位于 base 之下。
-// 用于 search walk 回调，阻止跟随工作区内软链/junction 逃出工作区。
+// isWithinResolved verifies path; after parsing symbol links, it remains under the base.
+// Used for search walk callbacks to prevent soft links/junctions within the following workspace from escaping the workspace.
 func isWithinResolved(path, base string) bool {
 	realPath, err := filepath.EvalSymlinks(path)
 	if err != nil {
-		return false // 路径无法解析，保守视为越界
+		return false // If the path cannot be parsed, conservative behavior is considered overreaching
 	}
 	realBase, err := filepath.EvalSymlinks(base)
 	if err != nil {
@@ -720,7 +720,7 @@ func isWithinResolved(path, base string) bool {
 	if realPath == realBase {
 		return true
 	}
-	// 必须以 base + 分隔符 为前缀，避免 /foo/barb 与 /foo/bar 的伪前缀匹配
+	// The base + separator must be used as the prefix to avoid matching /foo/barb with /foo/bar pseudo-prefixes
 	sep := string(filepath.Separator)
 	return strings.HasPrefix(realPath, realBase+sep)
 }

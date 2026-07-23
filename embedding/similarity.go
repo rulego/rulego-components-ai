@@ -2,7 +2,7 @@ package embedding
 
 import "math"
 
-// CosineSimilarity 计算两个向量的余弦相似度，返回 [-1, 1] 之间的值
+// CosineSimilarity calculates the cosine similarity of two vectors and returns a value between [-1, 1].
 func CosineSimilarity(a, b []float64) float64 {
 	if len(a) != len(b) || len(a) == 0 {
 		return 0
@@ -19,14 +19,14 @@ func CosineSimilarity(a, b []float64) float64 {
 	return dotProduct / (math.Sqrt(normA) * math.Sqrt(normB))
 }
 
-// VectorEntry 向量条目，将名称与向量关联
+// VectorEntry links the name to the vector
 type VectorEntry struct {
 	Name   string
 	Vector []float64
 }
 
-// BestMatch 在向量库中找到与目标向量余弦相似度最高的条目。
-// 返回匹配条目的名称和相似度分数。空库返回 ("", 0)。
+// BestMatch finds entries in the vector library with the highest similarity to the target vector cosine.
+// Returns the name and similarity score of the matching entry. Empty warehouse returns ("", 0).
 func BestMatch(target []float64, entries []VectorEntry) (string, float64) {
 	if len(entries) == 0 {
 		return "", 0
@@ -43,16 +43,16 @@ func BestMatch(target []float64, entries []VectorEntry) (string, float64) {
 	return bestName, bestScore
 }
 
-// MatchResult 匹配结果
+// MatchResult
 type MatchResult struct {
-	Name   string  // 最佳匹配名称
-	Score  float64 // 最佳匹配分数
-	Gap    float64 // 最佳与第二名的分数差距（只有1个条目时为 Score 本身）
-	Runner string // 第二名名称
+	Name   string  // Best match name
+	Score  float64 // Optimal match score
+	Gap    float64 // The score difference between the best and second place (if there is only one entry, the score itself is used)
+	Runner string  // Second place name
 }
 
-// BestMatchWithGap 找到最佳匹配，同时计算与第二名的分数差距。
-// 用于判断匹配是否具有足够的区分度：gap 太小说明输入模糊不清。
+// BestMatchWithGap finds the best match while calculating the score gap with the runner-up.
+// Used to determine whether the match has sufficient distinctiveness: a gap too small indicates the input is unclear.
 func BestMatchWithGap(target []float64, entries []VectorEntry) MatchResult {
 	if len(entries) == 0 {
 		return MatchResult{}
@@ -65,7 +65,7 @@ func BestMatchWithGap(target []float64, entries []VectorEntry) MatchResult {
 		}
 	}
 
-	// 找 top-2
+	// Find the top 2
 	first, second := 0, 1
 	scoreFirst := CosineSimilarity(target, entries[0].Vector)
 	scoreSecond := CosineSimilarity(target, entries[1].Vector)

@@ -35,28 +35,28 @@ import (
 )
 
 // ============================================
-// SSE 事件处理
+// SSE event handling
 // ============================================
 
-// SSEEventType SSE 事件类型
+// SSEEventType SSE event type
 type SSEEventType string
 
 const (
-	// SSEEventToolStart 工具调用开始
+	// SSEEventToolStart tool call begins
 	SSEEventToolStart SSEEventType = "tool_start"
-	// SSEEventToolResult 工具调用结果
+	// SSEEventToolResult tool call result
 	SSEEventToolResult SSEEventType = "tool_result"
-	// SSEEventToolError 工具调用错误
+	// SSEEventToolError tool call error
 	SSEEventToolError SSEEventType = "tool_error"
 )
 
-// SSECallback SSE 回调函数类型
+// SSECallback SSE callback function type
 type SSECallback func(toolCallId, toolName, eventType, data string, index int)
 
-// sseCallbackKey 用于在 context 中存储 SSE 回调
+// sseCallbackKey is used to store SSE callbacks in context
 type sseCallbackKey struct{}
 
-// GetSSECallback 从 context 获取 SSE 回调
+// GetSSECallback retrieves SSE callbacks from contexts
 func GetSSECallback(ctx context.Context) SSECallback {
 	if cb, ok := ctx.Value(sseCallbackKey{}).(SSECallback); ok {
 		return cb
@@ -64,21 +64,21 @@ func GetSSECallback(ctx context.Context) SSECallback {
 	return nil
 }
 
-// WithSSECallback 将 SSE 回调存入 context
+// WithSSECallback stores the SSE callback into context
 func WithSSECallback(ctx context.Context, cb SSECallback) context.Context {
 	return context.WithValue(ctx, sseCallbackKey{}, cb)
 }
 
-// SSEHandler SSE 事件处理器
+// SSEHandler SSE Event Processor
 type SSEHandler struct {
 	ctx     types.RuleContext
 	msg     types.RuleMsg
 	enabled bool
 	mu      sync.Mutex
-	queue   *StreamTellQueue // 非空时工具事件入队，与 chunk 统一保序
+	queue   *StreamTellQueue // Non-space-time tool events are joined and unified with chunk for order preservation
 }
 
-// NewSSEHandler 创建 SSE 处理器
+// NewSSEHandler creates SSE processors
 func NewSSEHandler(ctx types.RuleContext, msg types.RuleMsg) *SSEHandler {
 	return &SSEHandler{
 		ctx:     ctx,
@@ -87,18 +87,18 @@ func NewSSEHandler(ctx types.RuleContext, msg types.RuleMsg) *SSEHandler {
 	}
 }
 
-// IsEnabled 返回是否启用 SSE
+// IsEnabled returns whether SSE is enabled
 func (h *SSEHandler) IsEnabled() bool {
 	return h.enabled
 }
 
-// UseQueue 设置流式 TellNext 队列：设置后工具事件改为入队，与 chunk 统一保序。
-// 必须在 Callback 注入（工具执行）之前调用；由 executeStream 初始化阶段保证 happens-before，queue 字段无需加锁。
+// UseQueue sets the streaming TellNext queue: after setting, tool events are changed to queue and unified with chunk for order preservation.
+// It must be called before the Callback injection (tool execution); The executeStream initialization phase ensures that happens-before does not require locking for the queue field.
 func (h *SSEHandler) UseQueue(q *StreamTellQueue) {
 	h.queue = q
 }
 
-// Callback 返回 SSE 回调函数（用于注入到 context）
+// Callback returns an SSE callback function (used to inject into context)
 func (h *SSEHandler) Callback() SSECallback {
 	if !h.enabled {
 		return nil
@@ -106,7 +106,7 @@ func (h *SSEHandler) Callback() SSECallback {
 	return h.sendEvent
 }
 
-// sendEvent 发送 SSE 事件
+// sendEvent sends an SSE event
 func (h *SSEHandler) sendEvent(toolCallId, toolName, eventType, data string, index int) {
 	h.mu.Lock()
 	defer h.mu.Unlock()
@@ -126,7 +126,7 @@ func (h *SSEHandler) sendEvent(toolCallId, toolName, eventType, data string, ind
 	}
 }
 
-// buildEventData 构建 SSE 事件数据
+// buildEventData builds SSE event data
 func (h *SSEHandler) buildEventData(toolCallId, toolName, eventType, data string, index int, timestamp int64) []byte {
 	var eventData map[string]interface{}
 
@@ -139,7 +139,7 @@ func (h *SSEHandler) buildEventData(toolCallId, toolName, eventType, data string
 			"toolCallName": toolName,
 			"index":        index,
 		}
-		// 解析并合并额外数据
+		// Parse and merge additional data
 		var parsedData map[string]interface{}
 		if err := json.Unmarshal([]byte(data), &parsedData); err == nil {
 			if args, ok := parsedData["arguments"]; ok {
@@ -180,11 +180,11 @@ func (h *SSEHandler) buildEventData(toolCallId, toolName, eventType, data string
 }
 
 // ============================================
-// 可视化工具包装器
+// Visualize tool wrappers
 // ============================================
 
-// VisualToolWrapper 可视化工具包装器
-// 负责发送 AG-UI 可视化事件和 SSE 流事件
+// VisualToolWrapper
+// Responsible for sending AG-UI visualization events and SSE stream events
 type VisualToolWrapper struct {
 	base                tool.InvokableTool
 	name                string
@@ -200,7 +200,7 @@ type VisualToolWrapper struct {
 	metricsCollector    *token.MetricsCollector
 }
 
-// NewVisualToolWrapper 创建可视化工具包装器
+// NewVisualToolWrapper creates a visual tool wrapper
 func NewVisualToolWrapper(base tool.InvokableTool, opts ToolWrapOptions) *VisualToolWrapper {
 	return &VisualToolWrapper{
 		base:                base,
@@ -217,15 +217,15 @@ func NewVisualToolWrapper(base tool.InvokableTool, opts ToolWrapOptions) *Visual
 	}
 }
 
-// Info 返回工具信息
+// Info returns tool information
 func (w *VisualToolWrapper) Info(ctx context.Context) (*schema.ToolInfo, error) {
 	return w.base.Info(ctx)
 }
 
-// InvokableRun 执行工具并发送 AG-UI 可视化事件和 SSE 流事件
+// InvokableRun executes the tool and sends AG-UI visualization events and SSE stream events
 func (w *VisualToolWrapper) InvokableRun(ctx context.Context, argumentsInJSON string, opts ...tool.Option) (result string, err error) {
-	// 工具执行 panic 不杀整个 server：捕获后作为 error result 返回给 agent（agent 可见错误，决定重试/换法）。
-	// 治 agent 并行工具偶发的 concurrent map 等致命错误导致进程崩溃（server 反复 exit 2 根因之一）。
+	// The tool executes panic without killing the entire server: after capture, it returns the error result to the agent (the agent sees the error and decides to retry/change method).
+	// Occasional critical errors such as concurrent map in agent parallel tools cause process crashes (one of the two root causes of repeated server exits).
 	defer func() {
 		if r := recover(); r != nil {
 			if w.logger != nil {
@@ -255,9 +255,9 @@ func (w *VisualToolWrapper) InvokableRun(ctx context.Context, argumentsInJSON st
 			if w.logger != nil {
 				w.logger.Infof("react_agent: step %d/%d approaching max step limit", step, w.maxStep)
 			}
-			// L1-1 软提醒：接近步数上限（还剩 ≤3 步），本步工具 result 前缀收尾提醒。
-			// agent 此时仍有轮次可写 run，比 maxStep 硬截断更有效（硬截断时 agent 已无下一轮看不到引导）。
-			// 治"步数耗尽没写 run"——配合 AGENTS.md「产出主体即写 run 首版」双保险。
+			// L1-1 Soft Reminder: Approaches the step limit (≤3 steps left), this step tool result prefix finishing reminder.
+			// At this point, the agent still has writable runs, which is more effective than maxStep hard truncation (when hard truncation, the agent has no next round and no guidance is visible).
+			// Address "run written when steps run out"—combined with AGENTS.md "the main producer writes run, first edition," providing double insurance.
 			stepWarn = fmt.Sprintf("⚠️步数将尽（%d/%d）：若主体产出已完成，请尽快写 run 记录 + 追加 MEMORY，避免步数耗尽丢失。\n", step, w.maxStep)
 		}
 	}
@@ -298,12 +298,12 @@ func (w *VisualToolWrapper) InvokableRun(ctx context.Context, argumentsInJSON st
 		var err error
 		callInfo, err = w.aspectManager.ExecuteToolCallBefore(ctx, point, callInfo)
 		if err != nil {
-			// 切面返回错误，阻止工具调用
+			// Facet returns errors and blocks tool calls
 			return fmt.Sprintf("Tool call blocked by aspect: %v", err), nil
 		}
 	}
 
-	// TOOL_CALL_START 已由 VizAspect.BeforeToolCall 统一发（同一 ctx emitter），此处不再重复 emit（修双发：原 START/RESULT 被 emit 两次）
+	// TOOL_CALL_START Already uniformly sent by VizAspect.BeforeToolCall (same ctx emitter), emit is no longer repeated here (fixed double firing: original START/RESULT emitted twice)
 	if sendToSSE != nil {
 		eventData := map[string]interface{}{
 			"toolCallId":   toolCallId,
@@ -320,7 +320,7 @@ func (w *VisualToolWrapper) InvokableRun(ctx context.Context, argumentsInJSON st
 
 	inputTokens := token.EstimateTokens(argumentsInJSON)
 
-	// doom-loop 检测（执行前：滑动窗口内同名同参重复）
+	// doom-loop detection (before execution: duplicate with the same name and same parameter in the sliding window)
 	var doomWarn string
 	if detector := GetDoomLoopDetector(ctx); detector != nil {
 		if warn := detector.BeforeCall(w.name, argumentsInJSON); warn != "" {
@@ -330,25 +330,25 @@ func (w *VisualToolWrapper) InvokableRun(ctx context.Context, argumentsInJSON st
 			}
 		}
 	} else if w.logger != nil {
-		// detector 未注入到 ctx：doom 防呆完全失效（工具层拦不住重复调用）。
-		// 每次调用打印，便于从日志直接确认 doom 是否生效：
-		//   看到此行刷屏 = doom 失效（dedup 仍兜底 provider 层）；看到 BLOCK = 命中拒绝；两者都无 = 正常未触发。
+		// detector not injected into ctx: doom foolproof completely fails (tool layer cannot prevent repeated calls).
+		// Each print call makes it easy to directly confirm from the log whether the doom is active:
+		//   Seeing this line flooding = doom invalid (dedup still supports the provider layer); Seeing BLOCK = hit rejection; Neither = normal does not trigger.
 		w.logger.Warnf("[DoomLoop] detector NOT in ctx, doom disabled (tool=%s)", w.name)
 	}
 
-	// doom 命中：拒绝执行（不真正调用工具，避免重复副作用），返回强错误 result 软提示 LLM 换方法。
-	// 不返回 Go error（err=nil），让 agent 循环继续而非中断——配合 MessageRewriter 的历史折叠
-	// (dedupRepetitiveToolCalls)，既提示 LLM、又保证发往 provider 的历史不连续重复、不触发
-	// "Repetitive tool calls" 400。maxStep 兜底最终停止。
+	// doom hit: refuses execution (does not actually call the tool, avoiding repeated side effects), returns a strong error result, soft prompt for the LLM to change method.
+	// Do not return Go error (err=nil), allowing the agent loop to continue rather than interrupt—combined with the MessageRewriter's history fold
+	// (dedupRepetitiveToolCalls), which both prompts the LLM and ensures that the history sent to the provider is not contiguous, repeated, or triggered
+	// "Repetitive tool calls" 400. maxStep has a safety net and ultimately stopped.
 	if doomWarn != "" {
-		// 合并 stepWarn（步数将尽提醒，与正常路径一致）：doom 拒绝若恰好发生在最后几步，
-		// agent 仍能看到「尽快写 run 收尾」的提醒，而非只看到 doom 拒绝。
+		// Merge stepWarn (step limit reminder, consistent with normal path):d oom rejection if it happens exactly in the last few steps,
+		// The agent can still see a prompt to "write run quickly to finish," rather than just seeing Doom reject.
 		msg := doomWarn
 		if stepWarn != "" {
 			msg = stepWarn + msg
 		}
 		blockedResult := fmt.Sprintf("Error: doom_loop_repeated - 工具 %s 本次调用被拒绝执行。%s", w.name, msg)
-		// 仍记录到 doom history（让后续轮次持续计数）
+		// Still records doom history (allowing subsequent rounds to keep counting)
 		if detector := GetDoomLoopDetector(ctx); detector != nil {
 			detector.AfterCall(w.name, argumentsInJSON, true)
 		}
@@ -384,10 +384,10 @@ func (w *VisualToolWrapper) InvokableRun(ctx context.Context, argumentsInJSON st
 
 	result, err = w.base.InvokableRun(ctx, argumentsInJSON, opts...)
 
-	// doom-loop 检测（执行后：记录本次调用 + 连续失败）
+	// doom-loop check (after execution: record this call + consecutive failures)
 	if detector := GetDoomLoopDetector(ctx); detector != nil {
 		if warn := detector.AfterCall(w.name, argumentsInJSON, err != nil || isFailureResult(result)); warn != "" {
-			// 走到这里 doomWarn 必为空（doom 命中已在上方 early return），直接赋值即可
+			// At this point, doomWarn is always empty (doom hits are already early return), so just assign a value directly
 			doomWarn = warn
 			if w.logger != nil {
 				w.logger.Warnf("[DoomLoop] %s", warn)
@@ -395,7 +395,7 @@ func (w *VisualToolWrapper) InvokableRun(ctx context.Context, argumentsInJSON st
 		}
 	}
 
-	// L1-1：把接近 maxStep 的收尾提醒合并进 doomWarn，随工具 result 前缀返回给 agent
+	// L1-1: Merge the closing reminder close to maxStep into doomWarn, and return the tool result prefix to the agent
 	if stepWarn != "" {
 		doomWarn = stepWarn + doomWarn
 	}
@@ -437,7 +437,7 @@ func (w *VisualToolWrapper) InvokableRun(ctx context.Context, argumentsInJSON st
 		}
 
 		if emitter != nil {
-			// RESULT 已由 VizAspect.AfterToolCall 统一发（同一 ctx emitter），此处只发 END
+			// The RESULT has been uniformly sent by VizAspect.AfterToolCall (same ctx emitter), and only the END is sent here
 			emitter.EmitToolCallEnd(toolCallId)
 		}
 
@@ -445,7 +445,7 @@ func (w *VisualToolWrapper) InvokableRun(ctx context.Context, argumentsInJSON st
 			sendToSSE(toolCallId, w.name, string(SSEEventToolError), err.Error(), toolIndex)
 			sendToSSE(toolCallId, w.name, string(SSEEventToolResult), callResult.Result, toolIndex)
 		}
-		// 不返回错误中断流程，而是将错误信息作为结果返回，让 agent 继续运行
+		// Instead of returning error interruption processes, it returns error messages as the result and allows the agent to continue running
 		return prefixDoomWarn(doomWarn, callResult.Result), nil
 	}
 
@@ -456,7 +456,7 @@ func (w *VisualToolWrapper) InvokableRun(ctx context.Context, argumentsInJSON st
 	aspect.AddToolCallResultToContext(ctx, callResult)
 
 	if emitter != nil {
-		// RESULT 已由 VizAspect.AfterToolCall 统一发（同一 ctx emitter），此处只发 END
+		// The RESULT has been uniformly sent by VizAspect.AfterToolCall (same ctx emitter), and only the END is sent here
 		emitter.EmitToolCallEnd(toolCallId)
 	}
 
@@ -467,7 +467,7 @@ func (w *VisualToolWrapper) InvokableRun(ctx context.Context, argumentsInJSON st
 	return prefixDoomWarn(doomWarn, truncateResult(result, w.maxToolOutputLength)), nil
 }
 
-// prefixDoomWarn 若有 doom-loop 警告则拼到结果前缀，让 agent 看到。
+// prefixDoomWarn: If there is a doom-loop warning, it will be spelled to the result prefix so the agent can see it.
 func prefixDoomWarn(warn, result string) string {
 	if warn == "" {
 		return result
@@ -475,21 +475,21 @@ func prefixDoomWarn(warn, result string) string {
 	return warn + "\n\n" + result
 }
 
-// isFailureResult 判断工具结果是否表示失败。工具失败时返回 (string, nil)——err 永远 nil，
-// 错误塞进 result（"Error: ..." 来自 common.ErrXxx，"Tool execution failed" 来自本包装器），
-// 故 doom-loop 的连续失败检测必须看 result 内容（审查 C2）。
+// isFailureResult checks whether the tool result indicates failure. Returns (string, nil) when the tool fails—err always nil,
+// Store the error in result ("Error: ..." comes from common.ErrXxx; "Tool execution failed" comes from this wrapper),
+// Therefore, the continuous failure detection of doom-loop must look at the result content (review C2).
 func isFailureResult(result string) bool {
 	return strings.HasPrefix(result, "Error:") || strings.HasPrefix(result, "Tool execution failed")
 }
 
 // ============================================
-// Context 辅助函数
+// Context auxiliary function
 // ============================================
 
-// stepCounterKey 用于在 context 中存储步数计数器
+// stepCounterKey is used to store the step counter in context
 type stepCounterKey struct{}
 
-// getOrCreateStepCounter 从 context 获取或创建步数计数器
+// getOrCreateStepCounter Retrieves or creates a step counter from context
 func getOrCreateStepCounter(ctx context.Context) *int32 {
 	if counter, ok := ctx.Value(stepCounterKey{}).(*int32); ok {
 		return counter
@@ -497,7 +497,7 @@ func getOrCreateStepCounter(ctx context.Context) *int32 {
 	return nil
 }
 
-// WithStepCounter 将步数计数器存入 context
+// WithStepCounter stores the step counter in context
 func WithStepCounter(ctx context.Context, counter *int32) context.Context {
 	return context.WithValue(ctx, stepCounterKey{}, counter)
 }

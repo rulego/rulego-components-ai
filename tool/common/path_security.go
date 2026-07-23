@@ -21,16 +21,16 @@ type PathSecurityConfig struct {
 	// MaxPathLength maximum allowed path length
 	MaxPathLength int `json:"maxPathLength"`
 
-	// AllowDirs 额外允许的目录列表（多根）：path 在 workDir 主根 OR 任一 AllowDir 内即放行。
-	// 用于让 agent 访问 workDir 之外的固定目录（如系统临时目录、全局 skills、media），精确不开放全盘。
+	// The directORy list (multiple roots) additionally allowed by AllowDirs:p ath is released within either workDir root or AllowDir.
+	// Used to allow agents to access fixed directories outside of workDir (such as temporary system directories, global skills, media), precisely without opening the full disk.
 	AllowDirs []string `json:"allowDirs"`
 }
 
 // DefaultPathSecurityConfig returns default security configuration.
 func DefaultPathSecurityConfig() PathSecurityConfig {
 	return PathSecurityConfig{
-		AllowHiddenFiles:    false,
-		AllowCrossDir: false, // 默认禁止跨目录
+		AllowHiddenFiles: false,
+		AllowCrossDir:    false, // Cross-directory is prohibited by default
 		ExcludeDirs: []string{
 			".git", ".svn", ".hg",
 			"node_modules", "vendor",
@@ -45,7 +45,7 @@ type SecurePathResolver struct {
 	resolver      *PathResolver
 	config        PathSecurityConfig
 	realWorkspace string
-	allowedDirs   []string // 额外允许的目录（EvalSymlinks 解析后），多根放行用
+	allowedDirs   []string // Additional allowed directories (after EvalSymlinks parsing), for multi-root release
 }
 
 // NewSecurePathResolver creates a new secure path resolver.
@@ -54,12 +54,12 @@ func NewSecurePathResolver(workDir string, config PathSecurityConfig) (*SecurePa
 	if err != nil {
 		return nil, err
 	}
-	// 解析工作区的符号链接，确保与 resolved 的基准一致，否则 Rel 会因软链失配
+	// Parse the symbolic links in the workspace to ensure alignment with the resolved benchmark; otherwise, REL will be mismatched due to the soft link
 	ws := resolver.Workspace()
 	if real, err := filepath.EvalSymlinks(ws); err == nil {
 		ws = real
 	}
-	// 解析额外允许目录（EvalSymlinks + Clean），多根放行用。不存在目录跳过（不报错，运行时再判）
+	// Parse the extra allow directory (EvalSymlinks + Clean), used for multi-root release. No directory skipping (no errors, judged again at runtime)
 	allowed := make([]string, 0, len(config.AllowDirs))
 	for _, d := range config.AllowDirs {
 		if d == "" {
@@ -88,13 +88,13 @@ func (s *SecurePathResolver) Resolve(path string) (string, error) {
 
 	resolved := s.resolver.Resolve(path)
 
-	// UNC 路径（\\server\share 或 //server/share）可绕过工作区根，直接拒绝
+	// The UNC path (\\server\share or //server/share) can bypass the workspace root and be directly rejected
 	if strings.HasPrefix(resolved, `\\`) || strings.HasPrefix(resolved, "//") {
 		return "", NewErrorf(ErrCodePathEscape, "UNC paths not allowed")
 	}
 
-	// 解析符号链接后再做越界检查，防止工作区内软链指向工作区外。
-	// 路径不存在时解析父目录的软链，避免写入新文件时跟随软链逃逸
+	// After parsing symbolic links, perform boundary checks to prevent soft links within the workspace from pointing outside the workspace.
+	// When the path does not exist, parse the parent directory's soft link to avoid escaping with the soft link when writing to a new file
 	if real, err := filepath.EvalSymlinks(resolved); err == nil {
 		resolved = real
 	} else if realDir, derr := filepath.EvalSymlinks(filepath.Dir(resolved)); derr == nil {
@@ -127,17 +127,17 @@ func (s *SecurePathResolver) Workspace() string {
 
 // checkPathTraversal ensures the path doesn't escape the workspace.
 // When AllowCrossDir is true, this check is skipped.
-// 多根判定：path 在 realWorkspace 主根 OR 任一 allowedDir 内即放行。
+// Multiple root determination: The path is allowed within any allowedDir OR realWorkspace main root.
 func (s *SecurePathResolver) checkPathTraversal(resolved string) error {
-	// 如果允许跨目录，跳过路径遍历检查
+	// If cross-directory is allowed, skip path traversal checks
 	if s.config.AllowCrossDir {
 		return nil
 	}
-	// 主根 workspace 内放行
+	// Release within the main root workspace
 	if isPathInside(resolved, s.realWorkspace) {
 		return nil
 	}
-	// 额外允许目录（多根）内放行
+	// Additional permission to release within the directory (multiple files).
 	for _, dir := range s.allowedDirs {
 		if isPathInside(resolved, dir) {
 			return nil
@@ -146,8 +146,8 @@ func (s *SecurePathResolver) checkPathTraversal(resolved string) error {
 	return NewErrorf(ErrCodePathEscape, "path escapes allowed directory")
 }
 
-// isPathInside 判断 path 是否在 base 目录内（含等于 base）：
-// filepath.Rel(base, path) 不以 ".." 开头且非绝对，则 path 在 base 内。
+// isPathInside checks whether the path is in the base directory (including or equal to base):
+// filepath.Rel(base, path) does not start with ".." and is not absolute, so the path is inside the base.
 func isPathInside(path, base string) bool {
 	if base == "" {
 		return false
@@ -163,9 +163,9 @@ func isPathInside(path, base string) bool {
 	return relSlash != ".." && !strings.HasPrefix(relSlash, "../")
 }
 
-// effectiveBase 返回 resolved 所属的根（realWorkspace 或首个包含 resolved 的 allowedDir），
-// 供 checkHiddenPath/checkExcludedDirs 基于正确根算 rel——避免 allowedDir 内路径用 workspace rel
-// 误判隐藏/排除目录（如 /tmp/.env、media/.thumbs 不被 workspace rel 误拒）。
+// effectiveBase returns the root to which resolved belongs (realWorkspace or the first allowedDir containing resolved),
+// Provides checkHiddenPath/checkExcludedDirs Based on correct root calculation rel—avoiding workspace rel for paths inside allowedDir
+// False detections of hidden/excluded directories (such as /tmp/.env, media/.thumbs are not mistakenly rejected by workspace rel).
 func (s *SecurePathResolver) effectiveBase(resolved string) string {
 	if isPathInside(resolved, s.realWorkspace) {
 		return s.realWorkspace
@@ -175,19 +175,19 @@ func (s *SecurePathResolver) effectiveBase(resolved string) string {
 			return dir
 		}
 	}
-	return s.realWorkspace // 不在任何根内（checkPathTraversal 已拒），用 workspace 兜底
+	return s.realWorkspace // Not in any root (checkPathTraversal has been rejected), use workspace as a backup
 }
 
-// defaultAllowDirs 全局默认额外允许目录（atomic.Value 存 []string，配置热更新并发安全）。
-// 业务层经 SetDefaultAllowDirs 设置（启动 + 配置热更新），buildRunContext 经 GetDefaultAllowDirs 读取合并。
+// defaultAllowDirs Global default to the overall-allowed directory (atomic.Value stored []string, configuring hot update concurrency security).
+// The business layer is set by SetDefaultAllowDirs (startup + configuration hot update), and the buildRunContext is read and merged via GetDefaultAllowDirs.
 var defaultAllowDirs atomic.Value
 
-// SetDefaultAllowDirs 设置全局默认额外允许目录（并发安全，启动与配置热更新均经此调用）。
+// SetDefaultAllowDirs sets the global default extra allowed directory (concurrency security, startup, and configuration hot updates are both called here).
 func SetDefaultAllowDirs(dirs []string) {
 	defaultAllowDirs.Store(dirs)
 }
 
-// GetDefaultAllowDirs 读取全局默认额外允许目录（并发安全）。未设置返回 nil。
+// GetDefaultAllowDirs reads the global default extra allowed directory (concurrency security). No setting to return nil.
 func GetDefaultAllowDirs() []string {
 	if v := defaultAllowDirs.Load(); v != nil {
 		if dirs, ok := v.([]string); ok {
@@ -197,19 +197,19 @@ func GetDefaultAllowDirs() []string {
 	return nil
 }
 
-// defaultAllowCross 全局默认"跨目录放行"开关（atomic.Value 存 bool，配置热更新并发安全）。
-// 业务层经 SetDefaultAllowCrossDir 设置（启动 + 配置热更新），buildRunContext 经
-// GetDefaultAllowCrossDir 读取，合并 per-agent 配置后注入 ctx。
+// defaultAllowCross Global default "Cross-directory release" switch (atomic.Value stored bool, configuring hot update concurrency security).
+// The business layer is set by SetDefaultAllowCrossDir (startup + configuration hot update), and buildRunContext is used
+// GetDefaultAllowCrossDir reads, merging the per-agent configuration and injecting ctx.
 var defaultAllowCross atomic.Value
 
-// SetDefaultAllowCrossDir 设置全局默认"跨目录放行"开关（并发安全）。
-// true=允许所有路径（文件工具跳过越界检查）；false=仅 workDir + allowDirs 白名单。
-// 未设置时默认 false（收紧），由业务层显式设 true 开启"默认全开"。
+// SetDefaultAllowCrossDir sets the global default "Cross-directory Release" switch (concurrent security).
+// true=Allow all paths (file tool skips out-of-bounds check); false=only workDir + allowDirs whitelist.
+// When not set, the default is false (tighten). The business layer explicitly sets true to enable "default all enabled."
 func SetDefaultAllowCrossDir(on bool) {
 	defaultAllowCross.Store(on)
 }
 
-// GetDefaultAllowCrossDir 读取全局默认"跨目录放行"开关（并发安全）。未设置返回 false（收紧）。
+// GetDefaultAllowCrossDir reads the global default "Cross-directory Release" switch (concurrent security). No set to return false (tighten).
 func GetDefaultAllowCrossDir() bool {
 	if v := defaultAllowCross.Load(); v != nil {
 		if on, ok := v.(bool); ok {
@@ -219,18 +219,18 @@ func GetDefaultAllowCrossDir() bool {
 	return false
 }
 
-// defaultDenyHidden 全局默认"拒绝隐藏文件"开关（仅控制 write/edit 写操作）。
-// 业务层经 SetDefaultDenyHidden 设置（启动 + 配置热更新）；write/edit 的 pathSecurity 读取。
-// 默认 false（允许写隐藏文件，不限制 agent）；true=write/edit 拒绝隐藏文件/目录。
-// read/grep/glob 不受此开关影响（读隐藏是代码审查刚需，固定 AllowHiddenFiles=true）。
+// defaultDenyHidden Global default "Refuse to hide files" switch (only controls write/edit write operations).
+// The business layer is set by SetDefaultDenyHidden (startup + configuration hot update); write/edit pathSecurity read.
+// default false (allows writing hidden files, does not restrict agent); true=write/edit Refuses to hide files/directories.
+// read/grep/glob are not affected by this toggle (read hiding is essential for code review, fixed AllowHiddenFiles=true).
 var defaultDenyHidden atomic.Value
 
-// SetDefaultDenyHidden 设置全局默认"拒绝隐藏文件"开关（并发安全）。
+// SetDefaultDenyHidden sets the global default "Refuse to hide files" switch (Concurrency Security).
 func SetDefaultDenyHidden(on bool) {
 	defaultDenyHidden.Store(on)
 }
 
-// GetDefaultDenyHidden 读取全局默认"拒绝隐藏文件"开关（并发安全）。未设置返回 false（允许隐藏）。
+// GetDefaultDenyHidden reads the global default "Refuse to hide files" switch (concurrent security). No set to return false (allowing hiding).
 func GetDefaultDenyHidden() bool {
 	if v := defaultDenyHidden.Load(); v != nil {
 		if on, ok := v.(bool); ok {
@@ -240,18 +240,18 @@ func GetDefaultDenyHidden() bool {
 	return false
 }
 
-// defaultExcludeDirs 全局默认"排除目录"黑名单（所有文件工具的 Resolve 路径校验层）。
-// 业务层经 SetDefaultExcludeDirs 设置；各工具 pathSecurity 读取填入 PathSecurityConfig.ExcludeDirs。
-// 未设置返回 nil（不排除任何目录）；tpclaw 默认设 [.git/.svn/.hg] 保护版本库元数据。
-// 注意：仅在 Resolve 单文件路径校验时生效；walk/search 遍历不逐文件 Resolve，故 search 仍可能遍历进排除目录（按需另行处理）。
+// defaultExcludeDirs Global default "Exclude Directory" blacklist (the Resolve path validation layer for all file tools).
+// The business layer is set by SetDefaultExcludeDirs; Each tool pathSecurity reads and fills in PathSecurityConfig.ExcludeDirs.
+// No set to return nil (does not exclude any directory); tpclaw is set to [.git/.svn/.hg] by default to protect version repository metadata.
+// Note: Effective only during single file path validation in Resolve; walk/search traverses without resolving each file, so search may still traverse the exclusion directory (handled separately as needed).
 var defaultExcludeDirs atomic.Value
 
-// SetDefaultExcludeDirs 设置全局默认"排除目录"黑名单（并发安全）。
+// SetDefaultExcludeDirs sets the global default "exclude directory" blacklist (concurrency security).
 func SetDefaultExcludeDirs(dirs []string) {
 	defaultExcludeDirs.Store(dirs)
 }
 
-// GetDefaultExcludeDirs 读取全局默认"排除目录"黑名单（并发安全）。未设置返回 nil。
+// GetDefaultExcludeDirs reads the global default "exclusion directory" blacklist (concurrent security). No setting to return nil.
 func GetDefaultExcludeDirs() []string {
 	if v := defaultExcludeDirs.Load(); v != nil {
 		if dirs, ok := v.([]string); ok {
@@ -285,10 +285,10 @@ func (s *SecurePathResolver) checkHiddenPath(resolved string) error {
 }
 
 // checkExcludedDirs checks if the path is in an excluded directory.
-// 注意：与 checkHiddenPath 一致，不受 AllowCrossDir 影响——excluded 是独立的黑名单维度，
-// 即使跨目录放行（cross=true）也应拒绝写入版本库元数据等敏感目录（.git/.svn/.hg）。
-// 此前版本曾在 cross=true 时整体跳过本检查，导致"未来加非隐藏 ExcludeDir（如 node_modules/secrets）
-// 即被 cross 绕过"的潜在回归——已移除该 short-circuit 保持维度正交。
+// Note: Consistent with checkHiddenPath, not affected by AllowCrossDir — excluded is an independent blacklist dimension,
+// Even if cross-directory release (cross=true), write to sensitive directories such as repository metadata (.git/.svn/.hg) should be refused.
+// In previous versions, cross=true skipped this check altogether, causing "future to add non-hidden ExcludeDir (e.g., node_modules/secrets)"
+// That is, the potential regression bypassed by cross—the short-circuit has been removed to maintain orthogonal dimensions.
 func (s *SecurePathResolver) checkExcludedDirs(resolved string) error {
 	workspace := s.effectiveBase(resolved)
 

@@ -23,14 +23,14 @@ import (
 	"github.com/rulego/rulego/api/types"
 )
 
-// LoggingAspect 日志切面
-// 记录智能体执行过程中的关键事件
+// LoggingAspect log-side section
+// Record key events during the agent's execution process
 type LoggingAspect struct {
 	order  int
 	logger types.Logger
 }
 
-// NewLoggingAspect 创建日志切面
+// NewLoggingAspect creates a log aspect
 func NewLoggingAspect(logger types.Logger) *LoggingAspect {
 	return &LoggingAspect{
 		order:  200,
@@ -38,12 +38,12 @@ func NewLoggingAspect(logger types.Logger) *LoggingAspect {
 	}
 }
 
-// Order 返回执行顺序
+// Order returns the execution order
 func (a *LoggingAspect) Order() int {
 	return a.order
 }
 
-// New 创建切面的新实例
+// New: Create a new instance of the face
 func (a *LoggingAspect) New() aspect.Aspect {
 	return &LoggingAspect{
 		order:  a.order,
@@ -51,17 +51,17 @@ func (a *LoggingAspect) New() aspect.Aspect {
 	}
 }
 
-// PointCut 始终应用此切面
+// PointCut always applies this facet
 func (a *LoggingAspect) PointCut(ctx context.Context, point *aspect.AgentPoint) bool {
 	return a.logger != nil
 }
 
-// OnStart 记录开始
+// OnStart recording begins
 func (a *LoggingAspect) OnStart(ctx context.Context, point *aspect.AgentPoint, input *aspect.AgentInput) (*aspect.AgentInput, error) {
 	a.log("[Aspect:OnStart] Agent=%s Type=%s ThreadId=%s UserId=%s",
 		point.AgentName, point.AgentType, point.ThreadId, point.UserId)
 
-	// 记录输入消息数量
+	// Record the number of messages entered
 	msgCount := len(input.Messages)
 	if len(input.HistoryMessages) > 0 {
 		a.log("[Aspect:OnStart] Messages=%d (History=%d, Current=%d)",
@@ -73,7 +73,7 @@ func (a *LoggingAspect) OnStart(ctx context.Context, point *aspect.AgentPoint, i
 	return input, nil
 }
 
-// OnCompleted 记录完成
+// OnCompleted Record complete
 func (a *LoggingAspect) OnCompleted(ctx context.Context, point *aspect.AgentPoint, output *aspect.AgentOutput) {
 	if output.Error != nil {
 		a.log("[Aspect:OnCompleted] Agent=%s FAILED: %v", point.AgentName, output.Error)
@@ -86,7 +86,7 @@ func (a *LoggingAspect) OnCompleted(ctx context.Context, point *aspect.AgentPoin
 			output.TokenUsage.TotalTokens)
 	}
 
-	// 记录工具调用
+	// Record tool calls
 	if len(output.ToolCalls) > 0 {
 		a.log("[Aspect:OnCompleted] ToolCalls=%d", len(output.ToolCalls))
 		for _, tc := range output.ToolCalls {
@@ -99,20 +99,20 @@ func (a *LoggingAspect) OnCompleted(ctx context.Context, point *aspect.AgentPoin
 	}
 }
 
-// OnChunk 记录流式块
+// OnChunk records streaming blocks
 func (a *LoggingAspect) OnChunk(ctx context.Context, point *aspect.AgentPoint, chunk *aspect.StreamChunk) error {
 	if chunk.IsToolCall {
 		a.log("[Aspect:OnChunk] ToolCall ToolName=%s", chunk.ToolName)
 	} else if chunk.IsError {
 		a.log("[Aspect:OnChunk] ERROR: %s", chunk.Content)
 	}
-	// 不记录每个内容块，避免日志过多
+	// Do not record every content block to avoid excessive logging
 	return nil
 }
 
-// BeforeToolCall 记录工具调用
+// BeforeToolCall records tool calls
 func (a *LoggingAspect) BeforeToolCall(ctx context.Context, point *aspect.AgentPoint, call *aspect.ToolCallInfo) (*aspect.ToolCallInfo, error) {
-	// 截断过长的参数
+	// Truncate parameters that are too long
 	args := call.Arguments
 	if len(args) > 200 {
 		args = args[:200] + "..."
@@ -121,12 +121,12 @@ func (a *LoggingAspect) BeforeToolCall(ctx context.Context, point *aspect.AgentP
 	return call, nil
 }
 
-// AfterToolCall 记录工具结果
+// AfterToolCall records the tool results
 func (a *LoggingAspect) AfterToolCall(ctx context.Context, point *aspect.AgentPoint, call *aspect.ToolCallInfo, result *aspect.ToolCallResult) error {
 	if result.Error != nil {
 		a.log("[Aspect:AfterToolCall] Tool=%s CallId=%s ERROR: %v", result.Name, result.CallId, result.Error)
 	} else {
-		// 截断过长的结果
+		// The result of being cut off too long
 		resultStr := result.Result
 		if len(resultStr) > 200 {
 			resultStr = resultStr[:200] + "..."
@@ -137,7 +137,7 @@ func (a *LoggingAspect) AfterToolCall(ctx context.Context, point *aspect.AgentPo
 	return nil
 }
 
-// log 内部日志方法
+// log internal log method
 func (a *LoggingAspect) log(format string, args ...interface{}) {
 	if a.logger != nil {
 		a.logger.Debugf(format, args...)

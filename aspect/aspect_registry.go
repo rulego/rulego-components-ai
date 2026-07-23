@@ -18,26 +18,26 @@ package aspect
 
 import "sync"
 
-// globalAspectRegistry 全局切面注册表
-// 用于应用层动态注册切面，所有 Agent 实例共享
+// globalAspectRegistry Global Aspect Registry
+// Supports dynamic application-level aspect registration shared by all Agent instances.
 var globalAspectRegistry = &AspectRegistry{
 	aspects: make(map[string]Aspect),
 }
 
-// AspectRegistry 切面注册表
+// AspectRegistry Aspect Registry
 type AspectRegistry struct {
 	mu      sync.RWMutex
 	aspects map[string]Aspect // name -> Aspect
 }
 
-// RegisterAspect 注册切面到全局注册表
-// 如果同名切面已存在，将被覆盖
+// RegisterAspect to register a face to the global registry
+// If the facet with the same name already exists, it will be overwritten
 //
-// 参数:
-//   - name: 切面名称，用于标识和管理
-//   - a: 切面实例
+// Parameters:
+//   - name: Section name, used for identification and management
+//   - a: Section instance
 //
-// 示例:
+// Example:
 //
 //	aspect.RegisterAspect("logging", builtin.NewLoggingAspect(logger))
 //	aspect.RegisterAspect("viz", builtin.NewVizAspect())
@@ -47,21 +47,21 @@ func RegisterAspect(name string, a Aspect) {
 	globalAspectRegistry.aspects[name] = a
 }
 
-// UnregisterAspect 从全局注册表注销切面
+// UnregisterAspect to log off the face from the global registry
 //
-// 参数:
-//   - name: 切面名称
+// Parameters:
+//   - name: The name of the face
 func UnregisterAspect(name string) {
 	globalAspectRegistry.mu.Lock()
 	defer globalAspectRegistry.mu.Unlock()
 	delete(globalAspectRegistry.aspects, name)
 }
 
-// GetGlobalAspects 获取所有已注册的切面
-// 返回切面列表的副本，按注册顺序返回
+// GetGlobalAspects retrieves all registered aspects.
+// Returns copies of the section list, in the order they were registered
 //
-// 返回:
-//   - []Aspect: 所有已注册的切面实例
+// Back:
+//   - []Aspect: All registered facet instances
 func GetGlobalAspects() []Aspect {
 	globalAspectRegistry.mu.RLock()
 	defer globalAspectRegistry.mu.RUnlock()
@@ -72,13 +72,13 @@ func GetGlobalAspects() []Aspect {
 	return result
 }
 
-// HasAspect 检查指定名称的切面是否已注册
+// HasAspect checks whether the facet with the specified name has been registered
 //
-// 参数:
-//   - name: 切面名称
+// Parameters:
+//   - name: The name of the face
 //
-// 返回:
-//   - bool: 是否已注册
+// Back:
+//   - bool: Whether registered
 func HasAspect(name string) bool {
 	globalAspectRegistry.mu.RLock()
 	defer globalAspectRegistry.mu.RUnlock()
@@ -86,8 +86,8 @@ func HasAspect(name string) bool {
 	return ok
 }
 
-// ClearAspects 清空所有已注册的切面
-// 主要用于测试场景
+// ClearAspects clears all registered aspects.
+// Mainly used for testing scenarios
 func ClearAspects() {
 	globalAspectRegistry.mu.Lock()
 	defer globalAspectRegistry.mu.Unlock()

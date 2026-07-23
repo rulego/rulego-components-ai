@@ -5,15 +5,15 @@ import (
 	"strings"
 )
 
-// MatchWithDoubleStar 匹配含 ** 的 glob 模式；** 匹配任意层目录（含零层）。
-// pattern 与 relPath 均标准化为正斜杠。供 read/grep/glob 工具共用。
+// MatchWithDoubleStar matches glob patterns containing **; ** Matches any layer directory (including zero layers).
+// pattern and relPath are both standardized to positive slashes. Shared by read/grep/glob tools.
 func MatchWithDoubleStar(pattern, relPath string) bool {
 	relPath = filepath.ToSlash(relPath)
 	pattern = filepath.ToSlash(pattern)
 	return matchGlobParts(strings.Split(pattern, "/"), strings.Split(relPath, "/"))
 }
 
-// matchGlobParts 递归匹配 pattern 段与 path 段（** 贪心匹配任意层）。
+// matchGlobParts recursively matches pattern segments with path segments (** greedily matching arbitrary layers).
 func matchGlobParts(patternParts, pathParts []string) bool {
 	if len(patternParts) == 0 && len(pathParts) == 0 {
 		return true

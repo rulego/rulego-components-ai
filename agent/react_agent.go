@@ -63,15 +63,15 @@ type ReactAgentNode struct {
 	tokenTracker         *token.TokenTracker
 	metricsCollector     *token.MetricsCollector
 	ruleEnginePool       types.RuleEnginePool
-	chatModel            model.ToolCallingChatModel // 保存 chatModel 引用，用于动态模型切换
+	chatModel            model.ToolCallingChatModel // Save the chatModel reference for dynamic model switching
 }
 
-// Type 返回组件类型
+// Type returns the component type
 func (x *ReactAgentNode) Type() string {
 	return "ai/agent"
 }
 
-// New 创建 ReactAgentNode 实例
+// New Create a ReactAgentNode instance
 func (x *ReactAgentNode) New() types.Node {
 	return &ReactAgentNode{
 		Config: ReactAgentNodeConfig{
@@ -90,9 +90,9 @@ func (x *ReactAgentNode) New() types.Node {
 	}
 }
 
-// applyDefaultLLMParams 应用默认 LLM 参数。
-// 注意：Temperature 等参数的零值（0）会被覆盖为默认值。
-// 如需确定性输出（即 Temperature 真正为 0），请使用极小值如 0.001。
+// applyDefaultLLMParams Apply the default LLM parameters.
+// Note: Zero values (0) for parameters like Temperature will be overwritten to default values.
+// If you need a deterministic output (i.e., Temperature is truly 0), use a minimum value such as 0.001.
 func (x *ReactAgentNode) applyDefaultLLMParams() {
 	if x.Config.Params.Temperature == 0 {
 		x.Config.Params.Temperature = config.DefaultTemperature
@@ -108,9 +108,9 @@ func (x *ReactAgentNode) applyDefaultLLMParams() {
 	}
 }
 
-// Init 初始化节点
+// Init initializes the node
 func (x *ReactAgentNode) Init(ruleConfig types.Config, configuration types.Configuration) error {
-	// 1. 解析配置
+	// 1. Analyze configuration
 	err := maps.Map2Struct(configuration, &x.Config)
 	if err != nil {
 		return err
@@ -124,15 +124,15 @@ func (x *ReactAgentNode) Init(ruleConfig types.Config, configuration types.Confi
 
 	x.applyDefaultLLMParams()
 
-	// 2. 初始化模板
+	// 2. Initialize the template
 	if err := x.initTemplates(); err != nil {
 		return err
 	}
 
-	// 3. 获取节点信息
+	// 3. Obtain node information
 	x.initNodeInfo(configuration)
 
-	// 4. 创建聊天模型
+	// 4. Create a chat model
 	baseChatModel, err := CreateChatModel(x.Config.LLMConfig, ModelOptions{
 		Logger:     ruleConfig.Logger,
 		WrapRetry:  true,
@@ -142,8 +142,8 @@ func (x *ReactAgentNode) Init(ruleConfig types.Config, configuration types.Confi
 		return fmt.Errorf("failed to create chat model: %v", err)
 	}
 
-	// 4.1 包装模型以支持动态模型切换（会话级模型切换）
-	// 会话切换创建的新模型也需要重试包装
+	// 4.1 Wrapping Models to Support Dynamic Model Switching (Session-Level Model Switching)
+	// The new model created by session switching also needs to be repackaged
 	chatModel := WrapModelWithDynamicSupport(baseChatModel, x.Config.LLMConfig, ModelOptions{
 		Logger:     ruleConfig.Logger,
 		WrapRetry:  true,
@@ -151,23 +151,23 @@ func (x *ReactAgentNode) Init(ruleConfig types.Config, configuration types.Confi
 	})
 	x.chatModel = chatModel
 
-	// 5. 初始化切面执行器（必须在 createTools 之前）
+	// 5. Initialize the facet actuator (must be before createTools)
 	x.aspectExecutor = NewAgentAspectExecutor(ruleConfig.Logger)
 	x.tokenTracker = token.NewTokenTracker()
 	x.metricsCollector = token.NewMetricsCollector()
 
-	// 6. 创建工具（skillLister 在包装前提取，避免 VisualToolWrapper 遮蔽接口）
+	// 6. Create tools (skillLister extracts before wrapping, avoiding VisualToolWrapper masking interfaces)
 	tools, toolInfoList, skillLister, err := x.createTools(ruleConfig, chatModel)
 	if err != nil {
 		return fmt.Errorf("failed to create tools: %v", err)
 	}
 
-	// 7. 构建技能列表的 MessageModifier
+	// 7. Build the MessageModifier for the skill list
 	var messageModifier func(ctx context.Context, input []*schema.Message) []*schema.Message
 	if skillLister != nil {
 		messageModifier = BuildSkillModifier(skillLister)
 	}
-	// 8. 创建 React Agent
+	// 8. Create a React Agent
 	maxStep := x.Config.MaxStep
 	if maxStep <= 0 {
 		maxStep = DefaultMaxStep
@@ -189,7 +189,7 @@ func (x *ReactAgentNode) Init(ruleConfig types.Config, configuration types.Confi
 	return nil
 }
 
-// initTemplates 初始化模板
+// initTemplates initializes the template
 func (x *ReactAgentNode) initTemplates() error {
 	if x.Config.SystemPrompt != "" {
 		tmpl, err := el.NewTemplate(x.Config.SystemPrompt)
@@ -217,7 +217,7 @@ func (x *ReactAgentNode) initTemplates() error {
 	return nil
 }
 
-// initNodeInfo 初始化节点信息
+// initNodeInfo initializes node information
 func (x *ReactAgentNode) initNodeInfo(configuration types.Configuration) {
 	self := base.NodeUtils.GetSelfDefinition(configuration)
 	x.id = self.Id
@@ -232,7 +232,7 @@ func (x *ReactAgentNode) initNodeInfo(configuration types.Configuration) {
 	}
 }
 
-// createTools 创建工具
+// createTools Create tools
 func (x *ReactAgentNode) createTools(ruleConfig types.Config, chatModel interface{}) ([]tool.BaseTool, []*schema.ToolInfo, aitool.DynamicSkillLister, error) {
 	return CreateTools(x.Config.Tools, ToolOptions{
 		RuleConfig:     ruleConfig,
@@ -251,19 +251,19 @@ func (x *ReactAgentNode) createTools(ruleConfig types.Config, chatModel interfac
 	})
 }
 
-// OnMsg 处理消息
+// OnMsg processes a message
 func (x *ReactAgentNode) OnMsg(ctx types.RuleContext, msg types.RuleMsg) {
-	// 1. 转换输入
+	// 1. Convert input
 	adkInput, err := ConvertRuleMsgToAgentInput(ctx, msg, x.systemPromptTemplate, x.hasVar, x.Config.SystemPrompt, x.presetMessagesTmpls, x.Config.Model, x.id, x.logger)
 	if err != nil {
 		ctx.TellFailure(msg, err)
 		return
 	}
 
-	// 2. 构建执行上下文
+	// 2. Build execution context
 	runCtx := x.buildRunContext(ctx, msg)
 
-	// 3. 获取规则链 ID
+	// 3. Obtain the rule chain ID
 	chainId := ""
 	if ctx.RuleChain() != nil {
 		chainId = ctx.RuleChain().GetNodeId().Id
@@ -272,11 +272,11 @@ func (x *ReactAgentNode) OnMsg(ctx types.RuleContext, msg types.RuleMsg) {
 		chainId = x.name
 	}
 
-	// 4. 构建切面输入
+	// 4. Build the Facet Input
 	resolvedSystemPrompt := extractResolvedSystemPrompt(adkInput)
 	agentInput := x.buildAgentInput(adkInput, msg, resolvedSystemPrompt)
 
-	// 5. 根据模式执行
+	// 5. Execute according to the pattern
 	opts := ExecuteOptions{
 		ChainId:    chainId,
 		AgentName:  x.name,
@@ -291,16 +291,16 @@ func (x *ReactAgentNode) OnMsg(ctx types.RuleContext, msg types.RuleMsg) {
 	}
 }
 
-// buildRunContext 构建执行上下文
+// buildRunContext constructs the execution context
 func (x *ReactAgentNode) buildRunContext(ctx types.RuleContext, msg types.RuleMsg) context.Context {
 	runCtx := context.WithValue(ctx.GetContext(), config.ShareRuleContextKey, ctx)
 	runCtx = context.WithValue(runCtx, config.KeyRuleConfig, ctx.Config())
 
-	// workDir 不在 agent 节点声明：统一由业务层经 common.WithWorkDir 按需注入 ctx（如
-	// triggerGenerate 按项目注入外部/内部 workDir、主 agent 派子 agent 注入父目录），工具按
-	// common.WorkDirFromCtx 解析；未注入时工具回退自身 config.workDir（NewResolverCache 默认根）。
+	// workDir is not declared at agent nodes: uniformly handled by the business layer through common.WithWorkDir injects ctx on demand (e.g.,
+	// triggerGenerate injects external/internal workDir by project, and sub-agents are injected into the parent directory by the main agent). The tool is used by
+	// common.WorkDirFromCtx analysis; If not injected, the tool reverts its own config.workDir (NewResolverCache default root).
 
-	// 文件安全策略由全局注入；per-agent 不再单独配置。
+	// File security policies are injected globally; per-agent is no longer configured separately.
 	allowDirs := common.GetDefaultAllowDirs()
 	if len(allowDirs) > 0 {
 		runCtx = common.WithAllowDirs(runCtx, allowDirs)
@@ -309,23 +309,23 @@ func (x *ReactAgentNode) buildRunContext(ctx types.RuleContext, msg types.RuleMs
 		runCtx = common.WithAllowCrossDir(runCtx, true)
 	}
 
-	// 注入步数计数器
+	// Step counter injected
 	stepCounter := int32(0)
 	runCtx = WithStepCounter(runCtx, &stepCounter)
 
-	// 注入 doom-loop 检测器（agent 级共享，跨工具抓死循环）
+	// Injecting doom-loop detectors (agent-level sharing, cross-tool tightening loops)
 	runCtx = WithDoomLoopDetector(runCtx, NewDoomLoopDetector())
 
-	// 获取规则链 ID
+	// Obtain the rule chain ID
 	chainId := ""
 	if ctx.RuleChain() != nil {
 		chainId = ctx.RuleChain().GetNodeId().Id
 	}
 
-	// 注入 Emitter
+	// Inject Emitter
 	runCtx = InjectEmitter(runCtx, chainId)
 
-	// 注入切面管理器
+	// Inject the Aspect Manager
 	if x.aspectExecutor != nil {
 		runCtx = InjectAspectManager(runCtx, x.aspectExecutor.Manager())
 	}
@@ -333,7 +333,7 @@ func (x *ReactAgentNode) buildRunContext(ctx types.RuleContext, msg types.RuleMs
 	return runCtx
 }
 
-// extractResolvedSystemPrompt 从 AgentInput 的消息列表中提取已解析的系统提示词
+// extractResolvedSystemPrompt extracts parsed system prompt words from the AgentInput message list
 func extractResolvedSystemPrompt(adkInput *adk.AgentInput) string {
 	for _, m := range adkInput.Messages {
 		if m.Role == schema.System {
@@ -343,7 +343,7 @@ func extractResolvedSystemPrompt(adkInput *adk.AgentInput) string {
 	return ""
 }
 
-// buildAgentInput 构建切面输入
+// buildAgentInput: Constructs the facet input
 func (x *ReactAgentNode) buildAgentInput(adkInput *adk.AgentInput, msg types.RuleMsg, resolvedSystemPrompt string) *aspect.AgentInput {
 	var originalMsgs []*schema.Message
 	for _, m := range adkInput.Messages {
@@ -365,7 +365,7 @@ func (x *ReactAgentNode) buildAgentInput(adkInput *adk.AgentInput, msg types.Rul
 		agentInput.Metadata[k] = v
 	}
 
-	// 从消息 Extra 字段复制
+	// Copy from the Extra message field
 	for _, m := range adkInput.Messages {
 		if m.Extra != nil {
 			for k, v := range m.Extra {
@@ -379,15 +379,15 @@ func (x *ReactAgentNode) buildAgentInput(adkInput *adk.AgentInput, msg types.Rul
 	return agentInput
 }
 
-// isStreamMode 检查是否为流式模式
+// isStreamMode checks whether it is streaming mode
 func (x *ReactAgentNode) isStreamMode(msg types.RuleMsg) bool {
 	return msg.Metadata.GetValue(config.KeyStream) == config.ValueTrue
 }
 
-// executeSync 同步执行
+// executeSync synchronously executes
 func (x *ReactAgentNode) executeSync(ctx types.RuleContext, msg types.RuleMsg, runCtx context.Context, opts ExecuteOptions, agentInput *aspect.AgentInput, adkInput *adk.AgentInput) {
 	output, err := x.aspectExecutor.ExecuteSync(runCtx, opts, agentInput, adkInput.Messages, func(ctx context.Context, msgs []*schema.Message) (*schema.Message, error) {
-		// 注入 session_model 到 context（用于动态模型切换）
+		// Injecting session_model into context (for dynamic model switching)
 		ctx = InjectSessionModelToContext(ctx, agentInput.Metadata)
 		ctx = InjectSessionExtraFieldsToContext(ctx, agentInput.Metadata)
 		return x.agent.Generate(ctx, msgs)
@@ -398,50 +398,50 @@ func (x *ReactAgentNode) executeSync(ctx types.RuleContext, msg types.RuleMsg, r
 		return
 	}
 
-	// 处理输出
+	// Processing output
 	msg.SetData(output.Content)
 	msg.DataType = types.TEXT
-	// session_aspect.Before 已在 ExecuteSync 内注入 session_model 到 agentInput.Metadata，
-	// 此处（注入后）解析响应模型，确保回显会话级切换后的模型而非节点默认模型
+	// session_aspect.Before injecting session_model into agentInput.Metadata inside ExecuteSync,
+	// Here, (after injection) parses the response model to ensure the model after session-level switching is reflected rather than the node's default model
 	responseModel := resolveResponseModel(x.Config.Model, agentInput.Metadata)
 	BuildTokenMetadata(msg, output.TokenUsage, responseModel)
-	// 如果 Around 切面拦截了请求（如 CommandAspect），传递切面输出的元数据
+	// If the Around Aspect intercepts the request (such as CommandAspect), it passes the metadata output by the face
 	if output.SkippedAI {
 		transferOutputMetadata(msg, output)
 	}
 	ctx.TellSuccess(msg)
 }
 
-// executeStream 流式执行
+// executeStream streaming
 func (x *ReactAgentNode) executeStream(ctx types.RuleContext, msg types.RuleMsg, runCtx context.Context, opts ExecuteOptions, agentInput *aspect.AgentInput, adkInput *adk.AgentInput) {
-	// 会话级模型需在 session_aspect 注入 session_model 后才能解析（注入发生在下方 ExecuteStream
-	// 内部的 Before 阶段）。用闭包延迟解析，每次取值读最新的 agentInput.Metadata，
-	// 确保 SSE 回显会话级切换后的模型而非节点默认模型。
+	// Session-level models can only be parsed after session_aspect injection session_model (injection occurs in the ExecuteStream below).
+	// The internal Before phase). Using closure delay parsing, each value is retrieved from the latest agentInput.Metadata,
+	// Ensure SSE reflects the model after session-level switching, rather than the node's default model.
 	getResponseModel := func() string {
 		return resolveResponseModel(x.Config.Model, agentInput.Metadata)
 	}
-	// 创建 SSE 处理器
+	// Creating SSE processors
 	sseHandler := NewSSEHandler(ctx, msg)
-	// 统一流式 TellNext 队列：chunk（onChunk）和工具事件（sendEvent）都入队，
-	// 单 goroutine 串行 TellNext 保序。有界容量：瞬时慢消费由缓冲吸收，不反压 LLM 读取（避免
-	// "Error in input stream"）；缓冲满（前端失活）则 abort 上游流止损，不重新引入背压也不无限吃内存。
+	// Unified streaming TellNext queue: both chunk (onChunk) and utility event (sendEvent) are joined,
+	// Single goroutine serial TellNext preorder. Bounded capacity: Instantaneous slow consumption is absorbed by buffering, without backloading LLM reads (avoided).
+	// "Error in input stream");  When buffer is full (front end inactive), ABORT stops loss upstream flow, without reintroducing backpressure or unlimited memory consumption.
 	streamCtx, cancel := context.WithCancel(runCtx)
 	defer cancel()
-	// full 模式重放是突发流量（整条流缓冲后瞬间涌出）：缓冲满时阻塞反压（等前端消费，不丢数据），
-	// 超时才 abort；off 模式是平滑实时流：满则立即 abort，不反压 LLM（避免 "Error in input stream"）。
+	// Full mode replay is burst traffic (the entire stream is buffered and then instantly surges); when buffering is full, blocking backpressure (waiting for frontend consumption, no data loss).
+	// Only after overtime did it abort; The off mode smooths the real-time stream: when full, it immediately aborts without backloading the LLM (avoiding "Error in input stream").
 	var tellQueue *StreamTellQueue
 	if x.Config.LLMConfig.StreamRetryMode == config.StreamRetryFull {
 		tellQueue = NewStreamTellQueueWithBlock(ctx, DefaultStreamTellQueueCap, cancel, DefaultStreamTellBlockTimeout, x.logger)
 	} else {
 		tellQueue = NewStreamTellQueue(ctx, DefaultStreamTellQueueCap, cancel, x.logger)
 	}
-	defer tellQueue.Close() // panic/异常兜底：防消费 goroutine 泄漏（正常路径由 Wait 关闭，幂等不冲突）
+	defer tellQueue.Close() // Panic/Exception Catch: Prevents consumption and goroutine leaks (normal paths are closed by Wait, powers do not conflict)
 	sseHandler.UseQueue(tellQueue)
 	streamCtx = WithSSECallback(streamCtx, sseHandler.Callback())
 
 	output, err := x.aspectExecutor.ExecuteStream(streamCtx, opts, agentInput, adkInput.Messages,
 		func(ctx context.Context, msgs []*schema.Message) (*schema.StreamReader[*schema.Message], error) {
-			// 注入 session_model 到 context（用于动态模型切换）
+			// Injecting session_model into context (for dynamic model switching)
 			ctx = InjectSessionModelToContext(ctx, agentInput.Metadata)
 			ctx = InjectSessionExtraFieldsToContext(ctx, agentInput.Metadata)
 			return x.agent.Stream(ctx, msgs)
@@ -457,11 +457,11 @@ func (x *ReactAgentNode) executeStream(ctx types.RuleContext, msg types.RuleMsg,
 			tellQueue.Enqueue(chunkMsg)
 		},
 	)
-	// 流结束：等队列把 chunk/工具事件全部 TellNext 完，再发结束消息，保证顺序。
+	// Stream end: Wait until the queue has TellNext all chunk and tool events, then send an end message to ensure order.
 	tellQueue.Wait()
 
-	// 缓冲满止损：流被中途 abort（前端失活）。ExecuteStream 会吞掉 cancel 错误（返回 nil err），
-	// 故需单独检查 Aborted()，发 Failure 让前端知道是中断而非正常完成——避免把截断内容当成功。
+	// Buffer full stop-loss: The flow is aborted midway (front end inactivated). ExecuteStream swallows cancel errors (returns nil err),
+	// Therefore, you need to separately check Aborted() and send a Failure to let the frontend know it's an interrupt rather than a normal completion—avoid treating truncated content as success.
 	if tellQueue.Aborted() {
 		endMsg := msg.Copy()
 		endMsg.SetData("流式响应中断：前端消费过慢或已断开连接")
@@ -480,23 +480,23 @@ func (x *ReactAgentNode) executeStream(ctx types.RuleContext, msg types.RuleMsg,
 		return
 	}
 
-	// 如果 Around 切面拦截了请求（如 CommandAspect），使用简化的流式响应
-	// 只发送一条结束消息，避免多次写入响应头
+	// If the Around Aspect intercepts a request (such as CommandAspect), use a simplified streaming response
+	// Send only one end message to avoid multiple response header writes
 	if output.SkippedAI {
-		// 发送单条流式结束消息（包含完整内容）
+		// Send a single stream end message (including full content)
 		endMsg := msg.Copy()
 		endMsg.SetData(output.Content)
 		endMsg.DataType = types.TEXT
 		BuildStreamEndMetadata(endMsg)
 		BuildTokenMetadata(endMsg, output.TokenUsage, getResponseModel())
-		// 传递切面输出的元数据（如 CommandAspect 设置的 _isCommandResponse）
+		// Passing metadata for the facet output (such as the _isCommandResponse set by CommandAspect
 		transferOutputMetadata(endMsg, output)
 		ctx.TellSuccess(endMsg)
 		return
 	}
 
-	// 正常的 AI 流式响应流程
-	// 发送流式结束消息（包含 token 统计，这样 [DONE] 前会发送 usage）
+	// Normal AI streaming response process
+	// Send a stream end message (including token statistics, so usage is sent before [DONE])
 	endMsg := msg.Copy()
 	endMsg.SetData("")
 	endMsg.DataType = types.TEXT
@@ -504,7 +504,7 @@ func (x *ReactAgentNode) executeStream(ctx types.RuleContext, msg types.RuleMsg,
 	BuildTokenMetadata(endMsg, output.TokenUsage, getResponseModel())
 	ctx.TellNext(endMsg, types.Stream)
 
-	// 发送最终完成消息（用于下游处理，如日志）
+	// Send final completion messages (for downstream processing, such as logs)
 	finalMsg := msg.Copy()
 	finalMsg.SetData(output.Content)
 	finalMsg.DataType = types.TEXT
@@ -514,38 +514,38 @@ func (x *ReactAgentNode) executeStream(ctx types.RuleContext, msg types.RuleMsg,
 	ctx.TellNext(finalMsg, types.Success)
 }
 
-// Destroy 销毁节点
+// Destroy the node
 func (x *ReactAgentNode) Destroy() {
-	// Agent 不需要显式清理
+	// Agents do not require explicit cleanup
 }
 
-// skillPromptMarker 将原始 system prompt 与技能提示词分隔开。
-// MessageModifier 接收的是累积消息（state.Messages 浅拷贝），
-// 每轮需要从 system message 中提取原始内容再注入最新技能列表，避免重复累积。
+// skillPromptMarker separates the raw system prompt from the skill prompt word.
+// MessageModifier receives cumulative messages (state.Messages are a shallow copy),
+// Each round requires extracting the original content from the system message and injecting it into the latest skill list to avoid repeated accumulation.
 const skillPromptMarker = "\n<!-- SKILL_LIST -->\n"
 
-// BuildSkillModifier 构建技能列表的 MessageModifier。
-// 每次模型调用前，从 DynamicSkillLister 获取最新技能列表并注入 system prompt。
-// 参考 eino NewPersonaModifier（react.go:208-216）：创建新切片 + 新对象，不修改原始消息。
+// BuildSkillModifier MessageModifier for building skill lists.
+// Before each model call, the latest skill list is obtained from DynamicSkillLister and a system prompt is injected.
+// Reference eino NewPersonaModifier (react.go:208-216): Create a new slice + a new object without modifying the original message.
 func BuildSkillModifier(skillTool aitool.DynamicSkillLister) func(ctx context.Context, input []*schema.Message) []*schema.Message {
 	return func(ctx context.Context, input []*schema.Message) []*schema.Message {
-		// 1. 获取最新技能列表（触发 MultiBackend 指纹检查 → 热更新）
+		// 1. Get the latest skill list (trigger MultiBackend fingerprint check → hot update)
 		skillList, err := skillTool.ListSkills(ctx)
 		if err != nil || skillList == "" {
 			return input
 		}
 
-		// 2. 组装技能提示词（用 marker 与原始内容分隔）
+		// 2. Assemble skill prompts (separate them from the original content with markers)
 		skillPrompt := skillPromptMarker + skillTool.GetSkillInstruction() + "\n" + skillList
 
-		// 3. 创建新切片，不修改原始消息（避免浅拷贝状态污染）
+		// 3. Create new slices without modifying the original message (avoid shallow copy state contamination)
 		result := make([]*schema.Message, 0, len(input)+1)
 		systemFound := false
 
 		for _, msg := range input {
 			if msg.Role == schema.System && !systemFound {
 				systemFound = true
-				// 提取原始内容（去掉上轮注入的技能提示词），再注入最新列表
+				// Extract the original content (remove the skill prompts injected in the previous round), then inject the latest list
 				originalContent := ExtractOriginalSystemContent(msg.Content)
 				newMsg := schema.SystemMessage(originalContent + skillPrompt)
 				result = append(result, newMsg)
@@ -554,7 +554,7 @@ func BuildSkillModifier(skillTool aitool.DynamicSkillLister) func(ctx context.Co
 			}
 		}
 
-		// 4. 没有 system message，创建新的
+		// 4. If there is no system message, create a new one
 		if !systemFound {
 			result = append([]*schema.Message{schema.SystemMessage(skillPrompt)}, result...)
 		}
@@ -563,8 +563,8 @@ func BuildSkillModifier(skillTool aitool.DynamicSkillLister) func(ctx context.Co
 	}
 }
 
-// ExtractOriginalSystemContent 提取原始 system prompt（marker 之前的部分）。
-// 如果没有 marker，说明是首次注入，返回原始内容。
+// ExtractOriginalSystemContent Extracts the original system prompt (the part before the marker).
+// If there is no marker, it indicates the first injection and returns the original content.
 func ExtractOriginalSystemContent(content string) string {
 	idx := strings.Index(content, skillPromptMarker)
 	if idx != -1 {
@@ -584,8 +584,8 @@ func resolveResponseModel(defaultModel string, metadata map[string]string) strin
 	return defaultModel
 }
 
-// transferOutputMetadata 将切面输出的元数据传递到消息元数据
-// 用于传递 CommandAspect 等切面设置的元数据（如 _isCommandResponse）
+// transferOutputMetadata passes the metadata output from the section to the message metadata
+// Metadata used to pass faceted settings such as CommandAspect (e.g., _isCommandResponse)
 func transferOutputMetadata(msg types.RuleMsg, output *aspect.AgentOutput) {
 	for k, v := range output.Metadata {
 		switch sv := v.(type) {

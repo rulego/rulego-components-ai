@@ -11,9 +11,9 @@ import (
 	imageutil "github.com/rulego/rulego-components-ai/utils/image"
 )
 
-// TestFilterRecentToolCalls 测试工具调用过滤函数
+// TestFilterRecentToolCalls The test tool calls the filter function
 func TestFilterRecentToolCalls(t *testing.T) {
-	// 辅助函数：创建消息
+	// Auxiliary function: Create a message
 	createMsg := func(role string, content string, toolCalls []session.ToolCallInfo) *session.SessionMessage {
 		return &session.SessionMessage{
 			Role:      role,
@@ -22,7 +22,7 @@ func TestFilterRecentToolCalls(t *testing.T) {
 		}
 	}
 
-	// 辅助函数：创建工具调用信息
+	// Auxiliary function: Creates tool call information
 	createToolCall := func(id, name string) session.ToolCallInfo {
 		return session.ToolCallInfo{
 			ID:   id,
@@ -35,7 +35,7 @@ func TestFilterRecentToolCalls(t *testing.T) {
 		msgs      []*session.SessionMessage
 		keepCount int
 		wantLen   int
-		wantDesc  string // 描述期望的结果
+		wantDesc  string // Describe the expected outcome
 	}{
 		{
 			name:      "空消息列表",
@@ -99,63 +99,63 @@ func TestFilterRecentToolCalls(t *testing.T) {
 			name: "保留最近1组工具调用",
 			msgs: []*session.SessionMessage{
 				createMsg("user", "q1", nil),
-				createMsg(string(schema.Assistant), "", []session.ToolCallInfo{createToolCall("c1", "t1")}), // 组1开始
+				createMsg(string(schema.Assistant), "", []session.ToolCallInfo{createToolCall("c1", "t1")}), // Group 1 begins
 				createMsg(string(schema.Tool), "r1", nil),
 				createMsg("user", "q2", nil),
-				createMsg(string(schema.Assistant), "", []session.ToolCallInfo{createToolCall("c2", "t2")}), // 组2开始
+				createMsg(string(schema.Assistant), "", []session.ToolCallInfo{createToolCall("c2", "t2")}), // Group 2 begins
 				createMsg(string(schema.Tool), "r2", nil),
 				createMsg("user", "q3", nil),
-				createMsg(string(schema.Assistant), "", []session.ToolCallInfo{createToolCall("c3", "t3")}), // 组3开始
+				createMsg(string(schema.Assistant), "", []session.ToolCallInfo{createToolCall("c3", "t3")}), // Group 3 begins
 				createMsg(string(schema.Tool), "r3", nil),
 			},
 			keepCount: 1,
-			wantLen:   5, // 3 user + 1 assistant(toolcalls 组3) + 1 tool(组3) = 5, 组1和组2被过滤
+			wantLen:   5, // 3 user + 1 assistant(toolcalls Group 3) + 1 tool(Group 3) = 5, so Group 1 and Group 2 are filtered
 			wantDesc:  "应保留最近1组工具调用和所有非工具调用消息",
 		},
 		{
 			name: "保留最近2组工具调用",
 			msgs: []*session.SessionMessage{
 				createMsg("user", "q1", nil),
-				createMsg(string(schema.Assistant), "", []session.ToolCallInfo{createToolCall("c1", "t1")}), // 组1
+				createMsg(string(schema.Assistant), "", []session.ToolCallInfo{createToolCall("c1", "t1")}), // Group 1
 				createMsg(string(schema.Tool), "r1", nil),
 				createMsg("user", "q2", nil),
-				createMsg(string(schema.Assistant), "", []session.ToolCallInfo{createToolCall("c2", "t2")}), // 组2
+				createMsg(string(schema.Assistant), "", []session.ToolCallInfo{createToolCall("c2", "t2")}), // Group 2
 				createMsg(string(schema.Tool), "r2", nil),
 				createMsg("user", "q3", nil),
-				createMsg(string(schema.Assistant), "", []session.ToolCallInfo{createToolCall("c3", "t3")}), // 组3
+				createMsg(string(schema.Assistant), "", []session.ToolCallInfo{createToolCall("c3", "t3")}), // Group 3
 				createMsg(string(schema.Tool), "r3", nil),
 			},
 			keepCount: 2,
-			wantLen:   7, // 3 user + 2 assistant(toolcalls 组2,组3) + 2 tool(组2,组3) = 7, 组1被过滤
+			wantLen:   7, // 3 user + 2 assistant(toolcalls Group 2, Group 3) + 2 tool(Group 2, Group 3) = 7, Group 1 is filtered
 			wantDesc:  "应保留最近2组工具调用",
 		},
 		{
 			name: "一组工具调用包含多个工具结果",
 			msgs: []*session.SessionMessage{
 				createMsg("user", "q1", nil),
-				createMsg(string(schema.Assistant), "", []session.ToolCallInfo{createToolCall("c1", "t1")}), // 组1：3个工具结果
+				createMsg(string(schema.Assistant), "", []session.ToolCallInfo{createToolCall("c1", "t1")}), // Group 1: 3 tool results
 				createMsg(string(schema.Tool), "r1a", nil),
 				createMsg(string(schema.Tool), "r1b", nil),
 				createMsg(string(schema.Tool), "r1c", nil),
 				createMsg("user", "q2", nil),
-				createMsg(string(schema.Assistant), "", []session.ToolCallInfo{createToolCall("c2", "t2")}), // 组2：2个工具结果
+				createMsg(string(schema.Assistant), "", []session.ToolCallInfo{createToolCall("c2", "t2")}), // Group 2: 2 tool results
 				createMsg(string(schema.Tool), "r2a", nil),
 				createMsg(string(schema.Tool), "r2b", nil),
 			},
 			keepCount: 1,
-			wantLen:   5, // 2 user + 1 assistant(toolcalls 组2) + 2 tool results(组2) = 5, 组1被过滤
+			wantLen:   5, // 2 user + 1 assistant(toolcalls Group 2) + 2 tool results (Group 2) = 5, Group 1 is filtered
 			wantDesc:  "应正确处理一组包含多个工具结果的情况",
 		},
 		{
 			name: "普通助手消息不被过滤",
 			msgs: []*session.SessionMessage{
 				createMsg("user", "q1", nil),
-				createMsg(string(schema.Assistant), "answer1", nil), // 普通助手消息
+				createMsg(string(schema.Assistant), "answer1", nil), // Ordinary assistant message
 				createMsg("user", "q2", nil),
-				createMsg(string(schema.Assistant), "", []session.ToolCallInfo{createToolCall("c1", "t1")}), // 组1
+				createMsg(string(schema.Assistant), "", []session.ToolCallInfo{createToolCall("c1", "t1")}), // Group 1
 				createMsg(string(schema.Tool), "r1", nil),
 				createMsg("user", "q3", nil),
-				createMsg(string(schema.Assistant), "", []session.ToolCallInfo{createToolCall("c2", "t2")}), // 组2
+				createMsg(string(schema.Assistant), "", []session.ToolCallInfo{createToolCall("c2", "t2")}), // Group 2
 				createMsg(string(schema.Tool), "r2", nil),
 			},
 			keepCount: 1,
@@ -169,7 +169,7 @@ func TestFilterRecentToolCalls(t *testing.T) {
 			got := filterRecentToolCalls(tt.msgs, tt.keepCount)
 			if len(got) != tt.wantLen {
 				t.Errorf("filterRecentToolCalls() returned %d messages, want %d. %s", len(got), tt.wantLen, tt.wantDesc)
-				// 打印详细信息帮助调试
+				// Printing detailed information helps with debugging
 				t.Logf("Input messages:")
 				for i, m := range tt.msgs {
 					t.Logf("  [%d] role=%s, toolCalls=%d", i, m.Role, len(m.ToolCalls))
@@ -183,7 +183,7 @@ func TestFilterRecentToolCalls(t *testing.T) {
 	}
 }
 
-// TestFilterRecentToolCalls_GroupIntegrity 测试工具调用组的完整性
+// TestFilterRecentToolCalls_GroupIntegrity Test the integrity of the call group for testing tools
 func TestFilterRecentToolCalls_GroupIntegrity(t *testing.T) {
 	createMsg := func(role string, content string, toolCalls []session.ToolCallInfo) *session.SessionMessage {
 		return &session.SessionMessage{
@@ -196,27 +196,27 @@ func TestFilterRecentToolCalls_GroupIntegrity(t *testing.T) {
 		return session.ToolCallInfo{ID: id, Name: name}
 	}
 
-	// 场景：3组工具调用，保留最近1组
-	// 验证：保留的组中，assistant消息和其对应的tool结果消息都应存在
+	// Scenario: 3 groups of tool calls, keeping the nearest group
+	// Verification: In the reserved group, both the Assistant message and its corresponding Tool result message should exist
 	msgs := []*session.SessionMessage{
 		createMsg("user", "q1", nil),
-		createMsg(string(schema.Assistant), "", []session.ToolCallInfo{createToolCall("call_1", "read_file")}), // 组1
+		createMsg(string(schema.Assistant), "", []session.ToolCallInfo{createToolCall("call_1", "read_file")}), // Group 1
 		createMsg(string(schema.Tool), "file content 1", nil),
 		createMsg("user", "q2", nil),
-		createMsg(string(schema.Assistant), "", []session.ToolCallInfo{createToolCall("call_2", "read_file")}), // 组2
+		createMsg(string(schema.Assistant), "", []session.ToolCallInfo{createToolCall("call_2", "read_file")}), // Group 2
 		createMsg(string(schema.Tool), "file content 2", nil),
 		createMsg("user", "q3", nil),
-		createMsg(string(schema.Assistant), "", []session.ToolCallInfo{createToolCall("call_3", "read_file")}), // 组3（应保留）
+		createMsg(string(schema.Assistant), "", []session.ToolCallInfo{createToolCall("call_3", "read_file")}), // Group 3 (should be retained)
 		createMsg(string(schema.Tool), "file content 3", nil),
 	}
 
 	result := filterRecentToolCalls(msgs, 1)
 
-	// 验证结果
-	// 应包含：user q1, user q2, user q3, assistant(call_3), tool(result 3)
-	// 不应包含：assistant(call_1), tool(result 1), assistant(call_2), tool(result 2)
+	// Verify the results
+	// Should include: User q1, User q2, User q3, Assistant(call_3), Tool(result 3)
+	// Should not include: assistant(call_1), tool(result 1), assistant(call_2), tool(result 2)
 
-	// 检查用户消息全部保留
+	// Check that all user messages are retained
 	userCount := 0
 	for _, m := range result {
 		if m.Role == "user" {
@@ -227,13 +227,13 @@ func TestFilterRecentToolCalls_GroupIntegrity(t *testing.T) {
 		t.Errorf("Expected 3 user messages, got %d", userCount)
 	}
 
-	// 检查只保留了一组工具调用（1 assistant with toolcalls + 1 tool result）
+	// Check that only one set of tool calls is retained (1 assistant with toolcalls + 1 tool result)
 	assistantWithToolCallsCount := 0
 	toolResultCount := 0
 	for _, m := range result {
 		if m.Role == string(schema.Assistant) && len(m.ToolCalls) > 0 {
 			assistantWithToolCallsCount++
-			// 验证是最近的一组（call_3）
+			// Verification is the most recent set (call_3)
 			if m.ToolCalls[0].ID != "call_3" {
 				t.Errorf("Expected tool call ID 'call_3', got '%s'", m.ToolCalls[0].ID)
 			}
@@ -250,7 +250,7 @@ func TestFilterRecentToolCalls_GroupIntegrity(t *testing.T) {
 	}
 }
 
-// TestFilterRecentToolCalls_MultipleToolsInOneCall 测试一次调用多个工具的场景
+// TestFilterRecentToolCalls_MultipleToolsInOneCall Test scenarios where multiple tools are called at once
 func TestFilterRecentToolCalls_MultipleToolsInOneCall(t *testing.T) {
 	createMsg := func(role string, content string, toolCalls []session.ToolCallInfo) *session.SessionMessage {
 		return &session.SessionMessage{
@@ -270,36 +270,36 @@ func TestFilterRecentToolCalls_MultipleToolsInOneCall(t *testing.T) {
 		return calls
 	}
 
-	// 场景：一次助手响应调用3个工具，产生3个工具结果
-	// 这应该算作1组工具调用
+	// Scenario: The assistant responds to three tools at once, producing results for all three tools
+	// This should be counted as one set of tool calls
 	msgs := []*session.SessionMessage{
 		createMsg("user", "请帮我读取三个文件", nil),
-		createMsg(string(schema.Assistant), "", createToolCalls(3)), // 1组，3个工具调用
+		createMsg(string(schema.Assistant), "", createToolCalls(3)), // One group, three tool calls
 		createMsg(string(schema.Tool), "result a", nil),
 		createMsg(string(schema.Tool), "result b", nil),
 		createMsg(string(schema.Tool), "result c", nil),
 	}
 
-	// keepCount = 1，应该保留所有（因为只有1组）
+	// keepCount = 1, should keep all (since only one group)
 	result := filterRecentToolCalls(msgs, 1)
 	if len(result) != 5 {
 		t.Errorf("Expected 5 messages (1 group), got %d", len(result))
 	}
 
-	// 添加更多组，验证过滤
+	// Add more groups to validate filtering
 	msgs2 := []*session.SessionMessage{
 		createMsg("user", "q1", nil),
-		createMsg(string(schema.Assistant), "", createToolCalls(3)), // 组1
+		createMsg(string(schema.Assistant), "", createToolCalls(3)), // Group 1
 		createMsg(string(schema.Tool), "r1a", nil),
 		createMsg(string(schema.Tool), "r1b", nil),
 		createMsg(string(schema.Tool), "r1c", nil),
 		createMsg("user", "q2", nil),
-		createMsg(string(schema.Assistant), "", createToolCalls(2)), // 组2
+		createMsg(string(schema.Assistant), "", createToolCalls(2)), // Group 2
 		createMsg(string(schema.Tool), "r2a", nil),
 		createMsg(string(schema.Tool), "r2b", nil),
 	}
 
-	// keepCount = 1，应保留：2 user + 1 assistant(组2) + 2 tool(组2) = 5
+	// keepCount = 1, should retain: 2 user + 1 assistant (group 2) + 2 tool (group 2) = 5
 	result2 := filterRecentToolCalls(msgs2, 1)
 	if len(result2) != 5 {
 		t.Errorf("Expected 5 messages, got %d", len(result2))
@@ -451,7 +451,7 @@ func TestSessionAspectAfterSkipsAssistantToolMessageWhenAllToolCallsInvalid(t *t
 	}
 }
 
-// TestSessionAspectAfterSkipsEmptyJSONObjectToolCalls 测试 SessionAspect 会跳过空对象参数工具调用。
+// TestSessionAspectAfterSkipsEmptyJSONObjectToolCalls Testing SessionAspect will skip the empty object parameter tool call.
 func TestSessionAspectAfterSkipsEmptyJSONObjectToolCalls(t *testing.T) {
 	ctx := context.Background()
 	storage := session.NewMemoryStorage()
@@ -521,7 +521,7 @@ func TestSessionAspectAfterSkipsEmptyJSONObjectToolCalls(t *testing.T) {
 	}
 }
 
-// TestSessionAspectAfterSkipsToolCallsMissingRequiredFields 测试 SessionAspect 会跳过缺少必填字段的工具调用。
+// TestSessionAspectAfterSkipsToolCallsMissingRequiredFields Testing SessionAspect will skip tool calls missing required fields.
 func TestSessionAspectAfterSkipsToolCallsMissingRequiredFields(t *testing.T) {
 	ctx := context.Background()
 	storage := session.NewMemoryStorage()
@@ -583,7 +583,7 @@ func TestSessionAspectAfterSkipsToolCallsMissingRequiredFields(t *testing.T) {
 	}
 }
 
-// TestConvertSessionMessagesToSchema_SkipsUnpairedToolCallHistory 测试恢复历史时会跳过不成对的工具调用消息。
+// TestConvertSessionMessagesToSchema_SkipsUnpairedToolCallHistory When testing history recovery, it skips unpaired tool call messages.
 func TestConvertSessionMessagesToSchema_SkipsUnpairedToolCallHistory(t *testing.T) {
 	msgs := []*session.SessionMessage{
 		{
@@ -647,13 +647,13 @@ func TestConvertSessionMessagesToSchema_SkipsUnpairedToolCallHistory(t *testing.
 	}
 }
 
-// TestEstimateTokenCount 测试 token 估算函数
+// TestEstimateTokenCount Tests the token estimation function
 func TestEstimateTokenCount(t *testing.T) {
 	tests := []struct {
 		name     string
 		text     string
-		minToken int // 估算结果应 >= minToken
-		maxToken int // 估算结果应 <= maxToken
+		minToken int // The estimated result should be > = minToken
+		maxToken int // The estimated result should be < = maxToken
 	}{
 		{
 			name:     "空字符串",
@@ -708,7 +708,7 @@ func TestEstimateTokenCount(t *testing.T) {
 	}
 }
 
-// TestStripImagePathMarkers 测试清理图片路径标记
+// TestStripImagePathMarkers Tests and cleans up image path markers
 func TestStripImagePathMarkers(t *testing.T) {
 	tests := []struct {
 		name  string
@@ -766,13 +766,13 @@ func TestStripImagePathMarkers(t *testing.T) {
 	}
 }
 
-// TestFilterImageURLs 测试图片 URL 过滤
+// TestFilterImageURLs Test image URL filtering
 func TestFilterImageURLs(t *testing.T) {
 	tests := []struct {
 		name  string
 		input []string
 		want  []string
-		wantN int // 期望结果数量
+		wantN int // Expected number of results
 	}{
 		{
 			name:  "空列表",
@@ -810,7 +810,7 @@ func TestFilterImageURLs(t *testing.T) {
 	}
 }
 
-// TestConvertSessionMessagesToSchema_WithImages 测试带图片的历史消息转换
+// TestConvertSessionMessagesToSchema_WithImages Test historical message conversion with images
 func TestConvertSessionMessagesToSchema_WithImages(t *testing.T) {
 	t.Run("用户消息有图片字段-有文本内容", func(t *testing.T) {
 		msgs := []*session.SessionMessage{
@@ -824,20 +824,20 @@ func TestConvertSessionMessagesToSchema_WithImages(t *testing.T) {
 		if len(result) != 1 {
 			t.Fatalf("expected 1 message, got %d", len(result))
 		}
-		// 应该生成 UserInputMultiContent（图片 + 文本）
+		// Should generate UserInputMultiContent (image + text)
 		if len(result[0].UserInputMultiContent) != 2 {
 			t.Fatalf("expected 2 parts in UserInputMultiContent, got %d", len(result[0].UserInputMultiContent))
 		}
-		// 第一部分应该是图片
+		// The first part should be pictures
 		if result[0].UserInputMultiContent[0].Type != schema.ChatMessagePartTypeImageURL {
 			t.Fatalf("expected first part type %q, got %q", schema.ChatMessagePartTypeImageURL, result[0].UserInputMultiContent[0].Type)
 		}
-		// 第二部分应该是文本
+		// The second part should be the text
 		if result[0].UserInputMultiContent[1].Type != schema.ChatMessagePartTypeText {
 			t.Fatalf("expected second part type %q, got %q", schema.ChatMessagePartTypeText, result[0].UserInputMultiContent[1].Type)
 		}
 		if result[0].UserInputMultiContent[1].Text != "看看这张图" {
-			t.Fatalf("expected text %q, got %q", "看看这张图", result[0].UserInputMultiContent[1].Text)
+			t.Fatalf("expected text %q, got %q", "Take a look at this picture", result[0].UserInputMultiContent[1].Text)
 		}
 	})
 
@@ -845,7 +845,7 @@ func TestConvertSessionMessagesToSchema_WithImages(t *testing.T) {
 		msgs := []*session.SessionMessage{
 			{
 				Role:    string(schema.User),
-				Content: "", // 空文本
+				Content: "", // Empty text
 				Images:  []string{"data:image/png;base64,iVBORw0KGgo="},
 			},
 		}
@@ -853,7 +853,7 @@ func TestConvertSessionMessagesToSchema_WithImages(t *testing.T) {
 		if len(result) != 1 {
 			t.Fatalf("expected 1 message, got %d", len(result))
 		}
-		// 只有图片 part，不添加空文本 part（这是修复空 text part 导致 LLM 返回空的关键逻辑）
+		// Only image parts, no empty text parts added (this is the key logic for fixing empty text parts causing LLMs to return empty)
 		if len(result[0].UserInputMultiContent) != 1 {
 			t.Fatalf("expected 1 part (image only, no empty text), got %d", len(result[0].UserInputMultiContent))
 		}
@@ -873,12 +873,12 @@ func TestConvertSessionMessagesToSchema_WithImages(t *testing.T) {
 		if len(result) != 1 {
 			t.Fatalf("expected 1 message, got %d", len(result))
 		}
-		// 没有 UserInputMultiContent
+		// No UserInputMultiContent
 		if len(result[0].UserInputMultiContent) != 0 {
 			t.Fatalf("expected 0 parts, got %d", len(result[0].UserInputMultiContent))
 		}
 		if result[0].Content != "纯文本消息" {
-			t.Fatalf("expected content %q, got %q", "纯文本消息", result[0].Content)
+			t.Fatalf("expected content %q, got %q", "Pure text messages", result[0].Content)
 		}
 	})
 
@@ -894,7 +894,7 @@ func TestConvertSessionMessagesToSchema_WithImages(t *testing.T) {
 		if len(result) != 1 {
 			t.Fatalf("expected 1 message, got %d", len(result))
 		}
-		// 2 图片 + 1 文本 = 3 parts
+		// 2 images + 1 text = 3 parts
 		if len(result[0].UserInputMultiContent) != 3 {
 			t.Fatalf("expected 3 parts, got %d", len(result[0].UserInputMultiContent))
 		}
@@ -913,7 +913,7 @@ func TestConvertSessionMessagesToSchema_WithImages(t *testing.T) {
 	})
 }
 
-// TestConvertRecentHistoryImagesToBase64 测试历史图片转换
+// TestConvertRecentHistoryImagesToBase64 Test the conversion of historical images
 func TestConvertRecentHistoryImagesToBase64(t *testing.T) {
 	t.Run("空历史", func(t *testing.T) {
 		converted, total := convertRecentHistoryImagesToBase64(nil)
@@ -957,19 +957,19 @@ func TestConvertRecentHistoryImagesToBase64(t *testing.T) {
 		}
 
 		converted, total := convertRecentHistoryImagesToBase64(history)
-		// 文件不存在，转换失败，total=1, converted=0
+		// File does not exist, conversion failed, total=1, converted=0
 		if total != 1 {
 			t.Fatalf("expected total=1, got %d", total)
 		}
 		if converted != 0 {
 			t.Fatalf("expected converted=0 (file doesn't exist), got %d", converted)
 		}
-		// 清理：本地文件路径的消息应被降级为纯文本
+		// Cleanup: Messages in local file paths should be downgraded to plain text
 		if len(history[0].UserInputMultiContent) != 0 {
 			t.Fatalf("expected UserInputMultiContent to be nil after cleanup, got %d parts", len(history[0].UserInputMultiContent))
 		}
 		if history[0].Content != "看看这个\n[图片]" {
-			t.Fatalf("expected content %q after cleanup, got %q", "看看这个\n[图片]", history[0].Content)
+			t.Fatalf("expected content %q after cleanup, got %q", "Take a look at this \n [image]", history[0].Content)
 		}
 	})
 
@@ -992,7 +992,7 @@ func TestConvertRecentHistoryImagesToBase64(t *testing.T) {
 		}
 
 		convertRecentHistoryImagesToBase64(history)
-		// HTTP URL 不被清理
+		// HTTP URLs are not cleaned
 		if len(history[0].UserInputMultiContent) == 0 {
 			t.Fatal("expected UserInputMultiContent to be preserved for HTTP URL")
 		}
@@ -1017,14 +1017,14 @@ func TestConvertRecentHistoryImagesToBase64(t *testing.T) {
 		}
 
 		convertRecentHistoryImagesToBase64(history)
-		// base64 URL 不被清理（不是本地文件路径）
+		// base64 URL not cleaned up (not the local file path)
 		if len(history[0].UserInputMultiContent) == 0 {
 			t.Fatal("expected UserInputMultiContent to be preserved for base64 data")
 		}
 	})
 }
 
-// TestSaveUserMessageBeforeLLM 测试 Before 阶段用户消息预存
+// TestSaveUserMessageBeforeLLM tests the Before phase user message storage
 func TestSaveUserMessageBeforeLLM(t *testing.T) {
 	ctx := context.Background()
 	storage := session.NewMemoryStorage()
@@ -1074,7 +1074,7 @@ func TestSaveUserMessageBeforeLLM(t *testing.T) {
 	})
 }
 
-// TestSaveUserMessageBeforeLLM_WithImages 测试用户消息带图片的保存
+// TestSaveUserMessageBeforeLLM_WithImages Test saving user messages with images
 func TestSaveUserMessageBeforeLLM_WithImages(t *testing.T) {
 	ctx := context.Background()
 	storage := session.NewMemoryStorage()
@@ -1118,11 +1118,11 @@ func TestSaveUserMessageBeforeLLM_WithImages(t *testing.T) {
 		for _, msg := range history {
 			if msg.Role == string(schema.User) {
 				found = true
-				// stripImagePathMarkers 应该清理掉 [图片：path] 标记
+				// stripImagePathMarkers should clean up the [Image:path] tag
 				if msg.Content != "看看这张图" {
-					t.Fatalf("expected content %q (markers stripped), got %q", "看看这张图", msg.Content)
+					t.Fatalf("expected content %q (markers stripped), got %q", "Take a look at this picture", msg.Content)
 				}
-				// 图片应从 Extra 提取并保存
+				// Images should be extracted and saved from Extra
 				if len(msg.Images) == 0 {
 					t.Fatal("expected images to be saved")
 				}
@@ -1140,7 +1140,7 @@ func TestSaveUserMessageBeforeLLM_WithImages(t *testing.T) {
 			Messages: []*schema.Message{
 				{
 					Role:    schema.User,
-					Content: "", // 空的 Content
+					Content: "", // Empty Content
 					UserInputMultiContent: []schema.MessageInputPart{
 						{
 							Type: schema.ChatMessagePartTypeText,
@@ -1167,7 +1167,7 @@ func TestSaveUserMessageBeforeLLM_WithImages(t *testing.T) {
 			t.Fatalf("GetHistory() error = %v", err)
 		}
 
-		// 找最后一条用户消息
+		// Find the last user message
 		var lastUserMsg *session.SessionMessage
 		for i := len(history) - 1; i >= 0; i-- {
 			if history[i].Role == string(schema.User) {
@@ -1178,18 +1178,18 @@ func TestSaveUserMessageBeforeLLM_WithImages(t *testing.T) {
 		if lastUserMsg == nil {
 			t.Fatal("expected user message to be saved")
 		}
-		// 文本应从 UserInputMultiContent 中提取
+		// Text should be extracted from UserInputMultiContent
 		if lastUserMsg.Content != "描述图片" {
-			t.Fatalf("expected content %q (extracted from multi content), got %q", "描述图片", lastUserMsg.Content)
+			t.Fatalf("expected content %q (extracted from multi content), got %q", "Description of the picture", lastUserMsg.Content)
 		}
-		// 图片 URL 应被保存
+		// Image URLs should be saved
 		if len(lastUserMsg.Images) == 0 {
 			t.Fatal("expected images to be saved from UserInputMultiContent")
 		}
 	})
 }
 
-// TestBeforeAndAfterIntegration 测试完整的 Before+After 集成流程
+// TestBeforeAndAfterIntegration: Tests the complete Before+After integration process
 func TestBeforeAndAfterIntegration(t *testing.T) {
 	ctx := context.Background()
 	storage := session.NewMemoryStorage()
@@ -1213,7 +1213,7 @@ func TestBeforeAndAfterIntegration(t *testing.T) {
 		UserId:   req.UserID,
 	}
 
-	// 1. Before: 加载会话 + 预存用户消息
+	// 1. Before: Load session + cache user messages
 	input := &aspect.AgentInput{
 		Messages: []*schema.Message{
 			{
@@ -1233,7 +1233,7 @@ func TestBeforeAndAfterIntegration(t *testing.T) {
 		t.Fatal("expected SessionKey to be set after Before()")
 	}
 
-	// 2. After: 保存助手回复和工具调用
+	// 2. After: Save assistant replies and tool calls
 	output := &aspect.AgentOutput{
 		SessionKey: inputAfterBefore.SessionKey,
 		OriginalMessages: []*schema.Message{
@@ -1257,13 +1257,13 @@ func TestBeforeAndAfterIntegration(t *testing.T) {
 		t.Fatalf("After() error = %v", err)
 	}
 
-	// 3. 验证历史消息完整性
+	// 3. Verify the integrity of historical messages
 	history, err := manager.GetHistory(ctx, inputAfterBefore.SessionKey, 20)
 	if err != nil {
 		t.Fatalf("GetHistory() error = %v", err)
 	}
 
-	// 应包含：1 user + 1 assistant(tool call) + 1 tool result + 1 assistant reply = 4
+	// Should include: 1 user + 1 assistant(tool call) + 1 tool result + 1 assistant reply = 4
 	if len(history) != 4 {
 		t.Fatalf("expected 4 messages in history, got %d", len(history))
 	}
@@ -1272,7 +1272,7 @@ func TestBeforeAndAfterIntegration(t *testing.T) {
 		t.Fatalf("expected first message role %q, got %q", string(schema.User), history[0].Role)
 	}
 	if history[0].Content != "你好" {
-		t.Fatalf("expected first message content %q, got %q", "你好", history[0].Content)
+		t.Fatalf("expected first message content %q, got %q", "Hello", history[0].Content)
 	}
 
 	if history[1].Role != string(schema.Assistant) {
@@ -1290,11 +1290,11 @@ func TestBeforeAndAfterIntegration(t *testing.T) {
 		t.Fatalf("expected fourth message role %q, got %q", string(schema.Assistant), history[3].Role)
 	}
 	if history[3].Content != "你好！有什么可以帮助你的吗？" {
-		t.Fatalf("expected fourth message content %q, got %q", "你好！有什么可以帮助你的吗？", history[3].Content)
+		t.Fatalf("expected fourth message content %q, got %q", "Hello! Is there anything that can help you?", history[3].Content)
 	}
 }
 
-// TestIsLocalFilePathFromImageUtil 验证 imageutil.IsLocalFilePath 的行为（确保去重后行为一致）
+// TestIsLocalFilePathFromImageUtil Verify imageutil.IsLocalFilePath behavior (ensuring consistent behavior after deduplication)
 func TestIsLocalFilePathFromImageUtil(t *testing.T) {
 	tests := []struct {
 		input string
@@ -1319,7 +1319,7 @@ func TestIsLocalFilePathFromImageUtil(t *testing.T) {
 	}
 }
 
-// TestExtractImagesFromExtra 测试从 Extra 提取图片
+// TestExtractImagesFromExtra tests to extract images from the Extra
 func TestExtractImagesFromExtra(t *testing.T) {
 	tests := []struct {
 		name  string

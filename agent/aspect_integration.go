@@ -30,21 +30,21 @@ import (
 	"github.com/rulego/rulego/api/types"
 )
 
-// AgentAspectExecutor Agent 切面执行器
-// 封装所有切面相关的执行逻辑
+// AgentAspectExecutor Agent faceted executor
+// Encapsulates execution logic for all aspects.
 type AgentAspectExecutor struct {
 	manager *aspect.AspectManager
 	logger  types.Logger
 }
 
-// NewAgentAspectExecutor 创建切面执行器
+// NewAgentAspectExecutor creates a faceted executor
 func NewAgentAspectExecutor(logger types.Logger) *AgentAspectExecutor {
 	exec := &AgentAspectExecutor{
 		manager: aspect.NewAspectManager(),
 		logger:  logger,
 	}
 
-	// 从全局注册表复制切面
+	// Copy the cut from the global registry
 	for _, a := range aspect.GetGlobalAspects() {
 		exec.manager.Register(a.New())
 	}
@@ -52,12 +52,12 @@ func NewAgentAspectExecutor(logger types.Logger) *AgentAspectExecutor {
 	return exec
 }
 
-// Manager 返回切面管理器
+// Manager returns the Face Manager
 func (e *AgentAspectExecutor) Manager() *aspect.AspectManager {
 	return e.manager
 }
 
-// ExecuteOptions 执行选项
+// ExecuteOptions executes options
 type ExecuteOptions struct {
 	ChainId    string
 	AgentName  string
@@ -65,7 +65,7 @@ type ExecuteOptions struct {
 	SessionKey string
 }
 
-// ExecuteSync 同步执行（带切面）
+// ExecuteSync performs synchronous execution with aspects.
 func (e *AgentAspectExecutor) ExecuteSync(
 	ctx context.Context,
 	opts ExecuteOptions,
@@ -76,31 +76,31 @@ func (e *AgentAspectExecutor) ExecuteSync(
 	point := e.buildPoint(opts)
 	startTime := time.Now()
 
-	// 创建工具调用收集器并注入到 context
+	// Create a tool call collector and inject it into context
 	toolCallsCollector := aspect.NewToolCallsCollector()
 	ctx = aspect.WithToolCallsCollector(ctx, toolCallsCollector)
 
-	// 1. Start 切面
+	// 1. Start the facet
 	input, err := e.manager.ExecuteStart(ctx, point, input)
 	if err != nil {
 		e.manager.ExecuteCompleted(ctx, point, &aspect.AgentOutput{Error: err, IsSuccess: false})
 		return nil, err
 	}
 
-	// 2. Before 切面
+	// 2. Before cross-section
 	input, err = e.manager.ExecuteBefore(ctx, point, input)
 	if err != nil {
 		e.manager.ExecuteCompleted(ctx, point, &aspect.AgentOutput{Error: err, IsSuccess: false})
 		return nil, err
 	}
 
-	// 3. 合并历史消息
+	// 3. Merge historical messages
 	mergedMessages := e.mergeMessages(input, messages)
 
-	// 打印调试日志：系统提示词和最新消息
+	// Print debug logs: system prompts and latest news
 	e.logDebugInfo(mergedMessages, input.SystemPrompt)
 
-	// 4. Around 切面 + 实际执行
+	// 4. Around the Facet + Actual Execution
 	output, err := e.manager.ExecuteAround(ctx, point, input, func(ctx context.Context, in *aspect.AgentInput) (*aspect.AgentOutput, error) {
 		msg, err := executor(ctx, mergedMessages)
 		if err != nil {
@@ -117,17 +117,17 @@ func (e *AgentAspectExecutor) ExecuteSync(
 		return nil, err
 	}
 
-	// 5. After 切面
+	// 5. After cross-section
 	output, _ = e.manager.ExecuteAfter(ctx, point, output)
 
-	// 6. Completed 切面
+	// 6. Completed cross-section
 	output.IsSuccess = true
 	e.manager.ExecuteCompleted(ctx, point, output)
 
 	return output, nil
 }
 
-// ExecuteStream 流式执行（带切面）
+// ExecuteStream performs streaming execution with aspects.
 func (e *AgentAspectExecutor) ExecuteStream(
 	ctx context.Context,
 	opts ExecuteOptions,
@@ -139,31 +139,31 @@ func (e *AgentAspectExecutor) ExecuteStream(
 	point := e.buildPoint(opts)
 	startTime := time.Now()
 
-	// 创建工具调用收集器并注入到 context
+	// Create a tool call collector and inject it into context
 	toolCallsCollector := aspect.NewToolCallsCollector()
 	ctx = aspect.WithToolCallsCollector(ctx, toolCallsCollector)
 
-	// 1. Start 切面
+	// 1. Start the facet
 	input, err := e.manager.ExecuteStart(ctx, point, input)
 	if err != nil {
 		e.manager.ExecuteCompleted(ctx, point, &aspect.AgentOutput{Error: err, IsSuccess: false})
 		return nil, err
 	}
 
-	// 2. Before 切面
+	// 2. Before cross-section
 	input, err = e.manager.ExecuteBefore(ctx, point, input)
 	if err != nil {
 		e.manager.ExecuteCompleted(ctx, point, &aspect.AgentOutput{Error: err, IsSuccess: false})
 		return nil, err
 	}
 
-	// 3. 合并历史消息
+	// 3. Merge historical messages
 	mergedMessages := e.mergeMessages(input, messages)
 
-	// 打印调试日志：系统提示词和最新消息
+	// Print debug logs: system prompts and latest news
 	e.logDebugInfo(mergedMessages, input.SystemPrompt)
 
-	// 4. Around 切面 + 执行流式调用
+	// 4. Around Section + Execute stream call
 	output, err := e.manager.ExecuteAround(ctx, point, input, func(ctx context.Context, in *aspect.AgentInput) (*aspect.AgentOutput, error) {
 		streamReader, err := streamExecutor(ctx, mergedMessages)
 		if err != nil {
@@ -173,10 +173,10 @@ func (e *AgentAspectExecutor) ExecuteStream(
 
 		var fullContent strings.Builder
 		var lastChunk *schema.Message
-		var streamErr error // 流中途错误（非 EOF），不再静默吞掉
+		var streamErr error // Midstream error (non-EOF) no longer silently swallows
 		chunkCount := 0
 
-		// onChunk 由上层（react_agent）负责入 StreamTellQueue，非阻塞，这里直接同步调用即可。
+		// onChunk is handled by the upper layer (react_agent) for entering StreamTellQueue, which is not blocking; here it can be called synchronously.
 		for {
 			chunk, err := streamReader.Recv()
 			if err != nil {
@@ -216,7 +216,7 @@ func (e *AgentAspectExecutor) ExecuteStream(
 			}
 		}
 
-		// 6. 构建输出。流中途出错时把错误带进 output.Error 并返回 error，让上层感知"被截断"而非静默成功。
+		// 6. Build output. If an error occurs mid-stream, it carries the error into the output.Error and return error, allowing the upper layer to perceive "truncated" rather than silently succeeding.
 		output := e.buildStreamOutput(ctx, fullContent.String(), lastChunk, input, startTime)
 		if streamErr != nil {
 			output.Error = streamErr
@@ -225,7 +225,7 @@ func (e *AgentAspectExecutor) ExecuteStream(
 	})
 
 	if err != nil {
-		// 截断/出错：output 可能含部分内容（已通过 chunk 发给前端），带上 error 让上层区分"截断"与"成功"。
+		// Truncation/Error: The output may contain some content (sent to the frontend via chunk), and add error to distinguish between "truncation" and "success" at the upper level.
 		if output != nil {
 			output.Error = err
 			e.manager.ExecuteCompleted(ctx, point, output)
@@ -235,17 +235,17 @@ func (e *AgentAspectExecutor) ExecuteStream(
 		return nil, err
 	}
 
-	// 7. After 切面
+	// 7. After cross-section
 	output, _ = e.manager.ExecuteAfter(ctx, point, output)
 
-	// 8. Completed 切面
+	// 8. Completed cross-section
 	output.IsSuccess = true
 	e.manager.ExecuteCompleted(ctx, point, output)
 
 	return output, nil
 }
 
-// buildPoint 构建切面调用点
+// buildPoint Constructs the facet call point
 func (e *AgentAspectExecutor) buildPoint(opts ExecuteOptions) *aspect.AgentPoint {
 	point := &aspect.AgentPoint{
 		AgentId:   opts.ChainId,
@@ -256,7 +256,7 @@ func (e *AgentAspectExecutor) buildPoint(opts ExecuteOptions) *aspect.AgentPoint
 		Metadata:  make(map[string]string),
 	}
 
-	// 复制消息元数据
+	// Copy message metadata
 	for k, v := range opts.Msg.Metadata.Values() {
 		point.Metadata[k] = v
 	}
@@ -264,26 +264,26 @@ func (e *AgentAspectExecutor) buildPoint(opts ExecuteOptions) *aspect.AgentPoint
 	return point
 }
 
-// mergeMessages 合并消息，处理切面修改的内容
+// mergeMessages to merge messages and handle the changes made in the face
 func (e *AgentAspectExecutor) mergeMessages(input *aspect.AgentInput, currentMessages []*schema.Message) []*schema.Message {
 	var mergedMsgs []*schema.Message
 
-	// 1. 处理系统消息（优先级：切面修改的 SystemPrompt > 切面添加的 Messages > 原始系统消息）
+	// 1. Handling system messages (priority: SystemPrompt modified in the faceted > Messages added in the facet > original system message)
 	if input.SystemPrompt != "" {
-		// 切面修改了 SystemPrompt，使用它
+		// The section modifies SystemPrompt to use it
 		mergedMsgs = append(mergedMsgs, &schema.Message{
 			Role:    schema.System,
 			Content: input.SystemPrompt,
 		})
 	} else if len(input.Messages) > 0 {
-		// 切面可能添加了系统消息到 Messages
+		// The facet may have added system messages to messages
 		for _, m := range input.Messages {
 			if m.Role == schema.System {
 				mergedMsgs = append(mergedMsgs, m)
 			}
 		}
 	} else {
-		// 使用原始消息中的系统消息
+		// Use system messages from the original message
 		for _, m := range currentMessages {
 			if m.Role == schema.System {
 				mergedMsgs = append(mergedMsgs, m)
@@ -291,19 +291,19 @@ func (e *AgentAspectExecutor) mergeMessages(input *aspect.AgentInput, currentMes
 		}
 	}
 
-	// 2. 添加历史消息
+	// 2. Add historical messages
 	if len(input.HistoryMessages) > 0 {
 		mergedMsgs = append(mergedMsgs, input.HistoryMessages...)
 	}
 
-	// 3. 添加当前消息（非系统消息）
+	// 3. Add the current message (non-system message)
 	for _, m := range currentMessages {
 		if m.Role != schema.System {
 			mergedMsgs = append(mergedMsgs, m)
 		}
 	}
 
-	// 如果没有任何消息，返回原始消息
+	// If there is no message, return to the original message
 	if len(mergedMsgs) == 0 {
 		return currentMessages
 	}
@@ -311,7 +311,7 @@ func (e *AgentAspectExecutor) mergeMessages(input *aspect.AgentInput, currentMes
 	return mergedMsgs
 }
 
-// buildOutput 构建同步输出
+// buildOutput: Build synchronous output
 func (e *AgentAspectExecutor) buildOutput(ctx context.Context, msg *schema.Message, input *aspect.AgentInput, startTime time.Time) *aspect.AgentOutput {
 	output := &aspect.AgentOutput{
 		Content:          msg.Content,
@@ -322,7 +322,7 @@ func (e *AgentAspectExecutor) buildOutput(ctx context.Context, msg *schema.Messa
 		SessionKey:       input.SessionKey,
 	}
 
-	// 提取 token 使用统计
+	// Token extraction usage statistics
 	if msg.ResponseMeta != nil && msg.ResponseMeta.Usage != nil {
 		output.TokenUsage = aspect.TokenUsage{
 			PromptTokens:     msg.ResponseMeta.Usage.PromptTokens,
@@ -332,13 +332,13 @@ func (e *AgentAspectExecutor) buildOutput(ctx context.Context, msg *schema.Messa
 		}
 	}
 
-	// 从 context 读取工具调用结果
+	// Read the result of the tool call from the context
 	output.ToolCalls = aspect.GetToolCallResultsFromContext(ctx)
 
 	return output
 }
 
-// buildStreamOutput 构建流式输出
+// buildStreamOutput
 func (e *AgentAspectExecutor) buildStreamOutput(ctx context.Context, fullContent string, lastChunk *schema.Message, input *aspect.AgentInput, startTime time.Time) *aspect.AgentOutput {
 	output := &aspect.AgentOutput{
 		Content:          fullContent,
@@ -348,7 +348,7 @@ func (e *AgentAspectExecutor) buildStreamOutput(ctx context.Context, fullContent
 		SessionKey:       input.SessionKey,
 	}
 
-	// 提取 token 使用统计（从最后一个 chunk 获取）
+	// Token extraction usage statistics (obtained from the last chunk)
 	if lastChunk != nil && lastChunk.ResponseMeta != nil && lastChunk.ResponseMeta.Usage != nil {
 		output.TokenUsage = aspect.TokenUsage{
 			PromptTokens:     lastChunk.ResponseMeta.Usage.PromptTokens,
@@ -358,13 +358,13 @@ func (e *AgentAspectExecutor) buildStreamOutput(ctx context.Context, fullContent
 		}
 	}
 
-	// 从 context 读取工具调用结果
+	// Read the result of the tool call from the context
 	output.ToolCalls = aspect.GetToolCallResultsFromContext(ctx)
 
 	return output
 }
 
-// InjectEmitter 注入 Emitter 到 context
+// InjectEmitter injects an emitter into the context
 func InjectEmitter(ctx context.Context, chainId string) context.Context {
 	if emitter, ok := aspect.GetEmitterWithFallback(ctx, chainId); ok {
 		return aspect.WithEmitter(ctx, emitter)
@@ -372,12 +372,12 @@ func InjectEmitter(ctx context.Context, chainId string) context.Context {
 	return ctx
 }
 
-// InjectAspectManager 注入切面管理器到 context
+// InjectAspectManager injects the Aspect Manager into context
 func InjectAspectManager(ctx context.Context, manager *aspect.AspectManager) context.Context {
 	return aspect.WithAspectManager(ctx, manager)
 }
 
-// BuildTokenMetadata 构建 token 统计元数据
+// BuildTokenMetadata Constructs token statistics and metadata
 func BuildTokenMetadata(msg types.RuleMsg, tokenUsage aspect.TokenUsage, modelName string) {
 	msg.Metadata.PutValue(config.KeyModel, modelName)
 	if tokenUsage.TotalTokens > 0 {
@@ -388,23 +388,23 @@ func BuildTokenMetadata(msg types.RuleMsg, tokenUsage aspect.TokenUsage, modelNa
 	}
 }
 
-// BuildStreamEndMetadata 构建流式结束元数据
+// BuildStreamEndMetadata to construct the stream end metadata
 func BuildStreamEndMetadata(msg types.RuleMsg) {
 	msg.Metadata.PutValue(config.KeyStreamCompleted, config.ValueTrue)
 	msg.Metadata.PutValue(config.KeyChunk, "")
 }
 
-// BuildStreamChunkMetadata 构建流式块元数据
+// BuildStreamChunkMetadata to construct streaming block metadata
 func BuildStreamChunkMetadata(msg types.RuleMsg, isFirst bool) {
 	msg.Metadata.PutValue(config.KeyChunk, config.ValueTrue)
-	// 修复断流 BUG：不要设置 KeyStreamStart
-	// RuleGo 引擎在遇到 KeyStreamStart 时会提前调用 childDone() 结束 HTTP 等待
-	// 导致长耗时的工具调用后，后续流式 chunk 会因为 Context 被 Cancel 而被丢弃
-	// 我们依赖最后的 types.Success 消息来触发 childDone() 结束请求
+	// Fixed stream drop BUG: Do not set KeyStreamStart
+	// When the RuleGo engine encounters KeyStreamStart, it calls childDone() in advance to end the HTTP wait
+	// This causes the time-consuming tool call to be discarded due to the context being canceled
+	// We rely on the last types.Success message to trigger the childDone() termination request
 	msg.Metadata.Delete(config.KeyStreamStart)
 }
 
-// BuildStreamChunkMetadataWithModel 构建流式块元数据（带模型名称）
+// BuildStreamChunkMetadataWithModel to construct streaming block metadata (with model name)
 func BuildStreamChunkMetadataWithModel(msg types.RuleMsg, isFirst bool, modelName string) {
 	BuildStreamChunkMetadata(msg, isFirst)
 	if modelName != "" {
@@ -416,18 +416,18 @@ func formatInt(n int) string {
 	return strconv.Itoa(n)
 }
 
-// logDebugInfo 打印调试信息：系统提示词摘要和最新消息
+// logDebugInfo prints debug information: system prompt summaries and latest news
 func (e *AgentAspectExecutor) logDebugInfo(messages []*schema.Message, systemPrompt string) {
 	if e.logger == nil {
 		return
 	}
 
-	// 打印最新一条用户消息
+	// Print the latest user message
 	for i := len(messages) - 1; i >= 0; i-- {
 		msg := messages[i]
 		if msg.Role == schema.User {
 			content := msg.Content
-			// 如果是多模态消息，提取文本和图片信息
+			// For multimodal messages, extract text and image information
 			if len(msg.UserInputMultiContent) > 0 {
 				var textParts []string
 				imageCount := 0
@@ -454,7 +454,7 @@ func (e *AgentAspectExecutor) logDebugInfo(messages []*schema.Message, systemPro
 	}
 }
 
-// truncateString 截断字符串
+// truncateString Truncates the string
 func truncateString(s string, maxLen int) string {
 	if len(s) <= maxLen {
 		return s

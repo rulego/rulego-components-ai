@@ -16,7 +16,7 @@ import (
 	"github.com/rulego/rulego-components-ai/tool/common"
 )
 
-// forceFallback 强制 hasRipgrep 返回 false，保证测试走 Go 兜底路径。
+// forceFallback forces hasRipgrep to return false, ensuring the test takes a Go-backed path.
 func forceFallback(t *testing.T) {
 	t.Helper()
 	t.Setenv("PATH", "")
@@ -26,7 +26,7 @@ func forceFallback(t *testing.T) {
 	})
 }
 
-// makeTempFixture 构造测试文件树。
+// makeTempFixture constructs a test file tree.
 //
 //	root/
 //	  a.go
@@ -49,7 +49,7 @@ func makeTempFixture(t *testing.T) string {
 	mustWrite("sub/d.go", "x")
 	mustWrite("sub/e.txt", "x")
 
-	// mtime 间隔，d.go 最新 -> e.txt 最旧
+	// mtime interval, d.go latest -> e.txt oldest version
 	touchWithOffset := func(name string, offset time.Duration) {
 		full := filepath.Join(root, name)
 		require.NoError(t, os.Chtimes(full, time.Now(), time.Now().Add(offset)))
@@ -75,8 +75,8 @@ func runGlob(t *testing.T, root string, params map[string]interface{}) string {
 	return out
 }
 
-// TestGlob_CrossDirectory 验证 ctx 注入 allowCrossDir：
-// true 放行 workDir 外目录，false 拒绝。forceFallback 走 Go 兜底。
+// TestGlob_CrossDirectory Verifying ctx injection allowCrossDir:
+// true allows the workDir external directory; false rejects. forceFallback goes to Go as a backup.
 func TestGlob_CrossDirectory(t *testing.T) {
 	forceFallback(t)
 	workDir := t.TempDir()
@@ -90,12 +90,12 @@ func TestGlob_CrossDirectory(t *testing.T) {
 	})
 	args, _ := json.Marshal(map[string]string{"pattern": "*.txt", "path": outside})
 
-	// cross=true：放行 workDir 外目录，匹配到 findme.txt
+	// cross=true: Releases the workDir external directory and matches it to findme.txt
 	out, err := ti.InvokableRun(common.WithAllowCrossDir(context.Background(), true), string(args))
 	assert.NoError(t, err)
 	assert.Contains(t, out, "findme.txt")
 
-	// cross=false：拒绝 workDir 外目录
+	// cross=false: Rejects the workDir external directory
 	_, err = ti.InvokableRun(common.WithAllowCrossDir(context.Background(), false), string(args))
 	assert.Error(t, err)
 }
@@ -110,7 +110,7 @@ func TestGlob_BasicPattern_Fallback(t *testing.T) {
 	assert.Contains(t, out, "a.go")
 	assert.Contains(t, out, "b.go")
 	assert.NotContains(t, out, "c.txt")
-	// 顶层 *.go 不应包含 sub/ 下
+	// The top-level *.go should not include sub/ below
 	assert.NotContains(t, out, "sub/d.go")
 }
 
@@ -167,7 +167,7 @@ func TestGlob_MtimeSort_Fallback(t *testing.T) {
 		"pattern":       "**/*",
 		"sort_by_mtime": true,
 	})
-	// mtime 最新 -> 最旧：sub/d.go(-1s), b.go(-2s), a.go(-3s), c.txt(-4s), sub/e.txt(-5s)
+	// mtime latest -> oldest: sub/d.go(-1s), b.go(-2s), a.go(-3s), c.txt(-4s), sub/e.txt(-5s)
 	order := []string{"sub/d.go", "b.go", "a.go", "c.txt", "sub/e.txt"}
 	prev := -1
 	for _, name := range order {
@@ -186,8 +186,8 @@ func TestGlob_MtimeSortDisabled_Fallback(t *testing.T) {
 		"pattern":       "*.go",
 		"sort_by_mtime": false,
 	})
-	// 关闭 mtime 排序后顺序由 WalkDir 决定（a.go 通常在前），不强制断言具体顺序，
-	// 只验证两个文件都出现
+	// After turning off mtime sorting, the order is determined by WalkDir (a.go usually comes first), without forcibly asserting the exact order,
+	// Only verify that both files appear
 	assert.Contains(t, out, "a.go")
 	assert.Contains(t, out, "b.go")
 }
@@ -219,7 +219,7 @@ func TestGlob_PathIsFile_Rejected(t *testing.T) {
 		"pattern": "*.go",
 		"path":    single,
 	})
-	// path 必须是目录，传入文件应报错
+	// The path must be a directory; passing in files should cause errors
 	upperOut := strings.ToUpper(out)
 	assert.True(t,
 		strings.Contains(upperOut, "DIRECTORY") || strings.Contains(upperOut, "ERROR"),
@@ -231,7 +231,7 @@ func TestGlob_FallbackIsReachable(t *testing.T) {
 	require.False(t, common.HasRipgrep(), "HasRipgrep should be false after forceFallback")
 }
 
-// TestGlob_RipgrepPath 覆盖 glob 的 rg --files 路径（环境装了 rg 才执行）。
+// TestGlob_RipgrepPath Write the rg --files path of the glob (the environment will only execute it if the rg is installed).
 func TestGlob_RipgrepPath(t *testing.T) {
 	common.ResetRipgrepCache()
 	if !common.HasRipgrep() {
@@ -245,12 +245,12 @@ func TestGlob_RipgrepPath(t *testing.T) {
 	assert.Contains(t, out, "sub/d.go")
 }
 
-// ---- glob 模式语法边界（Go 兜底，filepath.Match + 自实现 **）----
+// ---- glob pattern syntax boundary (Go for the bottom line, filepath.Match + Auto-implementation **)----
 
 func TestGlob_QuestionMark_Fallback(t *testing.T) {
 	forceFallback(t)
 	root := makeTempFixture(t)
-	// ?.go：单字符名 + .go，匹配 a.go/b.go；纯文件名模式不含 /，不匹配 sub/d.go
+	// ?. go: single-character name +.go, matches a.go/b.go; pure filename mode does not include /, does not match sub/d.go
 	out := runGlob(t, root, map[string]interface{}{"pattern": "?.go"})
 	assert.Contains(t, out, "a.go")
 	assert.Contains(t, out, "b.go")
@@ -261,7 +261,7 @@ func TestGlob_QuestionMark_Fallback(t *testing.T) {
 func TestGlob_CharClass_Fallback(t *testing.T) {
 	forceFallback(t)
 	root := makeTempFixture(t)
-	// [ab].go：匹配 a.go/b.go，不匹配 c.txt
+	// [ab].go: matches a.go/b.go, does not match c.txt
 	out := runGlob(t, root, map[string]interface{}{"pattern": "[ab].go"})
 	assert.Contains(t, out, "a.go")
 	assert.Contains(t, out, "b.go")
@@ -271,14 +271,14 @@ func TestGlob_CharClass_Fallback(t *testing.T) {
 func TestGlob_ExactPath_Fallback(t *testing.T) {
 	forceFallback(t)
 	root := makeTempFixture(t)
-	// 精确路径 sub/d.go（含 /，无通配符，filepath.Match 精确匹配）
+	// Exact path sub/d.go (contains /, no wildcard, filepath.Match: Accurate matching)
 	out := runGlob(t, root, map[string]interface{}{"pattern": "sub/d.go"})
 	assert.Contains(t, out, "sub/d.go")
 	assert.NotContains(t, out, "a.go")
 	assert.NotContains(t, out, "sub/e.txt")
 }
 
-// ---- gitignore（对齐 rg）----
+// ---- gitignore (aligning rg) ----
 
 func TestGlob_Gitignore_Fallback(t *testing.T) {
 	forceFallback(t)
@@ -289,5 +289,5 @@ func TestGlob_Gitignore_Fallback(t *testing.T) {
 
 	out := runGlob(t, root, map[string]interface{}{"pattern": "**/*"})
 	assert.Contains(t, out, "keep.go")
-	assert.NotContains(t, out, "skip.log") // 被 .gitignore 跳过
+	assert.NotContains(t, out, "skip.log") // Skipped by.gitignore
 }
