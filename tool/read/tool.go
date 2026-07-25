@@ -117,8 +117,8 @@ func (t *readTool) Info(ctx context.Context) (*schema.ToolInfo, error) {
 
 	props.Set("operation", &jsonschema.Schema{
 		Type:        "string",
-		Description: "Operation type: file (read file), search (search content), list (list directory)",
-		Enum:        []any{"file", "search", "list"},
+		Description: "Omit or use 'read' to read a file ('file' is an alias); 'search' to search content, 'list' to list a directory.",
+		Enum:        []any{"read", "file", "search", "list"},
 	})
 
 	props.Set("path", &jsonschema.Schema{
@@ -183,7 +183,6 @@ func (t *readTool) Info(ctx context.Context) (*schema.ToolInfo, error) {
 		ParamsOneOf: schema.NewParamsOneOfByJSONSchema(&jsonschema.Schema{
 			Type:       "object",
 			Properties: props,
-			Required:   []string{"operation"},
 		}),
 	}, nil
 }
@@ -217,8 +216,18 @@ func (t *readTool) InvokableRun(ctx context.Context, arguments string, opts ...t
 		return common.ErrPathInvalid(err.Error()).Error(), nil
 	}
 
+	// operation 为空时按参数推断默认值：部分模型只传 path/query 不传 operation。
+	// 有 query 视为搜索，否则视为读文件，避免 read 工具因缺省 operation 整体不可用。
+	if params.Operation == "" {
+		if params.Query != "" {
+			params.Operation = "search"
+		} else {
+			params.Operation = "file"
+		}
+	}
+
 	switch params.Operation {
-	case "file":
+	case "file", "read": // read 是 file 的别名，两者都读文件
 		return t.readFile(params, r)
 	case "search":
 		return t.search(ctx, params, r)

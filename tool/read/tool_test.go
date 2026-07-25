@@ -75,6 +75,40 @@ func TestReadTool_CrossDirectory(t *testing.T) {
 	assert.Error(t, err)
 }
 
+// TestReadTool_DefaultOperation 验证缺省 operation 时按参数推断：
+// 只传 path 默认读文件（治部分模型不传 operation 导致 read 工具报 Operation not supported）。
+func TestReadTool_DefaultOperation(t *testing.T) {
+	config := DefaultConfig()
+	rTool, err := NewTool(config)
+	require.NoError(t, err)
+
+	toolInstance := rTool.(interface {
+		InvokableRun(ctx context.Context, arguments string, opts ...tool.Option) (string, error)
+	})
+
+	wd, err := os.Getwd()
+	require.NoError(t, err)
+	toolGoPath := filepath.ToSlash(filepath.Join(wd, "tool.go"))
+	if len(toolGoPath) > 2 && toolGoPath[1] == ':' {
+		drive := strings.ToLower(string(toolGoPath[0]))
+		toolGoPath = "/" + drive + toolGoPath[2:]
+	}
+
+	// 只传 path（不带 operation）：应默认按 file 读取，不再报 Operation not supported
+	paramsBytes, _ := json.Marshal(map[string]interface{}{"path": toolGoPath})
+	resultStr, err := toolInstance.InvokableRun(context.Background(), string(paramsBytes))
+	assert.NoError(t, err)
+	assert.NotContains(t, resultStr, "Operation not supported")
+	assert.Contains(t, resultStr, "tool.go")
+
+	// operation=read：file 的别名，同样读文件
+	readArgs, _ := json.Marshal(map[string]interface{}{"operation": "read", "path": toolGoPath})
+	readStr, err := toolInstance.InvokableRun(context.Background(), string(readArgs))
+	assert.NoError(t, err)
+	assert.NotContains(t, readStr, "Operation not supported")
+	assert.Contains(t, readStr, "tool.go")
+}
+
 func TestReadTool_ListGitBashPath(t *testing.T) {
 	config := DefaultConfig()
 	rTool, err := NewTool(config)

@@ -36,6 +36,11 @@ func (p *PathResolver) Resolve(path string) string {
 	path = strings.TrimSpace(path)
 	path = strings.TrimRight(path, "\\")
 
+	// 展开 ~ 为用户主目录（~/.tpclaw/xxx -> <home>/.tpclaw/xxx）
+	if expanded, err := ExpandHomeDir(path); err == nil {
+		path = expanded
+	}
+
 	// Convert Git Bash style path on Windows
 	path = ConvertGitBashPath(path)
 

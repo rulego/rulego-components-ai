@@ -1,11 +1,24 @@
 package common
 
 import (
+	"os"
 	"path/filepath"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
 )
+
+// TestPathResolver_Resolve_HomeExpansion 验证 ~/xxx 展开为用户主目录（治 ~/.tpclaw/xxx 被当字面 ~ 目录）。
+func TestPathResolver_Resolve_HomeExpansion(t *testing.T) {
+	home, err := os.UserHomeDir()
+	assert.NoError(t, err)
+
+	resolver, err := NewPathResolver(t.TempDir())
+	assert.NoError(t, err)
+
+	result := resolver.Resolve("~/.tpclaw/config.json")
+	assert.Equal(t, filepath.Join(home, ".tpclaw/config.json"), result)
+}
 
 func TestConvertGitBashPath(t *testing.T) {
 	tests := []struct {
