@@ -111,7 +111,7 @@ func NewTool(config Config) (tool.BaseTool, error) {
 	if config.Mode == "" {
 		config.Mode = ModeAllow
 	}
-	if config.Allow == nil {
+	if len(config.Allow) == 0 {
 		config.Allow = platform.DefaultAllow
 	}
 	if config.Deny == nil {
