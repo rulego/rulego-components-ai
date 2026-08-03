@@ -14,7 +14,7 @@ require (
 	github.com/eino-contrib/jsonschema v1.0.3
 	github.com/google/uuid v1.6.0
 	github.com/mark3labs/mcp-go v0.44.0-beta.3
-	github.com/rulego/rulego v0.35.3-0.20260527090622-d8b29d722bac
+	github.com/rulego/rulego v0.37.0
 	github.com/sashabaranov/go-openai v1.41.1
 	github.com/stretchr/testify v1.11.1
 	github.com/wk8/go-ordered-map/v2 v2.1.8
@@ -42,7 +42,7 @@ require (
 	github.com/dustin/go-humanize v1.0.1 // indirect
 	github.com/eclipse/paho.mqtt.golang v1.4.3 // indirect
 	github.com/evanphx/json-patch v0.5.2 // indirect
-	github.com/expr-lang/expr v1.17.8-0.20260205062502-2aaa9aa0612a // indirect
+	github.com/expr-lang/expr v1.17.8 // indirect
 	github.com/go-json-experiment/json v0.0.0-20250223041408-d3c622f1b874 // indirect
 	github.com/go-sourcemap/sourcemap v2.1.3+incompatible // indirect
 	github.com/go-sql-driver/mysql v1.8.1 // indirect
