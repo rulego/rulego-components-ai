@@ -1372,3 +1372,40 @@ func TestExtractImagesFromExtra(t *testing.T) {
 		})
 	}
 }
+
+// TestFilterRecentToolCallsDropEmptyAssistant 回归测试：
+// 当历史中出现既无 content 也无 tool_calls 的损坏 assistant 空壳消息时，
+// 必须丢弃该空壳，并且其后的 tool 结果消息因失去配对的 assistant 工具调用
+// 而成为孤儿，也必须一并丢弃，避免向 LLM 发送 {"role":"assistant"} 空壳
+// 或孤儿 tool 消息导致 OpenAI/Ollama 端点报 "invalid message content type: <nil>"。
+func TestFilterRecentToolCallsDropEmptyAssistant(t *testing.T) {
+	userMsg := &session.SessionMessage{Role: string(schema.User), Content: "你好"}
+	// 损坏的空 assistant 空壳（既无 content 也无 tool_calls）
+	emptyAssistant := &session.SessionMessage{Role: string(schema.Assistant), Content: ""}
+	// 它后面跟随的 tool 结果消息（此时已成孤儿）
+	orphanTool := &session.SessionMessage{Role: string(schema.Tool), Content: "工具结果", ToolCallID: "call_1"}
+	finalAssistant := &session.SessionMessage{Role: string(schema.Assistant), Content: "最终答复"}
+
+	msgs := []*session.SessionMessage{userMsg, emptyAssistant, orphanTool, finalAssistant}
+
+	got := filterRecentToolCalls(msgs, 5)
+
+	// 期望：空壳 assistant 与孤儿 tool 消息都被丢弃，仅剩 user + 最终 assistant
+	if len(got) != 2 {
+		t.Fatalf("期望保留 2 条消息，实际 %d 条: %+v", len(got), got)
+	}
+	if got[0].Role != string(schema.User) {
+		t.Errorf("第一条应为 user，实际 %s", got[0].Role)
+	}
+	if got[1].Role != string(schema.Assistant) || got[1].Content != "最终答复" {
+		t.Errorf("第二条应为最终答复 assistant，实际 role=%s content=%q", got[1].Role, got[1].Content)
+	}
+	for _, m := range got {
+		if m.Role == string(schema.Assistant) && m.Content == "" && len(m.ToolCalls) == 0 {
+			t.Errorf("结果中不应存在空 assistant 空壳消息")
+		}
+		if m.Role == string(schema.Tool) {
+			t.Errorf("结果中不应存在孤儿 tool 消息")
+		}
+	}
+}

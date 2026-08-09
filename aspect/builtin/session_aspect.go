@@ -463,12 +463,19 @@ func filterRecentToolCalls(msgs []*session.SessionMessage, keepCount int) []*ses
 	currentGroupStart := -1
 
 	for i, msg := range msgs {
-		if msg.Role == string(schema.Assistant) && len(msg.ToolCalls) > 0 {
-			currentGroupStart = i
-			inToolCallGroup = true
-			if keepGroupStarts[i] {
-				result = append(result, msg)
+		if msg.Role == string(schema.Assistant) {
+			if len(msg.ToolCalls) > 0 {
+				currentGroupStart = i
+				inToolCallGroup = true
+				if keepGroupStarts[i] {
+					result = append(result, msg)
+				}
 			}
+			// 损坏的空 assistant 消息（既无 content 也无 tool_calls）会演变成
+			// {"role":"assistant"} 空壳，导致下游 OpenAI/Ollama 端点报
+			// "invalid message content type: <nil>"。此处直接丢弃，并且不置
+			// inToolCallGroup，使其后可能跟随的 tool 结果消息一并被丢弃，
+			// 避免产生孤儿 tool 消息（孤儿 tool 消息同样会让端点报错）。
 			continue
 		}
 
@@ -558,6 +565,11 @@ func convertSessionMessagesToSchema(msgs []*session.SessionMessage) []*schema.Me
 	for _, msg := range sanitizedMessages {
 		switch msg.Role {
 		case string(schema.Assistant):
+			// 防御：既不是有效内容也不是工具调用的空 assistant 消息直接跳过，
+			// 避免向 LLM 发送 {"role":"assistant"} 空壳触发 400。
+			if msg.Content == "" && len(msg.ToolCalls) == 0 {
+				continue
+			}
 			schemaMsg := &schema.Message{
 				Role:    schema.Assistant,
 				Content: msg.Content,

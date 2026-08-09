@@ -440,3 +440,33 @@ func BenchmarkConvertRuleMsgToAgentInput(b *testing.B) {
 		_, _ = ConvertRuleMsgToAgentInput(ctx, msg, nil, false, "", nil, "gpt-4", "test_agent", nil)
 	}
 }
+
+// TestBuildSchemaMessageEmptyAssistant 回归测试：
+// assistant 消息若既无内容也无工具调用（损坏/无效数据），buildSchemaMessage
+// 必须返回 nil，调用方会跳过该消息，避免向 LLM 发送 {"role":"assistant"} 空壳
+// 触发 Ollama/OpenAI 端点报 "invalid message content type: <nil>"。
+func TestBuildSchemaMessageEmptyAssistant(t *testing.T) {
+	// 1) 空 assistant → 必须返回 nil
+	emptyAsst := config.ChatMessage{Role: string(schema.Assistant), Content: ""}
+	if sm := buildSchemaMessage(emptyAsst, "", nil, nil); sm != nil {
+		t.Errorf("空 assistant 应返回 nil，实际返回 %+v", sm)
+	}
+
+	// 2) 带工具调用的 assistant → 必须保留 tool_calls（不能是空壳）
+	tcAsst := config.ChatMessage{
+		Role: string(schema.Assistant),
+		Content: "",
+		ToolCalls: []config.ChatToolCall{
+			{ID: "call_1", Type: "function", Function: config.ChatFunctionCall{Name: "get_weather", Arguments: "{}"}},
+		},
+	}
+	if sm := buildSchemaMessage(tcAsst, "", nil, nil); sm == nil || len(sm.ToolCalls) != 1 {
+		t.Errorf("带 tool_calls 的 assistant 应保留 tool_calls，实际 %+v", sm)
+	}
+
+	// 3) 带正常内容的 assistant → 必须保留内容
+	normalAsst := config.ChatMessage{Role: string(schema.Assistant), Content: "好的"}
+	if sm := buildSchemaMessage(normalAsst, "好的", nil, nil); sm == nil || sm.Content != "好的" {
+		t.Errorf("带内容的 assistant 应保留内容，实际 %+v", sm)
+	}
+}
