@@ -116,7 +116,9 @@ func processSingleMessage(m config.ChatMessage, supportsVision bool, agentID str
 
 	// 纯文本消息优化：直接添加
 	if len(allImages) == 0 {
-		input.Messages = append(input.Messages, buildSchemaMessage(m, content, nil, nil))
+		if sm := buildSchemaMessage(m, content, nil, nil); sm != nil {
+			input.Messages = append(input.Messages, sm)
+		}
 		return
 	}
 
@@ -124,7 +126,9 @@ func processSingleMessage(m config.ChatMessage, supportsVision bool, agentID str
 	finalContent, extra := processImages(allImages, content, agentID, logger)
 
 	if !supportsVision {
-		input.Messages = append(input.Messages, buildSchemaMessage(m, finalContent, extra, nil))
+		if sm := buildSchemaMessage(m, finalContent, extra, nil); sm != nil {
+			input.Messages = append(input.Messages, sm)
+		}
 	} else {
 		// 模型支持视觉能力，使用多模态格式
 		if logger != nil {
@@ -133,12 +137,19 @@ func processSingleMessage(m config.ChatMessage, supportsVision bool, agentID str
 
 		multiContent := buildVisionMultiContent(allImages, finalContent, logger)
 
-		input.Messages = append(input.Messages, buildSchemaMessage(m, "", extra, multiContent))
+		if sm := buildSchemaMessage(m, "", extra, multiContent); sm != nil {
+			input.Messages = append(input.Messages, sm)
+		}
 	}
 }
 
 // buildSchemaMessage 构建 schema.Message，并保留工具调用历史字段。
+// 既无内容也无工具调用的 assistant 返回 nil（调用方跳过），
+// 避免向下游端点发送 {"role":"assistant"} 空壳触发 400。
 func buildSchemaMessage(m config.ChatMessage, content string, extra map[string]any, multiContent []schema.MessageInputPart) *schema.Message {
+	if m.Role == string(schema.Assistant) && content == "" && len(m.ToolCalls) == 0 && len(multiContent) == 0 {
+		return nil
+	}
 	msg := &schema.Message{
 		Role:    schema.RoleType(m.Role),
 		Content: content,

@@ -1372,3 +1372,39 @@ func TestExtractImagesFromExtra(t *testing.T) {
 		})
 	}
 }
+
+// TestFilterRecentToolCallsDropEmptyAssistant 空壳 assistant 及其后的孤儿 tool 消息应被一并丢弃。
+// 输入需包含多于 keepCount 的工具调用组，否则函数提前原样返回，测不到过滤循环。
+func TestFilterRecentToolCallsDropEmptyAssistant(t *testing.T) {
+	group1Asst := &session.SessionMessage{Role: string(schema.Assistant), ToolCalls: []session.ToolCallInfo{{ID: "g1", Name: "t1"}}}
+	group1Tool := &session.SessionMessage{Role: string(schema.Tool), Content: "r1", ToolCallID: "g1"}
+	group2Asst := &session.SessionMessage{Role: string(schema.Assistant), ToolCalls: []session.ToolCallInfo{{ID: "g2", Name: "t2"}}}
+	group2Tool := &session.SessionMessage{Role: string(schema.Tool), Content: "r2", ToolCallID: "g2"}
+	userMsg := &session.SessionMessage{Role: string(schema.User), Content: "你好"}
+	emptyAssistant := &session.SessionMessage{Role: string(schema.Assistant), Content: ""}
+	orphanTool := &session.SessionMessage{Role: string(schema.Tool), Content: "工具结果", ToolCallID: "call_1"}
+	finalAssistant := &session.SessionMessage{Role: string(schema.Assistant), Content: "最终答复"}
+
+	msgs := []*session.SessionMessage{group1Asst, group1Tool, group2Asst, group2Tool, userMsg, emptyAssistant, orphanTool, finalAssistant}
+
+	got := filterRecentToolCalls(msgs, 1)
+
+	// 期望：组1被过滤，空壳与孤儿 tool 丢弃，保留 组2 + user + 最终 assistant
+	if len(got) != 4 {
+		t.Fatalf("期望保留 4 条消息，实际 %d 条: %+v", len(got), got)
+	}
+	if got[0].Role != string(schema.Assistant) || len(got[0].ToolCalls) != 1 || got[0].ToolCalls[0].ID != "g2" {
+		t.Errorf("第一条应为组2 assistant(tool_calls)，实际 role=%s toolCalls=%d", got[0].Role, len(got[0].ToolCalls))
+	}
+	if got[3].Role != string(schema.Assistant) || got[3].Content != "最终答复" {
+		t.Errorf("最后一条应为最终答复 assistant，实际 role=%s content=%q", got[3].Role, got[3].Content)
+	}
+	for _, m := range got {
+		if m.Role == string(schema.Assistant) && m.Content == "" && len(m.ToolCalls) == 0 {
+			t.Errorf("结果中不应存在空 assistant 空壳消息")
+		}
+		if m.Role == string(schema.Tool) && m.ToolCallID == "call_1" {
+			t.Errorf("结果中不应存在孤儿 tool 消息")
+		}
+	}
+}

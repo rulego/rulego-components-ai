@@ -472,6 +472,12 @@ func filterRecentToolCalls(msgs []*session.SessionMessage, keepCount int) []*ses
 			continue
 		}
 
+		// 空壳 assistant（无内容无工具调用）会让下游端点报 400，丢弃；
+		// 不置 inToolCallGroup，其后的孤儿 tool 消息一并丢弃
+		if msg.Role == string(schema.Assistant) && msg.Content == "" {
+			continue
+		}
+
 		if msg.Role == string(schema.Tool) {
 			if inToolCallGroup && keepGroupStarts[currentGroupStart] {
 				result = append(result, msg)
@@ -558,6 +564,10 @@ func convertSessionMessagesToSchema(msgs []*session.SessionMessage) []*schema.Me
 	for _, msg := range sanitizedMessages {
 		switch msg.Role {
 		case string(schema.Assistant):
+			// 空 assistant 空壳（无内容无工具调用）会让端点报 400，跳过
+			if msg.Content == "" && len(msg.ToolCalls) == 0 {
+				continue
+			}
 			schemaMsg := &schema.Message{
 				Role:    schema.Assistant,
 				Content: msg.Content,
