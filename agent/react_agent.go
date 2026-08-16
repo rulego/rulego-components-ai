@@ -173,11 +173,13 @@ func (x *ReactAgentNode) Init(ruleConfig types.Config, configuration types.Confi
 		maxStep = DefaultMaxStep
 	}
 
+	checkMode := resolveStreamToolCallCheck(x.Config.StreamToolCallCheck, len(tools) > 0)
 	agent, err := CreateReactAgent(context.Background(), chatModel, AgentOptions{
-		MaxStep:         maxStep,
-		ToolsConfig:     buildToolsConfig(tools),
-		Logger:          ruleConfig.Logger,
-		MessageModifier: messageModifier,
+		MaxStep:             maxStep,
+		ToolsConfig:         buildToolsConfig(tools),
+		Logger:              ruleConfig.Logger,
+		MessageModifier:     messageModifier,
+		StreamToolCallCheck: checkMode,
 	})
 	if err != nil {
 		return fmt.Errorf("failed to create react agent: %v", err)

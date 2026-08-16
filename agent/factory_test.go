@@ -6,6 +6,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/cloudwego/eino/components/tool"
 	"github.com/cloudwego/eino/schema"
@@ -357,7 +358,7 @@ func TestIsExecutableToolCallArgs(t *testing.T) {
 
 // TestCreateStreamToolCallChecker_AcceptsNamedToolCallWithoutCompleteArgs 测试流式检查器识别未完成参数的工具调用
 func TestCreateStreamToolCallChecker_AcceptsNamedToolCallWithoutCompleteArgs(t *testing.T) {
-	checker := createStreamToolCallChecker(nil)
+	checker := createStreamToolCallChecker(nil, "")
 	stream := schema.StreamReaderFromArray([]*schema.Message{
 		{
 			ToolCalls: []schema.ToolCall{
@@ -381,7 +382,7 @@ func TestCreateStreamToolCallChecker_AcceptsNamedToolCallWithoutCompleteArgs(t *
 
 // TestCreateStreamToolCallChecker_RejectsUnnamedToolCall 测试流式检查器忽略没有名称的工具调用
 func TestCreateStreamToolCallChecker_RejectsUnnamedToolCall(t *testing.T) {
-	checker := createStreamToolCallChecker(nil)
+	checker := createStreamToolCallChecker(nil, "")
 	stream := schema.StreamReaderFromArray([]*schema.Message{
 		{
 			ToolCalls: []schema.ToolCall{
@@ -405,7 +406,7 @@ func TestCreateStreamToolCallChecker_RejectsUnnamedToolCall(t *testing.T) {
 
 // TestCreateStreamToolCallChecker_AcceptsValidArguments 测试流式检查器识别有效工具调用
 func TestCreateStreamToolCallChecker_AcceptsValidArguments(t *testing.T) {
-	checker := createStreamToolCallChecker(nil)
+	checker := createStreamToolCallChecker(nil, "")
 	stream := schema.StreamReaderFromArray([]*schema.Message{
 		{
 			ToolCalls: []schema.ToolCall{
@@ -423,6 +424,106 @@ func TestCreateStreamToolCallChecker_AcceptsValidArguments(t *testing.T) {
 
 	hasToolCall, err := checker(context.Background(), stream)
 
+	assert.Nil(t, err)
+	assert.True(t, hasToolCall)
+}
+
+// TestResolveStreamToolCallCheck 显式配置优先并归一化大小写空白，缺省按工具推断
+func TestResolveStreamToolCallCheck(t *testing.T) {
+	assert.Equal(t, StreamCheckDrain, resolveStreamToolCallCheck("drain", false))
+	assert.Equal(t, StreamCheckFirstContent, resolveStreamToolCallCheck("firstContent", true))
+	assert.Equal(t, StreamCheckDrain, resolveStreamToolCallCheck(" Drain ", true))
+	assert.Equal(t, streamCheckWindow, resolveStreamToolCallCheck("", true))
+	assert.Equal(t, StreamCheckFirstContent, resolveStreamToolCallCheck("", false))
+	assert.Equal(t, StreamCheckFirstContent, resolveStreamToolCallCheck("invalid", false))
+	assert.Equal(t, streamCheckWindow, resolveStreamToolCallCheck("invalid", true))
+	assert.Equal(t, streamCheckWindow, resolveStreamToolCallCheck("window", false))
+}
+
+// TestStreamToolCallChecker_FirstContentMode 首内容即判定为纯文本，即使后面还有工具调用
+func TestStreamToolCallChecker_FirstContentMode(t *testing.T) {
+	checker := createStreamToolCallChecker(nil, StreamCheckFirstContent)
+	stream := schema.StreamReaderFromArray([]*schema.Message{
+		{Content: "先说明一下"},
+		{ToolCalls: []schema.ToolCall{{ID: "c1", Type: "function", Function: schema.FunctionCall{Name: "bash", Arguments: "{}"}}}},
+	})
+	hasToolCall, err := checker(context.Background(), stream)
+	assert.Nil(t, err)
+	// 首内容已提前判定，后续工具调用不参与判定（该模式的已知取舍）
+	assert.False(t, hasToolCall)
+}
+
+// TestStreamToolCallChecker_DrainMode 完整消费流，先文本后工具调用也能识别
+func TestStreamToolCallChecker_DrainMode(t *testing.T) {
+	checker := createStreamToolCallChecker(nil, StreamCheckDrain)
+	stream := schema.StreamReaderFromArray([]*schema.Message{
+		{Content: "先说明一下"},
+		{ToolCalls: []schema.ToolCall{{ID: "c1", Type: "function", Function: schema.FunctionCall{Name: "bash", Arguments: "{}"}}}},
+	})
+	hasToolCall, err := checker(context.Background(), stream)
+	assert.Nil(t, err)
+	assert.True(t, hasToolCall)
+}
+
+// TestStreamToolCallChecker_WindowMode 前瞻窗口：窗口内出现工具调用判 true
+func TestStreamToolCallChecker_WindowMode_ToolCallWithinWindow(t *testing.T) {
+	checker := createStreamToolCallChecker(nil, streamCheckWindow)
+	stream := schema.StreamReaderFromArray([]*schema.Message{
+		{Content: "我看一下"},
+		{Content: "，"},
+		{ToolCalls: []schema.ToolCall{{ID: "c1", Type: "function", Function: schema.FunctionCall{Name: "bash", Arguments: "{}"}}}},
+	})
+	hasToolCall, err := checker(context.Background(), stream)
+	assert.Nil(t, err)
+	assert.True(t, hasToolCall)
+}
+
+// TestStreamToolCallChecker_WindowMode_TextOnlyEOF 纯文本短流在窗口内结束，EOF 即判 false
+func TestStreamToolCallChecker_WindowMode_TextOnlyEOF(t *testing.T) {
+	checker := createStreamToolCallChecker(nil, streamCheckWindow)
+	stream := schema.StreamReaderFromArray([]*schema.Message{
+		{Content: "答案"},
+		{Content: "是 42"},
+	})
+	hasToolCall, err := checker(context.Background(), stream)
+	assert.Nil(t, err)
+	assert.False(t, hasToolCall)
+}
+
+// TestStreamToolCallChecker_WindowMode_Expiry 窗口内持续纯文本超时后判 false
+func TestStreamToolCallChecker_WindowMode_Expiry(t *testing.T) {
+	orig := streamCheckWindowDuration
+	streamCheckWindowDuration = 30 * time.Millisecond
+	defer func() { streamCheckWindowDuration = orig }()
+
+	sr, sw := schema.Pipe[*schema.Message](8)
+	go func() {
+		sw.Send(&schema.Message{Content: "开始回答"}, nil)
+		time.Sleep(60 * time.Millisecond)
+		sw.Send(&schema.Message{Content: "后续文本"}, nil)
+		sw.Close()
+	}()
+	checker := createStreamToolCallChecker(nil, streamCheckWindow)
+	hasToolCall, err := checker(context.Background(), sr)
+	assert.Nil(t, err)
+	assert.False(t, hasToolCall)
+}
+
+// TestStreamToolCallChecker_WindowMode_SilentThenToolCall 文本后静默再出工具调用不误判
+func TestStreamToolCallChecker_WindowMode_SilentThenToolCall(t *testing.T) {
+	orig := streamCheckWindowDuration
+	streamCheckWindowDuration = 30 * time.Millisecond
+	defer func() { streamCheckWindowDuration = orig }()
+
+	sr, sw := schema.Pipe[*schema.Message](8)
+	go func() {
+		sw.Send(&schema.Message{Content: "我查一下"}, nil)
+		time.Sleep(120 * time.Millisecond)
+		sw.Send(&schema.Message{ToolCalls: []schema.ToolCall{{ID: "c1", Type: "function", Function: schema.FunctionCall{Name: "bash", Arguments: "{}"}}}}, nil)
+		sw.Close()
+	}()
+	checker := createStreamToolCallChecker(nil, streamCheckWindow)
+	hasToolCall, err := checker(context.Background(), sr)
 	assert.Nil(t, err)
 	assert.True(t, hasToolCall)
 }

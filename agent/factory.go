@@ -589,6 +589,8 @@ type AgentOptions struct {
 	MaxStep      int
 	ToolsConfig  compose.ToolsNodeConfig
 	Logger       types.Logger
+	// StreamToolCallCheck 流式工具调用判定模式：firstContent / drain，见 resolveStreamToolCallCheck
+	StreamToolCallCheck string
 	// MessageModifier 在每次模型调用前修改消息列表。
 	// 用于动态注入内容（如技能列表）到 system prompt。
 	// 在 MessageRewriter 之后执行。
@@ -606,8 +608,8 @@ func CreateReactAgent(ctx context.Context, chatModel model.ToolCallingChatModel,
 		ToolCallingModel: chatModel,
 		ToolsConfig:      opts.ToolsConfig,
 		MaxStep:          maxStep,
-		// 提供自定义的 StreamToolCallChecker，用于处理先输出内容再输出工具调用的模型
-		StreamToolCallChecker: createStreamToolCallChecker(opts.Logger),
+		// 提供自定义的 StreamToolCallChecker；模式见 StreamToolCallCheck 配置
+		StreamToolCallChecker: createStreamToolCallChecker(opts.Logger, opts.StreamToolCallCheck),
 		// 在每次模型调用前清洗历史（eino react.go modelPreHandle 阶段对 state.Messages 执行，每次模型调用前必跑）：
 		// 1) sanitizeToolCallArguments：补全空 Arguments，避免 omitempty 省略导致部分 API（如 DashScope）400；
 		// 2) dedupRepetitiveToolCalls：折叠连续同名同参 tool_call，避免触发 provider 死循环护栏
@@ -748,41 +750,87 @@ func dedupRepetitiveToolCalls(_ context.Context, msgs []*schema.Message) []*sche
 	return result
 }
 
-// createStreamToolCallChecker 创建流式工具调用检查器
-func createStreamToolCallChecker(logger types.Logger) func(ctx context.Context, sr *schema.StreamReader[*schema.Message]) (bool, error) {
+// 流式工具调用判定模式，取值见 ChatAgentConfig.StreamToolCallCheck
+const (
+	StreamCheckFirstContent = "firstContent"
+	StreamCheckDrain        = "drain"
+	// streamCheckWindow 有界前瞻：首个内容后继续观察 streamCheckWindowDuration，
+	// 期间出现工具调用则按 drain 路由，持续纯文本则判定无并放行流式输出
+	streamCheckWindow = "window"
+)
+
+// streamCheckWindowDuration 前瞻窗口时长，var 便于测试缩短
+var streamCheckWindowDuration = 500 * time.Millisecond
+
+// resolveStreamToolCallCheck 归一化显式配置，未配置时按是否配置工具选择默认值。
+// 有工具用 window：纯文本在首个内容后短暂前瞻即放行（流式），先文本后工具调用的
+// 模型（GLM/Claude 风格）通常前导文本很短，工具调用落在窗口内即正确路由；
+// 仅前导文本超过窗口仍接工具调用的极端情况会误判，此时可用 drain 显式兜底。
+// 无工具误路由无后果，用 firstContent 保留流式实时性。
+func resolveStreamToolCallCheck(explicit string, hasTools bool) string {
+	explicit = strings.TrimSpace(explicit)
+	switch {
+	case strings.EqualFold(explicit, StreamCheckDrain):
+		return StreamCheckDrain
+	case strings.EqualFold(explicit, StreamCheckFirstContent):
+		return StreamCheckFirstContent
+	case strings.EqualFold(explicit, streamCheckWindow):
+		return streamCheckWindow
+	}
+	if hasTools {
+		return streamCheckWindow
+	}
+	return StreamCheckFirstContent
+}
+
+// createStreamToolCallChecker 创建流式工具调用检查器。
+// 具名 tool_call 一出现即返回 true；参数完整性由后续执行入口统一校验，
+// 避免流式增量参数被误判成“无工具调用”。
+// firstContent：首个非空内容即返回 false（OpenAI 系规范 tool_call 位于内容之前）。
+// window：首个内容后前瞻 streamCheckWindowDuration，期间出现工具调用返回 true，
+// 持续纯文本（或流提前结束）返回 false。
+// drain：消费完整条流再判定，兼容先文本后工具调用的模型，代价是首字延迟等于整流时长。
+func createStreamToolCallChecker(logger types.Logger, mode string) func(ctx context.Context, sr *schema.StreamReader[*schema.Message]) (bool, error) {
+	fullDrain := mode == StreamCheckDrain
+	window := mode == streamCheckWindow
 	return func(ctx context.Context, sr *schema.StreamReader[*schema.Message]) (bool, error) {
 		defer sr.Close()
 
-		hasToolCall := false
 		chunkCount := 0
-
+		var contentSince time.Time
 		for {
 			msg, err := sr.Recv()
 			if err == io.EOF {
-				break
+				return false, nil
 			}
 			if err != nil {
 				return false, err
 			}
 
 			chunkCount++
-
-			// 防止无限循环
 			if chunkCount > config.MaxStreamChunks {
 				if logger != nil {
 					logger.Warnf("StreamToolCallChecker: MaxStreamChunks (%d) exceeded", config.MaxStreamChunks)
 				}
-				break
+				return false, nil
 			}
 
-			// 流式阶段只要已经出现具名工具调用，就应该进入工具执行流程。
-			// 参数完整性由后续执行入口统一校验，避免流式增量参数被误判成“无工具调用”。
 			if hasStreamToolCalls(msg.ToolCalls) {
-				hasToolCall = true
+				return true, nil
+			}
+			if msg.Content != "" && !fullDrain {
+				if !window {
+					return false, nil
+				}
+				// 前瞻到期仍未出现工具调用即放行；到期检查只在收到 chunk 时进行，
+				// 流静默期间不误判（工具调用常紧跟一段停顿后到达）
+				if contentSince.IsZero() {
+					contentSince = time.Now()
+				} else if time.Since(contentSince) >= streamCheckWindowDuration {
+					return false, nil
+				}
 			}
 		}
-
-		return hasToolCall, nil
 	}
 }
 

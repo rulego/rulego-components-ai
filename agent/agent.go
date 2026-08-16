@@ -36,8 +36,9 @@ import (
 // ChatAgentConfig extends NodeConfiguration with Agent specifics
 type ChatAgentConfig struct {
 	config.LLMConfig    `json:",squash"`
-	MaxStep             int `json:"maxStep" label:"Max Steps" desc:"Maximum number of reasoning-tool loops the agent can perform"`
-	MaxToolOutputLength int `json:"maxToolOutputLength" label:"Max Tool Output Length" desc:"Truncate tool output beyond this length to prevent context overflow. Default 50000"`
+	MaxStep             int    `json:"maxStep" label:"Max Steps" desc:"Maximum number of reasoning-tool loops the agent can perform"`
+	MaxToolOutputLength int    `json:"maxToolOutputLength" label:"Max Tool Output Length" desc:"Truncate tool output beyond this length to prevent context overflow. Default 50000"`
+	StreamToolCallCheck string `json:"streamToolCallCheck" label:"Stream Tool-call Check" desc:"How to detect tool calls in streaming output (agents with tools only): empty=auto (default, suits most models), firstContent=decide on first text chunk, drain=consume whole stream first"`
 }
 
 // Desc returns the component description

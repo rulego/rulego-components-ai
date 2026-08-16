@@ -217,6 +217,11 @@ func (e *AgentAspectExecutor) ExecuteStream(
 		}
 
 		// 6. 构建输出。流中途出错时把错误带进 output.Error 并返回 error，让上层感知"被截断"而非静默成功。
+		// 到达 END 路径的流若带工具调用，说明被误判为纯文本（先文本后工具调用的模型超出前瞻窗口），
+		// 工具不会执行，提示用户改用 drain 模式
+		if lastChunk != nil && len(lastChunk.ToolCalls) > 0 && e.logger != nil {
+			e.logger.Warnf("[ExecuteStream] model emitted tool calls after content; they were routed as plain text and not executed. set streamToolCallCheck=drain if tools are required")
+		}
 		output := e.buildStreamOutput(ctx, fullContent.String(), lastChunk, input, startTime)
 		if streamErr != nil {
 			output.Error = streamErr
