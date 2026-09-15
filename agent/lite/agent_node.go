@@ -20,6 +20,7 @@ import (
 	"net/http"
 	"os"
 	"sort"
+	"strconv"
 	"strings"
 
 	"github.com/rulego/rulego"
@@ -638,8 +639,9 @@ func (n *AgentLiteNode) finishStream(ctx types.RuleContext, msg types.RuleMsg, c
 	ctx.TellSuccess(full)
 }
 
-// putUsage 把本轮 LLM 响应的 usage 写回 metadata;节点级 tracker 另行累计
-// 会话总用量(loop 内每轮 Record,不在此处——本方法对 end/full 两帧各调一次)。
+// putUsage 把本轮 LLM 响应的 usage 累加写回 metadata(多轮 ReAct 每轮各调,
+// 覆盖会让上游只读到最后一轮);model 仍为覆盖(同一链内不变)。
+// 节点级 tracker 另行累计会话总用量,不依赖本方法。
 func (n *AgentLiteNode) putUsage(m types.RuleMsg, u *Usage, model string) {
 	if model != "" {
 		m.Metadata.PutValue("model", model)
@@ -647,9 +649,15 @@ func (n *AgentLiteNode) putUsage(m types.RuleMsg, u *Usage, model string) {
 	if u == nil {
 		return
 	}
-	m.Metadata.PutValue(config.KeyPromptTokens, fmt.Sprint(u.PromptTokens))
-	m.Metadata.PutValue(config.KeyCompletionTokens, fmt.Sprint(u.CompletionTokens))
-	m.Metadata.PutValue(config.KeyTotalTokens, fmt.Sprint(u.TotalTokens))
+	putAccum(m, config.KeyPromptTokens, u.PromptTokens)
+	putAccum(m, config.KeyCompletionTokens, u.CompletionTokens)
+	putAccum(m, config.KeyTotalTokens, u.TotalTokens)
+}
+
+// putAccum 读旧值累加后写回;旧值解析失败按 0(不因脏数据丢本轮用量)。
+func putAccum(m types.RuleMsg, key string, add int) {
+	old, _ := strconv.Atoi(m.Metadata.GetValue(key))
+	m.Metadata.PutValue(key, fmt.Sprint(old+add))
 }
 
 func (n *AgentLiteNode) skillNames() string {

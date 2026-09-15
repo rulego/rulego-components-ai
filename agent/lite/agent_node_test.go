@@ -16,6 +16,7 @@ import (
 
 	"github.com/rulego/rulego"
 	"github.com/rulego/rulego/api/types"
+	"github.com/rulego/rulego-components-ai/config"
 )
 
 // fakeProvider 假工具提供者:echo 工具原样回参。
@@ -420,4 +421,36 @@ func TestAgentNodeNoModelConfigured(t *testing.T) {
 func strconvQuote(s string) string {
 	b, _ := json.Marshal(s)
 	return string(b)
+}
+
+// TestPutUsageAccumulates 多轮 ReAct 每轮 putUsage 对同一 metadata 累加而非覆盖。
+func TestPutUsageAccumulates(t *testing.T) {
+	n := &AgentLiteNode{}
+	msg := types.NewMsg(0, "chat.completions", types.JSON, types.NewMetadata(), `{}`)
+	// 预置第一轮写入的旧值。
+	msg.Metadata.PutValue(config.KeyPromptTokens, "10")
+	msg.Metadata.PutValue(config.KeyCompletionTokens, "5")
+	msg.Metadata.PutValue(config.KeyTotalTokens, "15")
+
+	n.putUsage(msg, &Usage{PromptTokens: 5, CompletionTokens: 3, TotalTokens: 8}, "mock-model")
+
+	if got := msg.Metadata.GetValue(config.KeyPromptTokens); got != "15" {
+		t.Fatalf("prompt tokens = %s, want 15", got)
+	}
+	if got := msg.Metadata.GetValue(config.KeyCompletionTokens); got != "8" {
+		t.Fatalf("completion tokens = %s, want 8", got)
+	}
+	if got := msg.Metadata.GetValue(config.KeyTotalTokens); got != "23" {
+		t.Fatalf("total tokens = %s, want 23", got)
+	}
+	if got := msg.Metadata.GetValue("model"); got != "mock-model" {
+		t.Fatalf("model = %s (仍为覆盖语义)", got)
+	}
+
+	// 旧值非数字按 0 处理,不 panic。
+	msg.Metadata.PutValue(config.KeyPromptTokens, "garbage")
+	n.putUsage(msg, &Usage{PromptTokens: 7, CompletionTokens: 0, TotalTokens: 7}, "")
+	if got := msg.Metadata.GetValue(config.KeyPromptTokens); got != "7" {
+		t.Fatalf("prompt tokens with garbage old = %s, want 7", got)
+	}
 }
