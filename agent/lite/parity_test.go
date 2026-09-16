@@ -70,7 +70,7 @@ func TestToolsObjectShapeRejected(t *testing.T) {
 func TestToolOutputRuneTruncation(t *testing.T) {
 	long := strings.Repeat("温", 10) // 10 runes / 30 bytes
 	n := &AgentLiteNode{provider: fixedProvider{out: long}, maxToolOut: 4}
-	out, failed := n.runTool("echo", `{}`)
+	out, failed := n.runTool(nil, "echo", `{}`)
 	if failed {
 		t.Fatal("不应失败")
 	}

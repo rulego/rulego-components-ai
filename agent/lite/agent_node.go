@@ -526,7 +526,7 @@ func (n *AgentLiteNode) callTool(ctx types.RuleContext, msg types.RuleMsg, call 
 	}
 
 	warn := detector.BeforeCall(name, args)
-	out, failed := n.runTool(name, args)
+	out, failed := n.runTool(ctx, name, args)
 	if failed {
 		if stream {
 			n.toolFrame(ctx, msg, "TOOL_CALL_ERROR", call.ID, name, "", out)
@@ -545,12 +545,12 @@ func (n *AgentLiteNode) callTool(ctx types.RuleContext, msg types.RuleMsg, call 
 }
 
 // runTool 执行工具并截断过长输出;failed=true 时 out 为错误文本。
-func (n *AgentLiteNode) runTool(name, args string) (out string, failed bool) {
+func (n *AgentLiteNode) runTool(ctx types.RuleContext, name, args string) (out string, failed bool) {
 	var argsMap map[string]interface{}
 	if err := json.Unmarshal([]byte(args), &argsMap); err != nil {
 		return fmt.Sprintf("工具参数不是合法 JSON: %v", err), true
 	}
-	result, err := n.invoke(name, argsMap)
+	result, err := n.invoke(ctx, name, argsMap)
 	if err != nil {
 		return err.Error(), true
 	}
@@ -562,7 +562,7 @@ func (n *AgentLiteNode) runTool(name, args string) (out string, failed bool) {
 	return result, false
 }
 
-func (n *AgentLiteNode) invoke(name string, args map[string]interface{}) (string, error) {
+func (n *AgentLiteNode) invoke(ctx types.RuleContext, name string, args map[string]interface{}) (string, error) {
 	if name == skillToolName {
 		return n.callSkill(args)
 	}
@@ -574,7 +574,15 @@ func (n *AgentLiteNode) invoke(name string, args map[string]interface{}) (string
 	if n.provider == nil {
 		return "", fmt.Errorf("工具 %s 不可用:工具提供者未注册", name)
 	}
-	return n.provider.CallTool(context.Background(), name, args)
+	// 链上下文透传给工具提供者:宿主经 types.WithContext 注入的调用方身份等
+	// 值(如 edge 的员工 id)在 provider 侧可取;无链上下文时退回 Background。
+	toolCtx := context.Background()
+	if ctx != nil {
+		if c := ctx.GetContext(); c != nil {
+			toolCtx = c
+		}
+	}
+	return n.provider.CallTool(toolCtx, name, args)
 }
 
 // toolAllowed 允许列表为空=全量开放;非空=仅列表内工具。
