@@ -38,12 +38,6 @@ func ErrorResultFromCode(code ErrorCode, detail string) *Result {
 	return ErrorResult(NewError(code, detail))
 }
 
-// ErrorResultFromString creates an error result from a plain string message.
-// Deprecated: Use ErrorResult with ToolError for better error handling.
-func ErrorResultFromString(message string) *Result {
-	return NewResult(false, message)
-}
-
 // String returns a simple text format for LLM consumption.
 func (r *Result) String() string {
 	if r.Success {
