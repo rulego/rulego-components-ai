@@ -9,8 +9,8 @@ import (
 	"github.com/rulego/rulego"
 	"github.com/rulego/rulego/api/types"
 	"github.com/rulego/rulego/components/base"
+	"github.com/rulego/rulego/utils/el"
 	"github.com/rulego/rulego/utils/maps"
-	"github.com/rulego/rulego/utils/str"
 	"github.com/sashabaranov/go-openai"
 	"regexp"
 	"strings"
@@ -57,16 +57,16 @@ type ChatMessage struct {
 // ChatMessageTemplate 上下文消息/用户消息模板
 type ChatMessageTemplate struct {
 	Role            string
-	ContentTemplate str.Template
+	ContentTemplate el.Template
 }
 
 // TextGenerateNode 向模型提供指令、查询或任何基于文本的输入，并得到大模型文本响应
 type TextGenerateNode struct {
 	Config               NodeConfiguration
 	Client               *openai.Client
-	systemPromptTemplate str.Template
+	systemPromptTemplate el.Template
 	chatMessageTemplates []ChatMessageTemplate
-	imagesTemplates      []str.Template
+	imagesTemplates      []el.Template
 	hasVar               bool // 是否包含变量占位符
 	responseFormat       openai.ChatCompletionResponseFormatType
 }
@@ -104,13 +104,18 @@ func (x *TextGenerateNode) Init(ruleConfig types.Config, configuration types.Con
 	c.BaseURL = x.Config.Url
 	client := openai.NewClientWithConfig(c)
 	x.Client = client
-	x.systemPromptTemplate = str.NewTemplate(x.Config.SystemPrompt)
-	if !x.systemPromptTemplate.IsNotVar() {
+	if x.systemPromptTemplate, err = el.NewTemplate(x.Config.SystemPrompt); err != nil {
+		return err
+	}
+	if x.systemPromptTemplate.HasVar() {
 		x.hasVar = true
 	}
 	for _, item := range x.Config.Messages {
-		tmpl := str.NewTemplate(item.Content)
-		if !tmpl.IsNotVar() {
+		contentTemplate, err := el.NewTemplate(item.Content)
+		if err != nil {
+			return err
+		}
+		if contentTemplate.HasVar() {
 			x.hasVar = true
 		}
 		item.Role = strings.TrimSpace(item.Role)
@@ -119,15 +124,18 @@ func (x *TextGenerateNode) Init(ruleConfig types.Config, configuration types.Con
 		}
 		x.chatMessageTemplates = append(x.chatMessageTemplates, ChatMessageTemplate{
 			Role:            item.Role,
-			ContentTemplate: str.NewTemplate(item.Content),
+			ContentTemplate: contentTemplate,
 		})
 	}
 	for _, item := range x.Config.Images {
-		tmpl := str.NewTemplate(item)
-		if !tmpl.IsNotVar() {
+		imageTemplate, err := el.NewTemplate(item)
+		if err != nil {
+			return err
+		}
+		if imageTemplate.HasVar() {
 			x.hasVar = true
 		}
-		x.imagesTemplates = append(x.imagesTemplates, str.NewTemplate(item))
+		x.imagesTemplates = append(x.imagesTemplates, imageTemplate)
 	}
 
 	x.Config.Params.ResponseFormat = strings.TrimSpace(x.Config.Params.ResponseFormat)
@@ -149,7 +157,7 @@ func (x *TextGenerateNode) OnMsg(ctx types.RuleContext, msg types.RuleMsg) {
 	if x.hasVar {
 		evn = base.NodeUtils.GetEvnAndMetadata(ctx, msg)
 	}
-	systemPrompt = x.systemPromptTemplate.Execute(evn)
+	systemPrompt = x.systemPromptTemplate.ExecuteAsString(evn)
 
 	//发送消息，并获取回复
 	content, err := x.sendCompletionMessage(ctx, evn, systemPrompt, x.chatMessageTemplates, x.imagesTemplates)
@@ -175,7 +183,7 @@ func (x *TextGenerateNode) Desc() string {
 	return "Send prompts to an AI LLM model via chat completion API. Supports system/user messages, multimodal image input, and configurable generation parameters. Routes result to Success/Failure chain."
 }
 
-func (x *TextGenerateNode) sendCompletionMessage(ctx types.RuleContext, evn map[string]interface{}, systemPrompt string, messagesTemplates []ChatMessageTemplate, imagesTemplates []str.Template) (string, error) {
+func (x *TextGenerateNode) sendCompletionMessage(ctx types.RuleContext, evn map[string]interface{}, systemPrompt string, messagesTemplates []ChatMessageTemplate, imagesTemplates []el.Template) (string, error) {
 	var messages []openai.ChatCompletionMessage
 	if systemPrompt != "" {
 		messages = append(messages, openai.ChatCompletionMessage{
@@ -186,13 +194,13 @@ func (x *TextGenerateNode) sendCompletionMessage(ctx types.RuleContext, evn map[
 	messageLen := len(messagesTemplates)
 	imageLen := len(imagesTemplates)
 	for index, item := range messagesTemplates {
-		content := item.ContentTemplate.Execute(evn)
+		content := item.ContentTemplate.ExecuteAsString(evn)
 		//是否是最后一条用户消息
 		if index == (messageLen-1) && imageLen > 0 {
 			var multiContent []openai.ChatMessagePart
 			//增加图片消息
 			for _, imageItemTpl := range imagesTemplates {
-				imageUrl := imageItemTpl.Execute(evn)
+				imageUrl := imageItemTpl.ExecuteAsString(evn)
 				multiContent = append(multiContent, openai.ChatMessagePart{
 					Type: openai.ChatMessagePartTypeImageURL,
 					ImageURL: &openai.ChatMessageImageURL{

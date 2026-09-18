@@ -5,6 +5,7 @@ import (
 	"github.com/rulego/rulego"
 	"github.com/rulego/rulego/api/types"
 	"github.com/rulego/rulego/components/base"
+	"github.com/rulego/rulego/utils/el"
 	"github.com/rulego/rulego/utils/maps"
 	"github.com/rulego/rulego/utils/str"
 	"github.com/sashabaranov/go-openai"
@@ -32,7 +33,7 @@ type GenerateImageNodeConfiguration struct {
 type GenerateImageNode struct {
 	Config         GenerateImageNodeConfiguration
 	AiClient       *openai.Client
-	promptTemplate str.Template
+	promptTemplate el.Template
 }
 
 // Type 返回节点类型
@@ -71,7 +72,9 @@ func (x *GenerateImageNode) Init(ruleConfig types.Config, configuration types.Co
 	if x.Config.Url == "" {
 		return fmt.Errorf("prompt is missing")
 	}
-	x.promptTemplate = str.NewTemplate(x.Config.Prompt)
+	if x.promptTemplate, err = el.NewTemplate(x.Config.Prompt); err != nil {
+		return err
+	}
 
 	if x.Config.N == 0 {
 		x.Config.N = 1
@@ -138,8 +141,8 @@ func (x *GenerateImageNode) generateImage(ctx types.RuleContext, prompt string) 
 // OnMsg 处理消息
 func (x *GenerateImageNode) OnMsg(ctx types.RuleContext, msg types.RuleMsg) {
 	prompt := x.Config.Prompt
-	if !x.promptTemplate.IsNotVar() {
-		prompt = x.promptTemplate.Execute(base.NodeUtils.GetEvnAndMetadata(ctx, msg))
+	if x.promptTemplate.HasVar() {
+		prompt = x.promptTemplate.ExecuteAsString(base.NodeUtils.GetEvnAndMetadata(ctx, msg))
 	}
 	responses, err := x.generateImage(ctx, prompt)
 	if err != nil {
