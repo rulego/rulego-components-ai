@@ -171,7 +171,7 @@ func CreateChatModel(llmConfig config.LLMConfig, opts ...ModelOptions) (model.To
 	// 断流会透传给前端（off 已把前半段实时吐出，换端点会内容重复，无法 rescue）；只有 full 模式
 	// 才有完整 mid-stream 容错。配置了 failover 但用默认 off 时提示一次，避免误以为已全面容错。
 	if llmConfig.StreamRetryMode != config.StreamRetryFull && logger != nil {
-		logger.Printf("[FailoverChatModel] streamRetryMode=off: failover covers only connect/early-stream errors; mid-stream breaks pass through. Set streamRetryMode=full for mid-stream failover.")
+		logger.Warnf("[FailoverChatModel] streamRetryMode=off: failover covers only connect/early-stream errors; mid-stream breaks pass through. Set streamRetryMode=full for mid-stream failover.")
 	}
 	return fo, nil
 }

@@ -108,7 +108,7 @@ func (q *StreamTellQueue) triggerAbort() {
 	q.abortOnce.Do(func() {
 		q.aborted.Store(true)
 		if q.logger != nil {
-			q.logger.Printf("[StreamTellQueue] buffer full (frontend slow/disconnected), aborting upstream stream")
+			q.logger.Warnf("[StreamTellQueue] buffer full (frontend slow/disconnected), aborting upstream stream")
 		}
 		if q.abort != nil {
 			q.abort()

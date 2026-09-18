@@ -240,10 +240,27 @@ func (s *McpServer) RemoveRouter(routerId string, params ...interface{}) error {
 	return nil
 }
 
-// Printf logs messages using the rule engine logger
-func (s *McpServer) Printf(format string, v ...interface{}) {
+func (s *McpServer) debugf(format string, v ...interface{}) {
 	if s.RuleConfig.Logger != nil {
-		s.RuleConfig.Logger.Printf(format, v...)
+		s.RuleConfig.Logger.Debugf(format, v...)
+	}
+}
+
+func (s *McpServer) infof(format string, v ...interface{}) {
+	if s.RuleConfig.Logger != nil {
+		s.RuleConfig.Logger.Infof(format, v...)
+	}
+}
+
+func (s *McpServer) warnf(format string, v ...interface{}) {
+	if s.RuleConfig.Logger != nil {
+		s.RuleConfig.Logger.Warnf(format, v...)
+	}
+}
+
+func (s *McpServer) errorf(format string, v ...interface{}) {
+	if s.RuleConfig.Logger != nil {
+		s.RuleConfig.Logger.Errorf(format, v...)
 	}
 }
 
@@ -537,7 +554,7 @@ func (s *McpServer) ruleChainToolHandler(chainId, startNodeId string, pool types
 		}
 
 		if resultErr != nil {
-			s.Printf("Tool execution failed for chain %s: %v", chainId, resultErr)
+			s.errorf("Tool execution failed for chain %s: %v", chainId, resultErr)
 			return mcp.NewToolResultError(fmt.Sprintf("Execution error: %v", resultErr)), nil
 		}
 

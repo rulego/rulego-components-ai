@@ -200,7 +200,7 @@ func (w *FailoverChatModelWrapper) WithCircuit(cooldown time.Duration) *Failover
 
 func (w *FailoverChatModelWrapper) logf(format string, v ...interface{}) {
 	if w.logger != nil {
-		w.logger.Printf(format, v...)
+		w.logger.Warnf(format, v...)
 	}
 }
 
