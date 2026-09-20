@@ -53,7 +53,7 @@ func TestDefaultSamplingParams(t *testing.T) {
 	}
 }
 
-// tools 为 eino 版描述符对象数组时,Init 给出指向兼容矩阵的可读错误
+// tools 对象条目按 eino 版 config.Tool 解析;lite 未实现的工具类型给出可读错误
 // (替代 mapstructure 的类型转换报错)。
 func TestToolsObjectShapeRejected(t *testing.T) {
 	var n AgentLiteNode
@@ -61,8 +61,8 @@ func TestToolsObjectShapeRejected(t *testing.T) {
 		"model": "m",
 		"tools": []interface{}{map[string]interface{}{"type": "builtin", "name": "bash"}},
 	})
-	if err == nil || !strings.Contains(err.Error(), "描述符") {
-		t.Fatalf("对象形状 tools 应报可读错误: %v", err)
+	if err == nil || !strings.Contains(err.Error(), "bash") {
+		t.Fatalf("不支持的 builtin 工具应报可读错误: %v", err)
 	}
 }
 

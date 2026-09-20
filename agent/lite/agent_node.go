@@ -1,12 +1,11 @@
-// agent_node.go ai/agent 的纯标准库轻量实现(与 agent/ 的 eino 版共用类型名)。
+// agent_node.go ai/agent 的纯标准库轻量实现。
 //
-// 实现只用 net/http + encoding/json,不经 eino→sonic,32 位平台可编译。
-// 同 binary 同时引入 agent 与本包时先注册者生效(all 捆绑包固定 eino 版优先),
-// 本包单独引入(或 eino 不可用的 32 位构建)时顶上同名。
-//
+// LLM 通道只用 net/http + encoding/json;远程 MCP 经 mark3labs/mcp-go
+// (纯 Go,无汇编依赖),386/armv7 可编译。
 // 工具来源:RuleConfig UDF 里的 types.MCPToolProvider(注册 key 即
-// types.MCPToolProviderKey);宿主不注入则纯对话。skillsDir 非空时追加
-// 内置 skill 工具(SKILL.md 读取)并把技能清单注入 systemPrompt。
+// types.MCPToolProviderKey)与 tools 里声明的远程 MCP server;两者皆无
+// 则纯对话。skillsDir 非空时追加内置 skill 工具(SKILL.md 读取)并把
+// 技能清单注入 systemPrompt。
 //
 // 原生 OpenAI delta 协议中 tool_calls 是一等增量(按 index 累积),不存在
 // "先叙述后工具调用被误路由"一类流转换问题。
@@ -59,8 +58,8 @@ func init() {
 }
 
 // AgentLiteConfig 节点配置(模板 DSL 的 configuration)。
-// url/key/model/systemPrompt/maxStep/maxToolOutputLength/maxRetries/images/params
-// 与 eino 版 ChatAgentConfig 同名同义;skillsDir/tools/skills 为 lite 特有。
+// url/key/model/systemPrompt/maxStep/maxToolOutputLength/maxRetries/images/params/tools
+// 与 agent 包 ChatAgentConfig 同名同义同构;skillsDir/skills 是本实现的技能配置。
 type AgentLiteConfig struct {
 	Url                 string   `json:"url"`
 	Key                 string   `json:"key"`
@@ -71,11 +70,15 @@ type AgentLiteConfig struct {
 	SystemPrompt        string   `json:"systemPrompt"`
 	Images              []string `json:"images"`
 	SkillsDir           string   `json:"skillsDir"`
-	// Tools 工具名允许列表:空/缺省=不过滤(provider 全量);非空=只保留列表内的
-	// provider 工具,且列表外工具即使被模型点名调用也拒绝执行。skill 工具不受此
-	// 约束,由 skills/skillsDir 决定。字符串条目是两实现通用写法(eino 版按名
-	// 解析);其对象描述符格式本实现不承接,Init 显式报错。
-	Tools []string `json:"tools,omitempty"`
+	// Tools 工具配置,结构与 agent 包的 config.Tool 相同,两实现读写同一份 DSL。
+	// 本实现承接其中不依赖 agent 包运行时的条目:字符串/空类型按名解析为
+	// provider 工具允许列表;mcp 展开其 config.tools 为允许列表(self 为进程
+	// 内 MCPToolProvider,其余为远程 server,http(s):// 走 streamable http、
+	// 否则按 stdio 命令拆分);builtin skill 把 config 里的目录映射为
+	// skillsDir/skills。
+	// 允许列表非空时,列表外的 provider 工具即使被模型点名也拒绝执行;
+	// skill 工具不受此约束,由 skills/skillsDir 决定。
+	Tools []config.Tool `json:"tools,omitempty"`
 	// Skills 技能名允许列表:空/缺省=skillsDir 下全部启用技能;非空=只载入列表内
 	// 技能(未勾选的不进 system prompt,skill 工具也读不到)。与 Tools 同语义。
 	Skills []string `json:"skills,omitempty"`
@@ -98,30 +101,40 @@ type failoverTpl struct {
 
 // AgentLiteNode ReAct 智能体节点。
 type AgentLiteNode struct {
-	config       AgentLiteConfig
-	urlTpl       el.Template
-	keyTpl       el.Template
-	modelTpl     el.Template
-	skillsDirTpl el.Template
-	promptTpl    el.Template
-	failoverTpls []failoverTpl
-	router       *chatRouter
-	skills       []skillEntry
-	provider     types.MCPToolProvider
-	maxStep      int
-	maxToolOut   int
-	tracker      *token.TokenTracker
+	config        AgentLiteConfig
+	urlTpl        el.Template
+	keyTpl        el.Template
+	modelTpl      el.Template
+	skillsDirTpl  el.Template
+	promptTpl     el.Template
+	failoverTpls  []failoverTpl
+	router        *chatRouter
+	skills        []skillEntry
+	provider      types.MCPToolProvider
+	remoteServers []string // tools 里声明的远程 server 原文(可能含 ${global.*} 模板)
+	remotes       []*remoteMCPProvider
+	toolAllow     []string
+	maxStep       int
+	maxToolOut    int
+	tracker       *token.TokenTracker
 }
 
 func (n *AgentLiteNode) New() types.Node { return &AgentLiteNode{} }
 func (n *AgentLiteNode) Type() string    { return NodeType }
-func (n *AgentLiteNode) Destroy()        {}
+
+func (n *AgentLiteNode) Destroy() {
+	for _, r := range n.remotes {
+		r.Close()
+	}
+}
 
 func (n *AgentLiteNode) Init(rc types.Config, cfg types.Configuration) error {
-	if err := checkToolsShape(cfg); err != nil {
+	// tools 的字符串条目转成 {"name":x} 对象，mapstructure 才能把整个数组解码进 config.Tool
+	config.NormalizeToolsShorthand(cfg)
+	if err := maps.Map2Struct(cfg, &n.config); err != nil {
 		return err
 	}
-	if err := maps.Map2Struct(cfg, &n.config); err != nil {
+	if err := n.resolveTools(); err != nil {
 		return err
 	}
 	n.maxStep = n.config.MaxStep
@@ -180,6 +193,16 @@ func (n *AgentLiteNode) Init(rc types.Config, cfg types.Configuration) error {
 			n.skills = filterSkills(loadSkills(d), n.config.Skills)
 		}
 	}
+	// 远程 MCP server 渲染后登记;连接懒建立,此处不触网。
+	for _, s := range n.remoteServers {
+		tpl, err := el.NewTemplate(s)
+		if err != nil {
+			return fmt.Errorf("%s: mcp server template: %w", NodeType, err)
+		}
+		if addr := tpl.ExecuteAsString(env); addr != "" {
+			n.remotes = append(n.remotes, newRemoteMCPProvider(addr))
+		}
+	}
 	if p, ok := rc.GetUdf(types.MCPToolProviderKey, "").(types.MCPToolProvider); ok {
 		n.provider = p
 	}
@@ -192,24 +215,66 @@ type tplPair struct {
 	dst *el.Template
 }
 
-// checkToolsShape tools 为对象数组(eino 版工具描述符格式)时给出可读错误,
-// 替代 mapstructure 的类型转换报错——同名替换场景下这是最常见的迁移坑;
-// 字符串条目两边通用,无需改写。
-func checkToolsShape(cfg types.Configuration) error {
-	raw, ok := cfg["tools"]
-	if !ok {
-		return nil
-	}
-	list, ok := raw.([]interface{})
-	if !ok {
-		return nil
-	}
-	for _, item := range list {
-		if _, isObj := item.(map[string]interface{}); isObj {
-			return fmt.Errorf("%s: tools 为 eino 版工具描述符格式(对象数组),本实现只支持工具名允许列表(字符串数组,两实现通用写法);对象描述符请改写为工具名,或经宿主工具提供者组织,见 agent/lite 包文档", NodeType)
+// resolveTools 展开 tools 配置：工具名并入允许列表，skill 条目映射到技能目录
+// 与技能允许列表。目录值可能是 ${global.*} 模板串，写回 SkillsDir 后沿用既有的
+// skillsDir 模板渲染流程。
+func (n *AgentLiteNode) resolveTools() error {
+	for _, t := range n.config.Tools {
+		switch t.Type {
+		case "":
+			if t.Name != "" {
+				n.toolAllow = append(n.toolAllow, t.Name)
+			}
+		case config.ToolTypeMCP:
+			server, _ := t.Config["server"].(string)
+			if server != "" && server != "self" {
+				// 远程 server,可能含 ${global.*} 模板,Init 渲染后登记
+				n.remoteServers = append(n.remoteServers, server)
+			}
+			names, _ := t.Config["tools"].([]interface{})
+			for _, v := range names {
+				if s, ok := v.(string); ok && s != "" {
+					n.toolAllow = append(n.toolAllow, s)
+				}
+			}
+		case config.ToolTypeBuiltin:
+			if t.Name != "skill" {
+				return fmt.Errorf("%s: builtin 工具 name=%q，本实现只支持 name=skill", NodeType, t.Name)
+			}
+			if n.config.SkillsDir == "" {
+				n.config.SkillsDir = pickSkillDir(t.Config)
+			}
+			if len(n.config.Skills) == 0 {
+				if allowed, ok := t.Config["skills"].([]interface{}); ok {
+					for _, v := range allowed {
+						if s, ok := v.(string); ok && s != "" {
+							n.config.Skills = append(n.config.Skills, s)
+						}
+					}
+				}
+			}
+		case config.ToolTypeRuleChain, config.ToolTypeAgent:
+			return fmt.Errorf("%s: %q 工具依赖 agent 包运行时，本实现不支持", NodeType, t.Type)
+		default:
+			return fmt.Errorf("%s: tools 中未知工具类型 %q", NodeType, t.Type)
 		}
 	}
 	return nil
+}
+
+// pickSkillDir 取 skill 工具配置里的技能目录。本实现只支持单目录，
+// 按 localDirs > globalDirs 取第一个（本地技能优先，与 agent 包实现一致）。
+func pickSkillDir(objConfig map[string]interface{}) string {
+	for _, key := range []string{"localDirs", "globalDirs"} {
+		if dirs, ok := objConfig[key].([]interface{}); ok {
+			for _, d := range dirs {
+				if s, ok := d.(string); ok && s != "" {
+					return s
+				}
+			}
+		}
+	}
+	return ""
 }
 
 // parseTpl 解析一组模板,失败时报出节点类型与原文。
@@ -235,13 +300,29 @@ func tplString(t el.Template, env map[string]any) string {
 	return t.ExecuteAsString(env)
 }
 
-// toolDefs 汇总工具定义:provider 工具(按 Tools 允许列表过滤)+ skill 工具。
-// 宿主未注入 provider 且无技能时返回空——节点退化为纯对话。
+// toolDefs 汇总工具定义:provider 工具(按 Tools 允许列表过滤)+ 远程 MCP
+// 工具(同样过滤)+ skill 工具。宿主未注入 provider 且无技能/远程时返回
+// 空——节点退化为纯对话。主 provider 与远程工具重名时保留先到者(主
+// provider 优先),同名 tools 定义会被部分 OpenAI 兼容端点拒绝。
 func (n *AgentLiteNode) toolDefs() []types.MCPToolDefinition {
 	var defs []types.MCPToolDefinition
+	seen := map[string]bool{}
+	appendDefs := func(list []types.MCPToolDefinition) {
+		for _, d := range list {
+			if !seen[d.Name] {
+				seen[d.Name] = true
+				defs = append(defs, d)
+			}
+		}
+	}
 	if n.provider != nil {
 		if list, err := n.provider.ListToolDefinitions(); err == nil {
-			defs = append(defs, filterTools(list, n.config.Tools)...)
+			appendDefs(filterTools(list, n.toolAllow))
+		}
+	}
+	for _, r := range n.remotes {
+		if list, err := r.ListToolDefinitions(); err == nil {
+			appendDefs(filterTools(list, n.toolAllow))
 		}
 	}
 	if len(n.skills) > 0 {
@@ -254,9 +335,19 @@ func (n *AgentLiteNode) toolDefs() []types.MCPToolDefinition {
 	return defs
 }
 
-// filterTools 按允许列表过滤 provider 工具;空列表=不过滤。
+// allowAll 允许列表含 "*" 即全量开放。
+func allowAll(allow []string) bool {
+	for _, name := range allow {
+		if name == "*" {
+			return true
+		}
+	}
+	return false
+}
+
+// filterTools 按允许列表过滤 provider 工具;空列表或含 "*"=不过滤。
 func filterTools(defs []types.MCPToolDefinition, allow []string) []types.MCPToolDefinition {
-	if len(allow) == 0 {
+	if len(allow) == 0 || allowAll(allow) {
 		return defs
 	}
 	set := make(map[string]bool, len(allow))
@@ -569,10 +660,7 @@ func (n *AgentLiteNode) invoke(ctx types.RuleContext, name string, args map[stri
 	// 允许列表非空时执行层二次把关:模型点名列表外工具(幻觉/被诱导)不触达 provider。
 	if !n.toolAllowed(name) {
 		return "", fmt.Errorf("工具 %s 未开放给本智能体(不在工具允许列表),已拒绝执行;可用工具: %s",
-			name, strings.Join(n.config.Tools, ", "))
-	}
-	if n.provider == nil {
-		return "", fmt.Errorf("工具 %s 不可用:工具提供者未注册", name)
+			name, strings.Join(n.toolAllow, ", "))
 	}
 	// 链上下文透传给工具提供者:宿主经 types.WithContext 注入的调用方身份等
 	// 值(如 edge 的员工 id)在 provider 侧可取;无链上下文时退回 Background。
@@ -582,15 +670,36 @@ func (n *AgentLiteNode) invoke(ctx types.RuleContext, name string, args map[stri
 			toolCtx = c
 		}
 	}
+	// 配置了远程 server 时按 toolDefs 的合并顺序路由(主 provider 优先)。
+	// 名单都没命中时仍透传主 provider,由其给出未知工具错误。
+	if len(n.remotes) > 0 {
+		if n.provider != nil {
+			if list, err := n.provider.ListToolDefinitions(); err == nil {
+				for _, d := range list {
+					if d.Name == name {
+						return n.provider.CallTool(toolCtx, name, args)
+					}
+				}
+			}
+		}
+		for _, r := range n.remotes {
+			if r.hasTool(name) {
+				return r.CallTool(toolCtx, name, args)
+			}
+		}
+	}
+	if n.provider == nil {
+		return "", fmt.Errorf("工具 %s 不可用:工具提供者未注册", name)
+	}
 	return n.provider.CallTool(toolCtx, name, args)
 }
 
-// toolAllowed 允许列表为空=全量开放;非空=仅列表内工具。
+// toolAllowed 允许列表为空或含 "*"=全量开放;非空=仅列表内工具。
 func (n *AgentLiteNode) toolAllowed(name string) bool {
-	if len(n.config.Tools) == 0 {
+	if len(n.toolAllow) == 0 || allowAll(n.toolAllow) {
 		return true
 	}
-	for _, t := range n.config.Tools {
+	for _, t := range n.toolAllow {
 		if t == name {
 			return true
 		}

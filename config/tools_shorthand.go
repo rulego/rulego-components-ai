@@ -5,13 +5,14 @@
 //	"tools": ["bash", {"type": "rulechain", "name": "清理任务", "targetId": "tool_clean"}]
 //
 // 字符串条目与对象条目可混用;对象描述符(type=rulechain/builtin/agent/mcp)
-// 仍是完整语法,仅 eino 版承接。
+// 仍是完整语法,mcp(self) 与 builtin(skill) 两边承接。
 package config
 
 import "encoding/json"
 
 // UnmarshalJSON 字符串条目展开为 {name: <string>, type: ""}(空 type 即按名解析);
-// 对象条目原样解码。Lite 实现的 tools 只认字符串数组,本速记是两边通用的子集。
+// 对象条目原样解码。字符串速记是两边通用的子集(Lite 实现把字符串条目并入
+// provider 工具允许列表)。
 func (t *Tool) UnmarshalJSON(data []byte) error {
 	var name string
 	if err := json.Unmarshal(data, &name); err == nil {

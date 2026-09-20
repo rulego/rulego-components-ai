@@ -193,7 +193,8 @@ func main() {
 | `params` others (`presencePenalty`, `frequencyPenalty`, `stop`, `responseFormat`, `jsonSchema`, `keepThink`, `extraFields`) | yes | ignored |
 | `messages` / `streamRetryMode` / `streamToolCallCheck` | yes | ignored |
 | `failover[]` `url`/`key`/`model` + `circuitCooldownSec` | yes | yes — per-endpoint `params` override not supported |
-| `tools` | string entries or descriptor objects (`{type,name,targetId,...}`) | string entries only (allowlist, empty = no filter) — the string form runs on both implementations; object descriptors are eino-only and fail lite Init with a clear error |
+| `tools` | string entries or descriptor objects (`{type,name,targetId,...}`) | string entries (allowlist, empty or `*` = no filter, matching the eino `MatchTool` wildcard) plus the `mcp` (self and remote; remote servers connect lazily so chain load never depends on their reachability — list/handshake capped at 15s, tool calls at 120s) and `builtin` `skill` descriptors; the remaining descriptors (`rulechain`/`agent`/other builtin) fail lite Init with a clear error |
+| `builtin` `skill` descriptor | multi-dir merge (`localDirs` + `globalDirs` + default fallback), `disabledSkills` blocklist, hot-reloaded list, tool result carries the skill base directory | first dir only (`localDirs` > `globalDirs`), `skills` allowlist, loaded once at Init, tool result has no base directory |
 | `skillsDir` / `skills` | not available | prompt-injection skills (lite specific) |
 
 
