@@ -7,7 +7,7 @@ toolchain go1.24.3
 require (
 	github.com/chromedp/cdproto v0.0.0-20250319231242-a755498943c8
 	github.com/chromedp/chromedp v0.13.3
-	github.com/cloudwego/eino v0.9.10
+	github.com/cloudwego/eino v0.9.19
 	github.com/cloudwego/eino-ext/components/model/openai v0.1.13
 	github.com/cloudwego/eino-ext/components/tool/duckduckgo/v2 v2.0.0-20260204064123-1f91f547c77e
 	github.com/eino-contrib/jsonschema v1.0.3
