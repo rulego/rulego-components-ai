@@ -18,6 +18,7 @@ import (
 	// 由宿主显式引入，避免同名组件的生效方取决于包初始化顺序。
 	_ "github.com/rulego/rulego-components-ai/agent"
 	_ "github.com/rulego/rulego-components-ai/intent"
+	_ "github.com/rulego/rulego-components-ai/jev"
 	_ "github.com/rulego/rulego-components-ai/mcp"
 
 	// 工具组件 - 注册到 tool.Registry
