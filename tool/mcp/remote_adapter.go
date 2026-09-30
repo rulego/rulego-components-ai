@@ -157,6 +157,17 @@ func (a *RemoteMCPToolAdapter) InvokableRun(ctx context.Context, arguments strin
 			}
 		}
 	}
+	// structuredContent 带确认令牌等跨轮数据，附加到文本尾部供模型读取
+	if result.StructuredContent != nil {
+		if b, err := json.Marshal(result.StructuredContent); err == nil {
+			s := string(b)
+			const maxStructured = 8 << 10
+			if len(s) > maxStructured {
+				s = s[:maxStructured] + "…(truncated)"
+			}
+			contents = append(contents, "structured:", s)
+		}
+	}
 	return strings.Join(contents, "\n"), nil
 }
 
