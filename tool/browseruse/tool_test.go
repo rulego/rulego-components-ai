@@ -259,6 +259,7 @@ func TestGetContentFromRuleGo(t *testing.T) {
 }
 
 func TestWebSearchWithoutTool(t *testing.T) {
+	skipIfNoBrowser(t)
 	// 默认配置不包含搜索工具
 	config := DefaultConfig()
 	config.Headless = true
