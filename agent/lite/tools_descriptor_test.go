@@ -3,9 +3,9 @@ package lite
 import (
 	"testing"
 
+	"github.com/rulego/rulego-components-ai/config"
 	"github.com/rulego/rulego/api/types"
 	"github.com/rulego/rulego/utils/maps"
-	"github.com/rulego/rulego-components-ai/config"
 )
 
 // tools 配置结构与 agent 包相同（config.Tool），展开后得到工具允许列表与技能目录。

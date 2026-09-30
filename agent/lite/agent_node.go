@@ -40,8 +40,9 @@ const NodeType = "ai/agent"
 // maxStep=agent.DefaultMaxStep、工具输出截断=按 rune、temperature/topP=
 // config.DefaultTemperature/DefaultTopP(零值视为未设置,套默认)。
 const (
-	defaultMaxStep       = 50
-	defaultMaxToolOutput = 50000
+	defaultMaxStep = 50
+	// 工具结果逐跳重发进上下文,截断上限过宽会让多步回合的 prompt 膨胀数万 token。
+	defaultMaxToolOutput = 16000
 	skillToolName        = "skill"
 )
 
@@ -91,6 +92,9 @@ type AgentLiteConfig struct {
 		Temperature float64 `json:"temperature"`
 		TopP        float64 `json:"topP"`
 		MaxTokens   int     `json:"maxTokens"`
+		// ExtraFields 供应商扩展参数,键支持点路径("thinking.type": true),
+		// 执行时展开为嵌套对象并入请求体顶层;嵌套 map 值也可直接给。
+		ExtraFields map[string]any `json:"extraFields,omitempty"`
 	} `json:"params"`
 }
 
@@ -404,9 +408,18 @@ func (n *AgentLiteNode) OnMsg(ctx types.RuleContext, msg types.RuleMsg) {
 	}
 	env := ctx.GetEnv(msg, true)
 	model := tplString(n.modelTpl, env)
+	// 会话级覆盖:宿主(chat 端点)按请求在 metadata 注入,仅影响当次执行。
+	if m := msg.GetMetadata().GetValue("_sessionModel"); m != "" {
+		model = m
+	}
 	if model == "" {
 		ctx.TellFailure(msg, fmt.Errorf("%s: 对话模型未配置:请设置 model 或对应全局变量后重试", NodeType))
 		return
+	}
+	var sessionExtra map[string]any
+	if s := msg.GetMetadata().GetValue("_sessionExtraFields"); s != "" {
+		// 非法 JSON 静默忽略,退回节点配置。
+		_ = json.Unmarshal([]byte(s), &sessionExtra)
 	}
 
 	// 解析 OpenAI chat 请求体。
@@ -439,7 +452,7 @@ func (n *AgentLiteNode) OnMsg(ctx types.RuleContext, msg types.RuleMsg) {
 	messages = append(messages, req.Messages...)
 	messages = applyPresetImages(messages, resolveImageRefs(n.config.Images))
 
-	n.loop(ctx, msg, runCtx, eps, model, tools, messages, stream, doomloop.NewDoomLoopDetector())
+	n.loop(ctx, msg, runCtx, eps, model, tools, messages, stream, doomloop.NewDoomLoopDetector(), sessionExtra)
 }
 
 // resolveImageRefs 本地文件路径转为 data: base64 URL(http(s)/data: 引用原样)。
@@ -492,12 +505,61 @@ func applyPresetImages(messages []Message, images []string) []Message {
 	return messages
 }
 
+// expandDottedPaths 把 {"thinking.type": true} 展开为 {"thinking": {"type": true}},
+// 值为嵌套 map 时原样并入。非点路径键先落、点路径键后展开:整体嵌套键
+// (节点配置写法)与点路径键(会话覆盖写法)指向同枝时,map 遍历序不定会让
+// 结果随机——固定让点路径后展开,细粒度覆盖粗粒度。
+func expandDottedPaths(fields map[string]any) map[string]any {
+	if len(fields) == 0 {
+		return nil
+	}
+	out := map[string]any{}
+	for k, v := range fields {
+		if !strings.Contains(k, ".") {
+			out[k] = v
+		}
+	}
+	for k, v := range fields {
+		if strings.Contains(k, ".") {
+			parts := strings.Split(k, ".")
+			cur := out
+			for i, p := range parts {
+				if i == len(parts)-1 {
+					cur[p] = v
+					break
+				}
+				next, ok := cur[p].(map[string]any)
+				if !ok {
+					next = map[string]any{}
+					cur[p] = next
+				}
+				cur = next
+			}
+		}
+	}
+	return out
+}
+
 // loop ReAct 主循环:LLM → 工具 → LLM … 直到无工具调用或步数耗尽。
 // detector 为本次请求私有(会话级),跨轮次累积 doom 历史;
 // eps 为容灾端点序列(主端点在前),LLM 调用统一走 n.router。
 func (n *AgentLiteNode) loop(ctx types.RuleContext, msg types.RuleMsg, runCtx context.Context,
-	eps []chatEndpoint, model string, tools []Tool, messages []Message, stream bool, detector *doomloop.DoomLoopDetector) {
+	eps []chatEndpoint, model string, tools []Tool, messages []Message, stream bool, detector *doomloop.DoomLoopDetector, sessionExtra map[string]any) {
 
+	// 会话覆盖与节点配置同一点路径展开口径(前端思考档位发送的是
+	// "thinking.type" 一类点路径原文),会话键冲突时覆盖节点配置。
+	merged := map[string]any{}
+	for k, v := range n.config.Params.ExtraFields {
+		merged[k] = v
+	}
+	for k, v := range sessionExtra {
+		merged[k] = v
+	}
+	extra := expandDottedPaths(merged)
+
+	// 跨轮累计:metadata 里 prompt_tokens 等键保持「末轮」口径(≈当前上下文
+	// 占用,流式仪表消费),acc 键为全程累计(用量账本/预算闸消费)。
+	var acc Usage
 	req := Request{
 		Model:    model,
 		Messages: messages,
@@ -507,6 +569,7 @@ func (n *AgentLiteNode) loop(ctx types.RuleContext, msg types.RuleMsg, runCtx co
 			TopP:        n.config.Params.TopP,
 			MaxTokens:   n.config.Params.MaxTokens,
 		},
+		ExtraFields: extra,
 	}
 
 	for step := 0; step < n.maxStep; step++ {
@@ -520,8 +583,9 @@ func (n *AgentLiteNode) loop(ctx types.RuleContext, msg types.RuleMsg, runCtx co
 				return
 			}
 			n.tracker.Record(usage.PromptTokens, usage.CompletionTokens)
+			accUsage(&acc, &usage)
 			if len(calls) == 0 {
-				n.finishStream(ctx, msg, content, model, &usage)
+				n.finishStream(ctx, msg, content, model, &usage, &acc)
 				return
 			}
 			// 记录本轮 assistant(带工具调用),执行工具,继续下一轮。
@@ -536,11 +600,12 @@ func (n *AgentLiteNode) loop(ctx types.RuleContext, msg types.RuleMsg, runCtx co
 			return
 		}
 		n.tracker.Record(resp.Usage.PromptTokens, resp.Usage.CompletionTokens)
+		accUsage(&acc, &resp.Usage)
 		choice := resp.Choices[0]
 		if len(choice.Message.ToolCalls) == 0 {
 			final := msg.Copy()
 			final.SetData(choice.Message.Content)
-			n.putUsage(final, &resp.Usage, model)
+			n.putUsage(final, &resp.Usage, model, &acc)
 			ctx.TellSuccess(final)
 			return
 		}
@@ -550,15 +615,34 @@ func (n *AgentLiteNode) loop(ctx types.RuleContext, msg types.RuleMsg, runCtx co
 	// 步数耗尽:如实收尾,不假装成功。
 	exhausted := "已达到最大工具调用轮次,未能给出最终回答;请缩小问题范围后重试。"
 	if stream {
-		n.finishStream(ctx, msg, exhausted, model, nil)
+		n.finishStream(ctx, msg, exhausted, model, nil, &acc)
 		return
 	}
 	final := msg.Copy()
 	final.SetData(exhausted)
+	n.putUsage(final, nil, model, &acc)
 	ctx.TellSuccess(final)
 }
 
-// streamTurn 消费一轮流式响应:正文/思考 delta 逐帧转发,工具调用增量累积。
+// accUsage 把本轮 usage 累进跨轮累计值。
+func accUsage(acc, u *Usage) {
+	if u == nil {
+		return
+	}
+	acc.PromptTokens += u.PromptTokens
+	acc.CompletionTokens += u.CompletionTokens
+	acc.TotalTokens += u.TotalTokens
+	acc.PromptTokensDetails = &struct {
+		CachedTokens int `json:"cached_tokens"`
+	}{CachedTokens: acc.CachedTokens() + u.CachedTokens()}
+}
+
+// streamFlushEvery 流式 delta 合批闸门(帧数)。思考型模型一轮可产生数千 delta,
+// 逐帧 TellNext 每帧各计一次消息跳数,与引擎单消息跳数预算相撞会中途掐断流;
+// 按帧数合批后跳数下降两个数量级,对 SSE 消费方只是单帧变大。
+const streamFlushEvery = 24
+
+// streamTurn 消费一轮流式响应:正文/思考 delta 合批转发,工具调用增量累积。
 // 返回本轮完整正文、合并后的工具调用与 usage。
 func (n *AgentLiteNode) streamTurn(ctx types.RuleContext, msg types.RuleMsg, runCtx context.Context,
 	eps []chatEndpoint, req Request) (string, []ToolCall, Usage, error) {
@@ -566,22 +650,43 @@ func (n *AgentLiteNode) streamTurn(ctx types.RuleContext, msg types.RuleMsg, run
 	var content strings.Builder
 	acc := newToolCallAccumulator()
 
+	var bReasoning, bContent strings.Builder
+	batch := 0
+	flush := func() {
+		if bReasoning.Len() > 0 {
+			frame := msg.Copy()
+			frame.SetData("")
+			frame.Metadata.PutValue(config.KeyChunk, config.ValueTrue)
+			frame.Metadata.PutValue(config.KeyReasoningContent, bReasoning.String())
+			ctx.TellNext(frame, types.Stream)
+			bReasoning.Reset()
+		}
+		if bContent.Len() > 0 {
+			frame := msg.Copy()
+			frame.SetData(bContent.String())
+			frame.Metadata.PutValue(config.KeyChunk, config.ValueTrue)
+			ctx.TellNext(frame, types.Stream)
+			bContent.Reset()
+		}
+		batch = 0
+	}
+
 	finish, usage, err := n.router.Stream(runCtx, eps, req, func(d StreamDelta) error {
 		if len(d.ToolCalls) > 0 {
 			acc.add(d.ToolCalls)
 		}
 		if d.ReasoningContent != "" || d.Content != "" {
 			content.WriteString(d.Content)
-			frame := msg.Copy()
-			frame.SetData(d.Content)
-			frame.Metadata.PutValue(config.KeyChunk, config.ValueTrue)
-			if d.ReasoningContent != "" {
-				frame.Metadata.PutValue(config.KeyReasoningContent, d.ReasoningContent)
+			bReasoning.WriteString(d.ReasoningContent)
+			bContent.WriteString(d.Content)
+			batch++
+			if batch >= streamFlushEvery {
+				flush()
 			}
-			ctx.TellNext(frame, types.Stream)
 		}
 		return nil
 	})
+	flush()
 	if err != nil {
 		return "", nil, usage, err
 	}
@@ -742,33 +847,39 @@ func (n *AgentLiteNode) toolFrame(ctx types.RuleContext, msg types.RuleMsg, even
 
 // finishStream 收尾流式回合:end 帧 data 恒为空(正文已按 delta 发出,再带
 // 全文会 SSE 重复),full_content 的 Success 消息携带全文供运行日志/下游消费。
-func (n *AgentLiteNode) finishStream(ctx types.RuleContext, msg types.RuleMsg, content, model string, usage *Usage) {
+func (n *AgentLiteNode) finishStream(ctx types.RuleContext, msg types.RuleMsg, content, model string, usage, acc *Usage) {
 	end := msg.Copy()
 	end.SetData("")
 	end.Metadata.PutValue(config.KeyStreamCompleted, config.ValueTrue)
-	n.putUsage(end, usage, model)
+	n.putUsage(end, usage, model, acc)
 	ctx.TellNext(end, types.Stream)
 
 	full := msg.Copy()
 	full.SetData(content)
 	full.Metadata.PutValue(config.KeyFullContent, config.ValueTrue)
-	n.putUsage(full, usage, model)
+	n.putUsage(full, usage, model, acc)
 	ctx.TellSuccess(full)
 }
 
-// putUsage 把本轮 LLM 响应的 usage 累加写回 metadata(多轮 ReAct 每轮各调,
-// 覆盖会让上游只读到最后一轮);model 仍为覆盖(同一链内不变)。
-// 节点级 tracker 另行累计会话总用量,不依赖本方法。
-func (n *AgentLiteNode) putUsage(m types.RuleMsg, u *Usage, model string) {
+// putUsage 把 token 用量写回 metadata。prompt_tokens 等键是「末轮」口径
+// (最后一次 LLM 响应,≈当前上下文占用,流式仪表按覆盖式消费);*_acc 键是
+// 跨轮累计(多轮 ReAct 全程,用量账本/预算闸消费)。u 为 nil(步数耗尽)时
+// 末轮键不写,累计键照写。
+func (n *AgentLiteNode) putUsage(m types.RuleMsg, u *Usage, model string, acc *Usage) {
 	if model != "" {
 		m.Metadata.PutValue("model", model)
 	}
-	if u == nil {
-		return
+	if u != nil {
+		putAccum(m, config.KeyPromptTokens, u.PromptTokens)
+		putAccum(m, config.KeyCompletionTokens, u.CompletionTokens)
+		putAccum(m, config.KeyTotalTokens, u.TotalTokens)
+		putAccum(m, "cached_tokens", u.CachedTokens())
 	}
-	putAccum(m, config.KeyPromptTokens, u.PromptTokens)
-	putAccum(m, config.KeyCompletionTokens, u.CompletionTokens)
-	putAccum(m, config.KeyTotalTokens, u.TotalTokens)
+	if acc != nil {
+		putAccum(m, "prompt_tokens_acc", acc.PromptTokens)
+		putAccum(m, "completion_tokens_acc", acc.CompletionTokens)
+		putAccum(m, "total_tokens_acc", acc.TotalTokens)
+	}
 }
 
 // putAccum 读旧值累加后写回;旧值解析失败按 0(不因脏数据丢本轮用量)。

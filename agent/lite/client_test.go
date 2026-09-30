@@ -56,6 +56,102 @@ func frame(delta map[string]any, reason string) string {
 	return string(b)
 }
 
+func TestRequestExtraFieldsMarshal(t *testing.T) {
+	// nil ExtraFields 输出与旧序列化完全一致
+	b, err := json.Marshal(Request{Model: "m", Messages: []Message{{Role: "user", Content: "hi"}}, Stream: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(string(b), "extraFields") {
+		t.Fatalf("nil ExtraFields 不应出现额外键: %s", b)
+	}
+
+	// ExtraFields 并入顶层,常规字段冲突时常规字段优先
+	req := Request{
+		Model:    "m",
+		Messages: []Message{{Role: "user", Content: "hi"}},
+		Stream:   true,
+		ExtraFields: map[string]any{
+			"thinking": map[string]any{"type": "enabled"},
+			"model":    "hijack",
+		},
+	}
+	b, err = json.Marshal(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var body map[string]any
+	if err := json.Unmarshal(b, &body); err != nil {
+		t.Fatal(err)
+	}
+	if body["model"] != "m" {
+		t.Fatalf("model 应保持常规字段值: %v", body["model"])
+	}
+	th, ok := body["thinking"].(map[string]any)
+	if !ok || th["type"] != "enabled" {
+		t.Fatalf("thinking 应并入顶层: %v", body["thinking"])
+	}
+}
+
+func TestRequestExtraFieldsSent(t *testing.T) {
+	var gotBody string
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		data, _ := io.ReadAll(r.Body)
+		gotBody = string(data)
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"choices":[{"message":{"role":"assistant","content":"ok"}}]}`))
+	}))
+	defer srv.Close()
+
+	c := New(srv.URL, "key")
+	_, err := c.Complete(context.Background(), Request{
+		Model: "m",
+		ExtraFields: map[string]any{
+			"reasoning_effort": "high",
+		},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(gotBody, `"reasoning_effort":"high"`) {
+		t.Fatalf("请求体应含顶层 reasoning_effort: %s", gotBody)
+	}
+}
+
+func TestExpandDottedPaths(t *testing.T) {
+	if expandDottedPaths(nil) != nil {
+		t.Fatal("nil 输入应返回 nil")
+	}
+	if expandDottedPaths(map[string]any{}) != nil {
+		t.Fatal("空 map 输入应返回 nil")
+	}
+	got := expandDottedPaths(map[string]any{
+		"thinking.type":    true,
+		"thinking.budget":  100,
+		"reasoning_effort": "low",
+		"nested":           map[string]any{"a": 1},
+		"a.b.c":            "deep",
+	})
+	th, ok := got["thinking"].(map[string]any)
+	if !ok || th["type"] != true || th["budget"] != 100 {
+		t.Fatalf("thinking 展开错误: %v", got["thinking"])
+	}
+	if got["reasoning_effort"] != "low" {
+		t.Fatalf("无点号键应原样保留: %v", got)
+	}
+	if n, ok := got["nested"].(map[string]any); !ok || n["a"] != 1 {
+		t.Fatalf("嵌套 map 值应原样并入: %v", got["nested"])
+	}
+	a, ok := got["a"].(map[string]any)
+	if !ok {
+		t.Fatalf("a 应展开为 map: %v", got)
+	}
+	b, ok := a["b"].(map[string]any)
+	if !ok || b["c"] != "deep" {
+		t.Fatalf("多级点路径展开错误: %v", got["a"])
+	}
+}
+
 func TestStreamParsesDeltas(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "text/event-stream")

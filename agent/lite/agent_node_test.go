@@ -15,8 +15,8 @@ import (
 	"time"
 
 	"github.com/rulego/rulego"
-	"github.com/rulego/rulego/api/types"
 	"github.com/rulego/rulego-components-ai/config"
+	"github.com/rulego/rulego/api/types"
 )
 
 // fakeProvider 假工具提供者:echo 工具原样回参。
@@ -156,6 +156,118 @@ func runStreamMsg(t *testing.T, eng types.RuleEngine, data string) []types.RuleM
 		t.Fatalf("等待链输出超时,已收 %d 帧", len(frames))
 	}
 	return frames
+}
+
+func TestAgentNodeExtraFields(t *testing.T) {
+	srv := &sseLLM{scripts: [][]string{{contentFrame("好的")}}}
+	httpSrv := httptest.NewServer(http.HandlerFunc(srv.handler))
+	defer httpSrv.Close()
+
+	extra := `,"params":{"temperature":0.5,"extraFields":{"thinking.type":true,"reasoning_effort":"high"}}`
+	eng := buildAgentChain(t, httpSrv.URL, extra, false)
+	data := `{"messages":[{"role":"user","content":"hi"}]}`
+	runStreamMsg(t, eng, data)
+
+	srv.mu.Lock()
+	defer srv.mu.Unlock()
+	if len(srv.requests) == 0 {
+		t.Fatal("未捕获到 LLM 请求")
+	}
+	var body map[string]any
+	if err := json.Unmarshal([]byte(srv.requests[0]), &body); err != nil {
+		t.Fatalf("请求体解析: %v", err)
+	}
+	th, ok := body["thinking"].(map[string]any)
+	if !ok || th["type"] != true {
+		t.Fatalf("thinking.type 应展开进请求体顶层: %v", body["thinking"])
+	}
+	if body["reasoning_effort"] != "high" {
+		t.Fatalf("reasoning_effort 应在请求体顶层: %v", body)
+	}
+	if body["temperature"] != 0.5 {
+		t.Fatalf("temperature 常规参数不受影响: %v", body["temperature"])
+	}
+}
+
+// 会话级覆盖:metadata 注入的 _sessionModel/_sessionExtraFields 只影响当次请求。
+func TestAgentNodeSessionOverride(t *testing.T) {
+	srv := &sseLLM{scripts: [][]string{{contentFrame("好的")}}}
+	httpSrv := httptest.NewServer(http.HandlerFunc(srv.handler))
+	defer httpSrv.Close()
+
+	eng := buildAgentChain(t, httpSrv.URL, "", false)
+	msg := types.NewMsg(0, "chat.completions", types.JSON, types.NewMetadata(),
+		`{"messages":[{"role":"user","content":"hi"}]}`)
+	msg.Metadata.PutValue("stream", "true")
+	msg.Metadata.PutValue("_sessionModel", "session-model")
+	msg.Metadata.PutValue("_sessionExtraFields", `{"thinking":{"type":"enabled"},"reasoning_effort":"high"}`)
+	done := make(chan struct{})
+	eng.OnMsg(msg, types.WithOnEnd(func(_ types.RuleContext, m types.RuleMsg, err error, _ string) {
+		if m.GetMetadata().GetValue("full_content") == "true" {
+			close(done)
+		}
+	}))
+	select {
+	case <-done:
+	case <-time.After(30 * time.Second):
+		t.Fatal("等待链输出超时")
+	}
+
+	srv.mu.Lock()
+	defer srv.mu.Unlock()
+	var body map[string]any
+	if err := json.Unmarshal([]byte(srv.requests[0]), &body); err != nil {
+		t.Fatal(err)
+	}
+	if body["model"] != "session-model" {
+		t.Fatalf("model 应被会话值覆盖: %v", body["model"])
+	}
+	th, _ := body["thinking"].(map[string]any)
+	if th == nil || th["type"] != "enabled" {
+		t.Fatalf("会话 extraFields 应并入顶层: %v", body["thinking"])
+	}
+	if body["reasoning_effort"] != "high" {
+		t.Fatalf("会话 extraFields 无点号键应原样进顶层: %v", body)
+	}
+}
+
+// 会话覆盖支持点路径写法(前端思考档位的发送形态)。
+func TestAgentNodeSessionOverrideDotted(t *testing.T) {
+	srv := &sseLLM{scripts: [][]string{{contentFrame("好的")}}}
+	httpSrv := httptest.NewServer(http.HandlerFunc(srv.handler))
+	defer httpSrv.Close()
+
+	eng := buildAgentChain(t, httpSrv.URL, "", false)
+	msg := types.NewMsg(0, "chat.completions", types.JSON, types.NewMetadata(),
+		`{"messages":[{"role":"user","content":"hi"}]}`)
+	msg.Metadata.PutValue("stream", "true")
+	msg.Metadata.PutValue("_sessionExtraFields", `{"thinking.type":true,"a.b":"c"}`)
+	done := make(chan struct{})
+	eng.OnMsg(msg, types.WithOnEnd(func(_ types.RuleContext, m types.RuleMsg, err error, _ string) {
+		if m.GetMetadata().GetValue("full_content") == "true" {
+			close(done)
+		}
+	}))
+	select {
+	case <-done:
+	case <-time.After(30 * time.Second):
+		t.Fatal("等待链输出超时")
+	}
+
+	srv.mu.Lock()
+	defer srv.mu.Unlock()
+	var body map[string]any
+	if err := json.Unmarshal([]byte(srv.requests[0]), &body); err != nil {
+		t.Fatal(err)
+	}
+	th, _ := body["thinking"].(map[string]any)
+	if th == nil || th["type"] != true {
+		t.Fatalf("点路径 thinking.type 应展开为嵌套: %v", body["thinking"])
+	}
+	a, _ := body["a"].(map[string]any)
+	if a == nil || a["b"] != "c" {
+		t.Fatalf("多级点路径展开错误: %v", body["a"])
+	}
 }
 
 func TestAgentNodeFlows(t *testing.T) {
@@ -423,7 +535,8 @@ func strconvQuote(s string) string {
 	return string(b)
 }
 
-// TestPutUsageAccumulates 多轮 ReAct 每轮 putUsage 对同一 metadata 累加而非覆盖。
+// TestPutUsageAccumulates putUsage 对同一 metadata 累加而非覆盖(同一消息
+// 多次写入的场景);末轮键与累计键分开落。
 func TestPutUsageAccumulates(t *testing.T) {
 	n := &AgentLiteNode{}
 	msg := types.NewMsg(0, "chat.completions", types.JSON, types.NewMetadata(), `{}`)
@@ -432,7 +545,7 @@ func TestPutUsageAccumulates(t *testing.T) {
 	msg.Metadata.PutValue(config.KeyCompletionTokens, "5")
 	msg.Metadata.PutValue(config.KeyTotalTokens, "15")
 
-	n.putUsage(msg, &Usage{PromptTokens: 5, CompletionTokens: 3, TotalTokens: 8}, "mock-model")
+	n.putUsage(msg, &Usage{PromptTokens: 5, CompletionTokens: 3, TotalTokens: 8}, "mock-model", nil)
 
 	if got := msg.Metadata.GetValue(config.KeyPromptTokens); got != "15" {
 		t.Fatalf("prompt tokens = %s, want 15", got)
@@ -449,8 +562,71 @@ func TestPutUsageAccumulates(t *testing.T) {
 
 	// 旧值非数字按 0 处理,不 panic。
 	msg.Metadata.PutValue(config.KeyPromptTokens, "garbage")
-	n.putUsage(msg, &Usage{PromptTokens: 7, CompletionTokens: 0, TotalTokens: 7}, "")
+	n.putUsage(msg, &Usage{PromptTokens: 7, CompletionTokens: 0, TotalTokens: 7}, "", nil)
 	if got := msg.Metadata.GetValue(config.KeyPromptTokens); got != "7" {
 		t.Fatalf("prompt tokens with garbage old = %s, want 7", got)
+	}
+
+	// 累计键独立落,不影响末轮键。
+	acc := &Usage{PromptTokens: 100, CompletionTokens: 50, TotalTokens: 150}
+	n.putUsage(msg, &Usage{PromptTokens: 1, CompletionTokens: 1, TotalTokens: 2}, "", acc)
+	if got := msg.Metadata.GetValue("prompt_tokens_acc"); got != "100" {
+		t.Fatalf("prompt acc = %s, want 100", got)
+	}
+	if got := msg.Metadata.GetValue("total_tokens_acc"); got != "150" {
+		t.Fatalf("total acc = %s, want 150", got)
+	}
+	if got := msg.Metadata.GetValue(config.KeyPromptTokens); got != "8" {
+		t.Fatalf("末轮键应独立累加 = %s, want 8", got)
+	}
+}
+
+func usageFrameCached(prompt, completion, cached int) string {
+	b, _ := json.Marshal(map[string]any{
+		"choices": []any{}, "usage": map[string]any{
+			"prompt_tokens": prompt, "completion_tokens": completion,
+			"total_tokens":          prompt + completion,
+			"prompt_tokens_details": map[string]any{"cached_tokens": cached}}})
+	return string(b)
+}
+
+// TestAgentNodeUsageAccounting 多轮 ReAct 的用量双口径:prompt_tokens 等
+// 末轮键=最后一次 LLM 响应(≈当前上下文,流式仪表覆盖式消费),
+// *_acc 累计键=全程(用量账本/预算闸消费);cached_tokens 随末轮透传。
+func TestAgentNodeUsageAccounting(t *testing.T) {
+	srv := &sseLLM{scripts: [][]string{
+		{contentFrame("查询中"), tcFrame(0, "c1", "echo", `{"text":"a"}`), doneFrame("tool_calls"), usageFrame(100, 10)},
+		{contentFrame("完成"), doneFrame("stop"), usageFrameCached(200, 20, 80)},
+	}}
+	httpSrv := httptest.NewServer(http.HandlerFunc(srv.handler))
+	defer httpSrv.Close()
+
+	eng := buildAgentChain(t, httpSrv.URL, `,"tools":["echo"]`, true)
+	frames := runStreamMsg(t, eng, `{"messages":[{"role":"user","content":"hi"}]}`)
+
+	var done, full *types.RuleMsg
+	for i := range frames {
+		md := frames[i].GetMetadata()
+		if md.GetValue("stream_completed") == "true" {
+			done = &frames[i]
+		}
+		if md.GetValue("full_content") == "true" {
+			full = &frames[i]
+		}
+	}
+	if done == nil || full == nil {
+		t.Fatalf("缺收尾帧: %d 帧", len(frames))
+	}
+	if got := done.GetMetadata().GetValue("prompt_tokens"); got != "200" {
+		t.Fatalf("末轮 prompt = %s, want 200", got)
+	}
+	if got := done.GetMetadata().GetValue("total_tokens_acc"); got != "330" {
+		t.Fatalf("累计 total = %s, want 330(100+10+200+20)", got)
+	}
+	if got := full.GetMetadata().GetValue("prompt_tokens_acc"); got != "300" {
+		t.Fatalf("累计 prompt = %s, want 300", got)
+	}
+	if got := full.GetMetadata().GetValue("cached_tokens"); got != "80" {
+		t.Fatalf("cached 透传 = %s, want 80", got)
 	}
 }

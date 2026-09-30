@@ -34,6 +34,21 @@ func TestLoadSkillsEnabled(t *testing.T) {
 	}
 }
 
+// 技能目录只认 SKILL.md;仅含 DRAFT.md 的目录(待审草稿)不产生技能。
+func TestLoadSkillsSkipsDraft(t *testing.T) {
+	dir := t.TempDir()
+	if err := os.MkdirAll(filepath.Join(dir, "draft-only"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, "draft-only", "DRAFT.md"),
+		[]byte("---\nname: 草稿\n---\n草稿内容"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if skills := loadSkills(dir); len(skills) != 0 {
+		t.Fatalf("仅含 DRAFT.md 的目录不应加载技能: %+v", skills)
+	}
+}
+
 // filterTools:允许列表为空不过滤;非空只保留列表内工具。
 func TestFilterTools(t *testing.T) {
 	defs := []types.MCPToolDefinition{

@@ -13,6 +13,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"net"
 	"net/http"
 	"strings"
 	"time"
@@ -169,6 +170,31 @@ type Request struct {
 	Params
 	ResponseFormat *ResponseFormat `json:"response_format,omitempty"`
 	Stream         bool            `json:"stream"`
+	// ExtraFields 供应商扩展参数(thinking.type/reasoning_effort 等),序列化时
+	// 原样并入请求体顶层;与常规字段同名时常规字段优先。
+	ExtraFields map[string]any `json:"-"`
+}
+
+// MarshalJSON 常规字段序列化后并入 ExtraFields 顶层条目。
+func (r Request) MarshalJSON() ([]byte, error) {
+	type requestFields Request
+	if len(r.ExtraFields) == 0 {
+		return json.Marshal(requestFields(r))
+	}
+	base, err := json.Marshal(requestFields(r))
+	if err != nil {
+		return nil, err
+	}
+	var body map[string]any
+	if err := json.Unmarshal(base, &body); err != nil {
+		return nil, err
+	}
+	for k, v := range r.ExtraFields {
+		if _, taken := body[k]; !taken {
+			body[k] = v
+		}
+	}
+	return json.Marshal(body)
 }
 
 // Response 非流式响应(只取首 choice)。
@@ -180,11 +206,23 @@ type Response struct {
 	Usage Usage `json:"usage"`
 }
 
-// Usage token 统计。
+// Usage token 统计。CachedTokens 来自 prompt_tokens_details(缓存命中的
+// 输入部分),供应商不给时为 0。
 type Usage struct {
-	PromptTokens     int `json:"prompt_tokens"`
-	CompletionTokens int `json:"completion_tokens"`
-	TotalTokens      int `json:"total_tokens"`
+	PromptTokens        int `json:"prompt_tokens"`
+	CompletionTokens    int `json:"completion_tokens"`
+	TotalTokens         int `json:"total_tokens"`
+	PromptTokensDetails *struct {
+		CachedTokens int `json:"cached_tokens"`
+	} `json:"prompt_tokens_details,omitempty"`
+}
+
+// CachedTokens 缓存命中输入 token(无明细时 0)。
+func (u Usage) CachedTokens() int {
+	if u.PromptTokensDetails == nil {
+		return 0
+	}
+	return u.PromptTokensDetails.CachedTokens
 }
 
 // StreamDelta 流式一帧的增量内容(三种互斥:正文/思考/工具调用增量)。
@@ -226,9 +264,18 @@ type Client struct {
 // 默认自动重试 3 次(网络错误/超时/429/5xx/流建立中断),SetMaxRetries 可调。
 func New(baseURL, apiKey string) *Client {
 	return &Client{
-		baseURL:    strings.TrimRight(baseURL, "/"),
-		apiKey:     apiKey,
-		http:       &http.Client{},
+		baseURL: strings.TrimRight(baseURL, "/"),
+		apiKey:  apiKey,
+		// 传输层超时兜底,不用 Client.Timeout——它覆盖整个响应体读取,会掐断合法的长流式回合。
+		// ResponseHeaderTimeout 须大于最慢的非流式首字节(深度思考模型可达数分钟)。
+		http: &http.Client{
+			Transport: &http.Transport{
+				Proxy:                 http.ProxyFromEnvironment,
+				DialContext:           (&net.Dialer{Timeout: 10 * time.Second}).DialContext,
+				TLSHandshakeTimeout:   10 * time.Second,
+				ResponseHeaderTimeout: 5 * time.Minute,
+			},
+		},
 		maxRetries: defaultMaxRetries,
 	}
 }
