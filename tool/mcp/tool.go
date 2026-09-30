@@ -159,6 +159,18 @@ func (t *mcpTool) InvokableRun(ctx context.Context, arguments string, opts ...to
 		}
 	}
 
+	// 同 remote_adapter：structuredContent 附加到文本尾部供模型读取
+	if result.StructuredContent != nil {
+		if b, err := json.Marshal(result.StructuredContent); err == nil {
+			s := string(b)
+			const maxStructured = 8 << 10
+			if len(s) > maxStructured {
+				s = s[:maxStructured] + "…(truncated)"
+			}
+			contents = append(contents, "structured:", s)
+		}
+	}
+
 	return strings.Join(contents, "\n"), nil
 }
 
