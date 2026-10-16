@@ -151,7 +151,7 @@ func (t *mcpTool) InvokableRun(ctx context.Context, arguments string, opts ...to
 		case mcp.TextContent:
 			contents = append(contents, c.Text)
 		case mcp.ImageContent:
-			contents = append(contents, fmt.Sprintf("[图片: %s]", c.MIMEType))
+			contents = append(contents, describeImageContent(ctx, c.MIMEType, c.Data))
 		default:
 			if b, err := json.Marshal(c); err == nil {
 				contents = append(contents, string(b))

@@ -113,6 +113,13 @@ func (p *remoteMCPProvider) ListToolDefinitions() ([]types.MCPToolDefinition, er
 // CallTool 调用远程工具。传输级错误(含超时)丢弃连接待下次重建;IsError
 // 是工具自身的业务错误,连接保持复用。
 func (p *remoteMCPProvider) CallTool(ctx context.Context, name string, args map[string]interface{}) (string, error) {
+	text, _, err := p.CallToolWithImages(ctx, name, args)
+	return text, err
+}
+
+// CallToolWithImages 调用远程工具,图片内容以 data URL 形式单独返回,
+// 不再降级为占位文本。图片上限 4 张、总量 4MB,超出部分丢弃并在文本尾注明。
+func (p *remoteMCPProvider) CallToolWithImages(ctx context.Context, name string, args map[string]interface{}) (string, []string, error) {
 	if _, ok := ctx.Deadline(); !ok {
 		var cancel context.CancelFunc
 		ctx, cancel = context.WithTimeout(ctx, remoteMCPCallTimeout)
@@ -122,37 +129,48 @@ func (p *remoteMCPProvider) CallTool(ctx context.Context, name string, args map[
 	c, err := p.connect(ctx)
 	p.mu.Unlock()
 	if err != nil {
-		return "", err
+		return "", nil, err
 	}
 	result, err := c.CallTool(ctx, mcp.CallToolRequest{
 		Params: mcp.CallToolParams{Name: name, Arguments: args},
 	})
 	if err != nil {
 		p.reset()
-		return "", fmt.Errorf("调用远程 MCP 工具失败(%s): %w", p.server, err)
+		return "", nil, fmt.Errorf("调用远程 MCP 工具失败(%s): %w", p.server, err)
 	}
 	if result.IsError {
 		if len(result.Content) > 0 {
 			if tc, ok := result.Content[0].(mcp.TextContent); ok {
-				return "", fmt.Errorf("MCP 工具错误: %s", tc.Text)
+				return "", nil, fmt.Errorf("MCP 工具错误: %s", tc.Text)
 			}
 		}
-		return "", fmt.Errorf("MCP 工具错误: 未知错误")
+		return "", nil, fmt.Errorf("MCP 工具错误: 未知错误")
 	}
 	var contents []string
+	var images []string
+	var totalImageBytes int
+	omitted := 0
 	for _, content := range result.Content {
 		switch v := content.(type) {
 		case mcp.TextContent:
 			contents = append(contents, v.Text)
 		case mcp.ImageContent:
-			contents = append(contents, fmt.Sprintf("[图片: %s]", v.MIMEType))
+			if len(images) < 4 && totalImageBytes+len(v.Data) < 4<<20 {
+				images = append(images, "data:"+v.MIMEType+";base64,"+v.Data)
+				totalImageBytes += len(v.Data)
+			} else {
+				omitted++
+			}
 		default:
 			if b, err := json.Marshal(v); err == nil {
 				contents = append(contents, string(b))
 			}
 		}
 	}
-	return strings.Join(contents, "\n"), nil
+	if omitted > 0 {
+		contents = append(contents, fmt.Sprintf("(另有 %d 张图片超出单次携带上限,已省略)", omitted))
+	}
+	return strings.Join(contents, "\n"), images, nil
 }
 
 // hasTool 工具名是否在本 server 的缓存名单里;名单未拉取或拉取失败时

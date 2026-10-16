@@ -701,8 +701,17 @@ func (n *AgentLiteNode) execTools(ctx types.RuleContext, msg types.RuleMsg,
 	calls []ToolCall, messages []Message, stream bool, detector *doomloop.DoomLoopDetector) []Message {
 
 	for _, call := range calls {
-		result := n.callTool(ctx, msg, call, stream, detector)
+		result, images := n.callTool(ctx, msg, call, stream, detector)
 		messages = append(messages, Message{Role: "tool", ToolCallID: call.ID, Content: result})
+		if len(images) > 0 {
+			// 图片以 user 消息 parts 送给模型(OpenAI/GLM 口径 image_url 只在 user 角色)
+			parts := make([]ContentPart, 0, len(images)+1)
+			parts = append(parts, TextPart("上一条工具结果附带了图片,请直接查看图片并结合图片内容回答"))
+			for _, img := range images {
+				parts = append(parts, ImagePart(img))
+			}
+			messages = append(messages, Message{Role: "user", ContentParts: parts})
+		}
 	}
 	return messages
 }
@@ -710,7 +719,7 @@ func (n *AgentLiteNode) execTools(ctx types.RuleContext, msg types.RuleMsg,
 // callTool 执行单个工具并返回给 LLM 的结果文本。doom 检测:BeforeCall 的
 // 重复警告前缀进结果、AfterCall 的连续失败警告追加在尾部,提示 LLM 改换调用方式。
 func (n *AgentLiteNode) callTool(ctx types.RuleContext, msg types.RuleMsg, call ToolCall,
-	stream bool, detector *doomloop.DoomLoopDetector) string {
+	stream bool, detector *doomloop.DoomLoopDetector) (string, []string) {
 
 	name := call.Function.Name
 	args := call.Function.Arguments
@@ -722,7 +731,7 @@ func (n *AgentLiteNode) callTool(ctx types.RuleContext, msg types.RuleMsg, call 
 	}
 
 	warn := detector.BeforeCall(name, args)
-	out, failed := n.runTool(ctx, name, args)
+	out, images, failed := n.runTool(ctx, name, args)
 	if failed {
 		if stream {
 			n.toolFrame(ctx, msg, "TOOL_CALL_ERROR", call.ID, name, "", out)
@@ -737,34 +746,35 @@ func (n *AgentLiteNode) callTool(ctx types.RuleContext, msg types.RuleMsg, call 
 	if warn != "" {
 		out = warn + "\n" + out
 	}
-	return out
+	return out, images
 }
 
 // runTool 执行工具并截断过长输出;failed=true 时 out 为错误文本。
-func (n *AgentLiteNode) runTool(ctx types.RuleContext, name, args string) (out string, failed bool) {
+func (n *AgentLiteNode) runTool(ctx types.RuleContext, name, args string) (out string, images []string, failed bool) {
 	var argsMap map[string]interface{}
 	if err := json.Unmarshal([]byte(args), &argsMap); err != nil {
-		return fmt.Sprintf("工具参数不是合法 JSON: %v", err), true
+		return fmt.Sprintf("工具参数不是合法 JSON: %v", err), nil, true
 	}
-	result, err := n.invoke(ctx, name, argsMap)
+	result, images, err := n.invoke(ctx, name, argsMap)
 	if err != nil {
-		return err.Error(), true
+		return err.Error(), nil, true
 	}
 	// 按 rune 截断避免劈开 UTF-8 字符,后缀格式与 eino 版 truncateResult 一致。
 	runes := []rune(result)
 	if len(runes) > n.maxToolOut {
 		result = string(runes[:n.maxToolOut]) + fmt.Sprintf("...(truncated, original: %d bytes)", len(result))
 	}
-	return result, false
+	return result, images, false
 }
 
-func (n *AgentLiteNode) invoke(ctx types.RuleContext, name string, args map[string]interface{}) (string, error) {
+func (n *AgentLiteNode) invoke(ctx types.RuleContext, name string, args map[string]interface{}) (string, []string, error) {
 	if name == skillToolName {
-		return n.callSkill(args)
+		text, err := n.callSkill(args)
+		return text, nil, err
 	}
 	// 允许列表非空时执行层二次把关:模型点名列表外工具(幻觉/被诱导)不触达 provider。
 	if !n.toolAllowed(name) {
-		return "", fmt.Errorf("工具 %s 未开放给本智能体(不在工具允许列表),已拒绝执行;可用工具: %s",
+		return "", nil, fmt.Errorf("工具 %s 未开放给本智能体(不在工具允许列表),已拒绝执行;可用工具: %s",
 			name, strings.Join(n.toolAllow, ", "))
 	}
 	// 链上下文透传给工具提供者:宿主经 types.WithContext 注入的调用方身份等
@@ -782,21 +792,36 @@ func (n *AgentLiteNode) invoke(ctx types.RuleContext, name string, args map[stri
 			if list, err := n.provider.ListToolDefinitions(); err == nil {
 				for _, d := range list {
 					if d.Name == name {
-						return n.provider.CallTool(toolCtx, name, args)
+						return callProviderWithImages(toolCtx, n.provider, name, args)
 					}
 				}
 			}
 		}
 		for _, r := range n.remotes {
 			if r.hasTool(name) {
-				return r.CallTool(toolCtx, name, args)
+				return callProviderWithImages(toolCtx, r, name, args)
 			}
 		}
 	}
 	if n.provider == nil {
-		return "", fmt.Errorf("工具 %s 不可用:工具提供者未注册", name)
+		return "", nil, fmt.Errorf("工具 %s 不可用:工具提供者未注册", name)
 	}
-	return n.provider.CallTool(toolCtx, name, args)
+	return callProviderWithImages(toolCtx, n.provider, name, args)
+}
+
+// ImageCarryingProvider 工具结果可携带图片的 provider 可选扩展。
+// 实现者走 CallToolWithImages,图片以 data URL 返回;未实现者退回纯文本。
+type ImageCarryingProvider interface {
+	CallToolWithImages(ctx context.Context, name string, args map[string]interface{}) (string, []string, error)
+}
+
+// callProviderWithImages 统一调用入口:provider 实现了图片扩展接口则带图返回。
+func callProviderWithImages(ctx context.Context, p types.MCPToolProvider, name string, args map[string]interface{}) (string, []string, error) {
+	if ic, ok := p.(ImageCarryingProvider); ok {
+		return ic.CallToolWithImages(ctx, name, args)
+	}
+	text, err := p.CallTool(ctx, name, args)
+	return text, nil, err
 }
 
 // toolAllowed 允许列表为空或含 "*"=全量开放;非空=仅列表内工具。

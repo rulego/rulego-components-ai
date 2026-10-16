@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"strings"
 	"sync"
+	"time"
 
 	"github.com/cloudwego/eino/components/tool"
 	"github.com/cloudwego/eino/schema"
@@ -150,7 +151,7 @@ func (a *RemoteMCPToolAdapter) InvokableRun(ctx context.Context, arguments strin
 		case mcp.TextContent:
 			contents = append(contents, v.Text)
 		case mcp.ImageContent:
-			contents = append(contents, fmt.Sprintf("[图片: %s]", v.MIMEType))
+			contents = append(contents, describeImageContent(ctx, v.MIMEType, v.Data))
 		default:
 			if b, err := json.Marshal(v); err == nil {
 				contents = append(contents, string(b))
@@ -204,4 +205,29 @@ func CreateToolsFromRemote(server string, toolNames []string) ([]tool.BaseTool, 
 	}
 
 	return tools, nil
+}
+
+
+// imageCaptionHook 工具返回图片时的识别钩子:宿主注入视觉模型调用,
+// 返回一句话画面描述;nil 或失败时退回占位符。
+var imageCaptionHook func(ctx context.Context, mimeType, base64Data string) (string, error)
+
+// SetImageCaptionHook 注入图片识别钩子(视觉模型调用),由宿主在启动时设置。
+func SetImageCaptionHook(fn func(ctx context.Context, mimeType, base64Data string) (string, error)) {
+	imageCaptionHook = fn
+}
+
+// describeImageContent 有钩子走识别并拼描述,无钩子/失败退回占位符。
+func describeImageContent(ctx context.Context, mimeType, base64Data string) string {
+	placeholder := fmt.Sprintf("[图片: %s]", mimeType)
+	if imageCaptionHook == nil {
+		return placeholder
+	}
+	cctx, cancel := context.WithTimeout(ctx, 15*time.Second)
+	defer cancel()
+	desc, err := imageCaptionHook(cctx, mimeType, base64Data)
+	if err != nil || strings.TrimSpace(desc) == "" {
+		return placeholder
+	}
+	return placeholder + "\n图片内容描述: " + strings.TrimSpace(desc)
 }
