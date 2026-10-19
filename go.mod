@@ -13,7 +13,7 @@ require (
 	github.com/eino-contrib/jsonschema v1.0.3
 	github.com/google/uuid v1.6.0
 	github.com/mark3labs/mcp-go v0.44.0-beta.3
-	github.com/rulego/rulego v0.37.0
+	github.com/rulego/rulego v1.0.0
 	github.com/sashabaranov/go-openai v1.41.1
 	github.com/stretchr/testify v1.11.1
 	github.com/wk8/go-ordered-map/v2 v2.1.8
