@@ -395,6 +395,9 @@ func (b *Tool) initialize(ctx context.Context, config *Config) error {
 	opts := []chromedp.ExecAllocatorOption{
 		chromedp.NoFirstRun,
 		chromedp.NoDefaultBrowserCheck,
+		// 默认 20s 在慢 CI 上会触发超时路径，该路径与读输出的 goroutine
+		// 存在 chromedp 内部数据竞争（allocate.go 对 captured err 的晚写）
+		chromedp.WSURLReadTimeout(60 * time.Second),
 	}
 
 	if !config.Headless {
