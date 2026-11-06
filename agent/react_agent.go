@@ -32,6 +32,7 @@ import (
 	aitool "github.com/rulego/rulego-components-ai/tool"
 	"github.com/rulego/rulego-components-ai/tool/common"
 	"github.com/rulego/rulego-components-ai/utils/doomloop"
+	"github.com/rulego/rulego-components-ai/utils/imgsink"
 	"github.com/rulego/rulego-components-ai/utils/token"
 	"github.com/rulego/rulego/api/types"
 	"github.com/rulego/rulego/components/base"
@@ -65,6 +66,7 @@ type ReactAgentNode struct {
 	metricsCollector     *token.MetricsCollector
 	ruleEnginePool       types.RuleEnginePool
 	chatModel            model.ToolCallingChatModel // 保存 chatModel 引用，用于动态模型切换
+	toolImageModel       bool                        // 主模型多模态：运行时注入 imgsink 供工具图片透传
 }
 
 // Type 返回组件类型
@@ -152,6 +154,11 @@ func (x *ReactAgentNode) Init(ruleConfig types.Config, configuration types.Confi
 		WrapRetry:  true,
 		MaxRetries: x.Config.MaxRetries,
 	})
+	// 4.2 多模态主模型时包工具图片透传装饰器：工具返回的图片直达模型（见 tool_image_model.go）
+	if resolveVisionModel(x.Config.ChatAgentConfig) {
+		chatModel = NewToolImageModel(chatModel, true)
+		x.toolImageModel = true
+	}
 	x.chatModel = chatModel
 
 	// 5. 初始化切面执行器（必须在 createTools 之前）
@@ -306,6 +313,11 @@ func (x *ReactAgentNode) OnMsg(ctx types.RuleContext, msg types.RuleMsg) {
 func (x *ReactAgentNode) buildRunContext(ctx types.RuleContext, msg types.RuleMsg) context.Context {
 	runCtx := context.WithValue(ctx.GetContext(), config.ShareRuleContextKey, ctx)
 	runCtx = context.WithValue(runCtx, config.KeyRuleConfig, ctx.Config())
+
+	// 多模态主模型：注入本次运行的工具图片仓，工具侧存图留标记、模型侧还原
+	if x.toolImageModel {
+		runCtx = imgsink.WithSink(runCtx, imgsink.NewSink())
+	}
 
 	// workDir 不在 agent 节点声明：统一由业务层经 common.WithWorkDir 按需注入 ctx（如
 	// triggerGenerate 按项目注入外部/内部 workDir、主 agent 派子 agent 注入父目录），工具按

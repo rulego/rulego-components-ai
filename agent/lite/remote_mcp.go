@@ -158,6 +158,9 @@ func (p *remoteMCPProvider) CallToolWithImages(ctx context.Context, name string,
 			if len(images) < 4 && totalImageBytes+len(v.Data) < 4<<20 {
 				images = append(images, "data:"+v.MIMEType+";base64,"+v.Data)
 				totalImageBytes += len(v.Data)
+				// 文本占位与 eino 版口径一致：多模态模型附图同时也留痕，
+				// 纯文本模型至少知道结果里有图。
+				contents = append(contents, fmt.Sprintf("[图片: %s]", v.MIMEType))
 			} else {
 				omitted++
 			}

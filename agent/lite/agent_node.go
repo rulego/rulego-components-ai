@@ -12,6 +12,7 @@
 package lite
 
 import (
+	"github.com/rulego/rulego"
 	"context"
 	"encoding/base64"
 	"encoding/json"
@@ -22,7 +23,6 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/rulego/rulego"
 	"github.com/rulego/rulego/api/types"
 	"github.com/rulego/rulego/utils/el"
 	"github.com/rulego/rulego/utils/maps"
@@ -83,6 +83,9 @@ type AgentLiteConfig struct {
 	// Skills 技能名允许列表:空/缺省=skillsDir 下全部启用技能;非空=只载入列表内
 	// 技能(未勾选的不进 system prompt,skill 工具也读不到)。与 Tools 同语义。
 	Skills []string `json:"skills,omitempty"`
+	// VisionModel 覆盖能力注册表的视觉判定,与 eino 版同口径: nil=按 capabilities
+	// 自动判定; true=强制把工具返回的图片附进对话; false=强制不附(文本只留占位符)。
+	VisionModel *bool `json:"visionModel,omitempty"`
 	// Failover 备用模型端点:主端点重试耗尽后按序切换,每端点独立熔断冷却;
 	// 端点 model 为空时沿用主 model。eino 版端点的 params 覆盖不承接。
 	Failover []FailoverEndpoint `json:"failover,omitempty"`
@@ -121,6 +124,7 @@ type AgentLiteNode struct {
 	maxStep       int
 	maxToolOut    int
 	tracker       *token.TokenTracker
+	toolImageModel bool // 主模型多模态：工具图片才附进对话
 }
 
 func (n *AgentLiteNode) New() types.Node { return &AgentLiteNode{} }
@@ -130,6 +134,14 @@ func (n *AgentLiteNode) Destroy() {
 	for _, r := range n.remotes {
 		r.Close()
 	}
+}
+
+// visionEnabled 工具图片门控：显式配置优先，缺省按能力注册表。
+func visionEnabled(override *bool, model string) bool {
+	if override != nil {
+		return *override
+	}
+	return config.SupportsVision(model)
 }
 
 func (n *AgentLiteNode) Init(rc types.Config, cfg types.Configuration) error {
@@ -173,6 +185,14 @@ func (n *AgentLiteNode) Init(rc types.Config, cfg types.Configuration) error {
 	}); err != nil {
 		return err
 	}
+
+	// 工具图片门控与 eino 版同口径：显式配置优先，缺省按能力注册表；
+	// 模型名含 ${global.*} 时用解析后的值判定。
+	visionModel := n.config.Model
+	if n.modelTpl != nil {
+		visionModel = n.modelTpl.ExecuteAsString(env)
+	}
+	n.toolImageModel = visionEnabled(n.config.VisionModel, visionModel)
 	for _, f := range n.config.Failover {
 		var ft failoverTpl
 		if err := parseTpl([]tplPair{
@@ -703,8 +723,9 @@ func (n *AgentLiteNode) execTools(ctx types.RuleContext, msg types.RuleMsg,
 	for _, call := range calls {
 		result, images := n.callTool(ctx, msg, call, stream, detector)
 		messages = append(messages, Message{Role: "tool", ToolCallID: call.ID, Content: result})
-		if len(images) > 0 {
-			// 图片以 user 消息 parts 送给模型(OpenAI/GLM 口径 image_url 只在 user 角色)
+		// 图片以 user 消息 parts 送给模型(OpenAI/GLM 口径 image_url 只在 user 角色)。
+		// 主模型非多模态时不附图,模型只看文本里的 [图片: mime] 占位,避免 image_url 打到纯文本模型报 400。
+		if len(images) > 0 && n.toolImageModel {
 			parts := make([]ContentPart, 0, len(images)+1)
 			parts = append(parts, TextPart("上一条工具结果附带了图片,请直接查看图片并结合图片内容回答"))
 			for _, img := range images {
@@ -740,7 +761,7 @@ func (n *AgentLiteNode) callTool(ctx types.RuleContext, msg types.RuleMsg, call 
 		n.toolFrame(ctx, msg, "TOOL_CALL_RESULT", call.ID, name, "", out)
 	}
 
-	if afterWarn := detector.AfterCall(name, args, failed); afterWarn != "" {
+	if afterWarn := detector.AfterCall(name, args, failed, out); afterWarn != "" {
 		out += "\n" + afterWarn
 	}
 	if warn != "" {

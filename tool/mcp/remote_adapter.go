@@ -14,6 +14,8 @@ import (
 	"github.com/mark3labs/mcp-go/client"
 	"github.com/mark3labs/mcp-go/client/transport"
 	"github.com/mark3labs/mcp-go/mcp"
+
+	"github.com/rulego/rulego-components-ai/utils/imgsink"
 )
 
 // remoteMCPClient 管理到远程 MCP 服务器的客户端连接。
@@ -217,13 +219,20 @@ func SetImageCaptionHook(fn func(ctx context.Context, mimeType, base64Data strin
 	imageCaptionHook = fn
 }
 
-// describeImageContent 有钩子走识别并拼描述,无钩子/失败退回占位符。
+// describeImageContent 工具图片转结果文本：ctx 挂有 imgsink 时存图留引用标记，
+// 由模型装饰器还原成 user 图片消息直达多模态主模型；视觉钩子的描述（无仓时是
+// 模型了解画面的唯一来源）拼在标记之后。
+// 标记必须放在文本头部：结果超长被截断时保头切尾，尾部标记会被截丢导致图片漏传。
 func describeImageContent(ctx context.Context, mimeType, base64Data string) string {
 	placeholder := fmt.Sprintf("[图片: %s]", mimeType)
+	sink := imgsink.FromContext(ctx)
+	if sink != nil {
+		placeholder += "\n" + imgsink.Marker(sink.Add("data:"+mimeType+";base64,"+base64Data))
+	}
 	if imageCaptionHook == nil {
 		return placeholder
 	}
-	cctx, cancel := context.WithTimeout(ctx, 15*time.Second)
+	cctx, cancel := context.WithTimeout(ctx, 60*time.Second)
 	defer cancel()
 	desc, err := imageCaptionHook(cctx, mimeType, base64Data)
 	if err != nil || strings.TrimSpace(desc) == "" {

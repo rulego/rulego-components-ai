@@ -39,6 +39,9 @@ type ChatAgentConfig struct {
 	MaxStep             int    `json:"maxStep" label:"Max Steps" desc:"Maximum number of reasoning-tool loops the agent can perform"`
 	MaxToolOutputLength int    `json:"maxToolOutputLength" label:"Max Tool Output Length" desc:"Truncate tool output beyond this length to prevent context overflow. Default 50000"`
 	StreamToolCallCheck string `json:"streamToolCallCheck" label:"Stream Tool-call Check" desc:"How to detect tool calls in streaming output (agents with tools only): empty=auto (no tools=firstContent, with tools=window), firstContent=decide on first text chunk, drain=consume whole stream first, window=keep watching 500ms after the first text chunk. Misrouted tool calls auto-switch the mode to drain and retry the turn"`
+	// VisionModel 覆盖能力注册表的视觉判定：nil=按 capabilities 自动判定，
+	// true=强制开启工具图片透传（多模态新模型未声明 vision 时用），false=强制关闭
+	VisionModel *bool `json:"visionModel,omitempty"`
 }
 
 // Desc returns the component description

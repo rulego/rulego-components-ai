@@ -351,7 +351,7 @@ func (w *VisualToolWrapper) InvokableRun(ctx context.Context, argumentsInJSON st
 		blockedResult := fmt.Sprintf("Error: doom_loop_repeated - 工具 %s 本次调用被拒绝执行。%s", w.name, msg)
 		// 仍记录到 doom history（让后续轮次持续计数）
 		if detector := doomloop.GetDoomLoopDetector(ctx); detector != nil {
-			detector.AfterCall(w.name, argumentsInJSON, true)
+			detector.AfterCall(w.name, argumentsInJSON, true, "")
 		}
 		duration := time.Since(startTime).Milliseconds()
 		if w.metricsCollector != nil {
@@ -387,7 +387,7 @@ func (w *VisualToolWrapper) InvokableRun(ctx context.Context, argumentsInJSON st
 
 	// doom-loop 检测（执行后：记录本次调用 + 连续失败）
 	if detector := doomloop.GetDoomLoopDetector(ctx); detector != nil {
-		if warn := detector.AfterCall(w.name, argumentsInJSON, err != nil || isFailureResult(result)); warn != "" {
+		if warn := detector.AfterCall(w.name, argumentsInJSON, err != nil || isFailureResult(result), result); warn != "" {
 			// 走到这里 doomWarn 必为空（doom 命中已在上方 early return），直接赋值即可
 			doomWarn = warn
 			if w.logger != nil {
