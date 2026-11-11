@@ -18,6 +18,9 @@ import (
 	"github.com/rulego/rulego-components-ai/utils/imgsink"
 )
 
+// remoteCallTimeout 单次工具调用超时;调用方自带 deadline 时不叠加。
+const remoteCallTimeout = 300 * time.Second
+
 // remoteMCPClient 管理到远程 MCP 服务器的客户端连接。
 // 同一个 server 的多个 RemoteMCPToolAdapter 共享同一个 remoteMCPClient，
 // 避免重复建连。
@@ -80,6 +83,16 @@ func (r *remoteMCPClient) getClient(ctx context.Context) (*client.Client, error)
 	return c, nil
 }
 
+// reset 丢弃连接，下次调用重建。
+func (r *remoteMCPClient) reset() {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	if r.client != nil {
+		_ = r.client.Close()
+		r.client = nil
+	}
+}
+
 // RemoteMCPToolAdapter 将远程 MCP 服务器的单个工具适配为 eino tool.InvokableTool。
 // 多个 adapter 共享同一个 remoteMCPClient。
 type RemoteMCPToolAdapter struct {
@@ -112,6 +125,7 @@ func (a *RemoteMCPToolAdapter) Info(ctx context.Context) (*schema.ToolInfo, erro
 }
 
 // InvokableRun 调用远程 MCP 工具。
+// 传输级失败重建连接重试一次。
 func (a *RemoteMCPToolAdapter) InvokableRun(ctx context.Context, arguments string, opts ...tool.Option) (string, error) {
 	var args map[string]interface{}
 	if arguments != "" {
@@ -123,19 +137,31 @@ func (a *RemoteMCPToolAdapter) InvokableRun(ctx context.Context, arguments strin
 		args = make(map[string]interface{})
 	}
 
-	cli, err := a.rc.getClient(ctx)
-	if err != nil {
-		return "", err
+	if _, ok := ctx.Deadline(); !ok {
+		var cancel context.CancelFunc
+		ctx, cancel = context.WithTimeout(ctx, remoteCallTimeout)
+		defer cancel()
 	}
 
-	result, err := cli.CallTool(ctx, mcp.CallToolRequest{
-		Params: mcp.CallToolParams{
-			Name:      a.name,
-			Arguments: args,
-		},
-	})
-	if err != nil {
-		return "", fmt.Errorf("调用远程 MCP 工具失败: %w", err)
+	var result *mcp.CallToolResult
+	for attempt := 0; ; attempt++ {
+		cli, err := a.rc.getClient(ctx)
+		if err != nil {
+			return "", err
+		}
+		result, err = cli.CallTool(ctx, mcp.CallToolRequest{
+			Params: mcp.CallToolParams{
+				Name:      a.name,
+				Arguments: args,
+			},
+		})
+		if err == nil {
+			break
+		}
+		a.rc.reset()
+		if attempt >= 1 || ctx.Err() != nil {
+			return "", fmt.Errorf("调用远程 MCP 工具失败: %w", err)
+		}
 	}
 
 	if result.IsError {
@@ -179,15 +205,25 @@ func (a *RemoteMCPToolAdapter) InvokableRun(ctx context.Context, arguments strin
 func CreateToolsFromRemote(server string, toolNames []string) ([]tool.BaseTool, error) {
 	rc := newRemoteMCPClient(server)
 
-	ctx := context.Background()
-	cli, err := rc.getClient(ctx)
-	if err != nil {
-		return nil, err
-	}
+	ctx, cancel := context.WithTimeout(context.Background(), remoteCallTimeout)
+	defer cancel()
 
-	result, err := cli.ListTools(ctx, mcp.ListToolsRequest{})
-	if err != nil {
-		return nil, fmt.Errorf("获取远程 MCP 工具列表失败: %w", err)
+	var result *mcp.ListToolsResult
+	// 传输级失败重建连接重试一次。
+	for attempt := 0; ; attempt++ {
+		cli, err := rc.getClient(ctx)
+		if err != nil {
+			return nil, err
+		}
+		r, lerr := cli.ListTools(ctx, mcp.ListToolsRequest{})
+		if lerr == nil {
+			result = r
+			break
+		}
+		rc.reset()
+		if attempt >= 1 || ctx.Err() != nil {
+			return nil, fmt.Errorf("获取远程 MCP 工具列表失败: %w", lerr)
+		}
 	}
 
 	var tools []tool.BaseTool

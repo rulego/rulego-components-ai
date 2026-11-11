@@ -24,7 +24,7 @@ import (
 // var 便于测试缩短。
 var (
 	remoteMCPListTimeout = 15 * time.Second
-	remoteMCPCallTimeout = 120 * time.Second
+	remoteMCPCallTimeout = 300 * time.Second
 )
 
 // remoteMCPProvider 一个远程 MCP server 的中立接口适配,实现
@@ -88,14 +88,22 @@ func (p *remoteMCPProvider) ListToolDefinitions() ([]types.MCPToolDefinition, er
 	if p.defs != nil {
 		return p.defs, nil
 	}
-	c, err := p.connect(ctx)
-	if err != nil {
-		return nil, err
-	}
-	result, err := c.ListTools(ctx, mcp.ListToolsRequest{})
-	if err != nil {
+	var result *mcp.ListToolsResult
+	// 传输级失败重建连接重试一次。
+	for attempt := 0; ; attempt++ {
+		c, err := p.connect(ctx)
+		if err != nil {
+			return nil, err
+		}
+		r, err := c.ListTools(ctx, mcp.ListToolsRequest{})
+		if err == nil {
+			result = r
+			break
+		}
 		p.closeLocked()
-		return nil, fmt.Errorf("获取远程 MCP 工具列表失败(%s): %w", p.server, err)
+		if attempt >= 1 || ctx.Err() != nil {
+			return nil, fmt.Errorf("获取远程 MCP 工具列表失败(%s): %w", p.server, err)
+		}
 	}
 	defs := make([]types.MCPToolDefinition, 0, len(result.Tools))
 	for _, t := range result.Tools {
@@ -119,25 +127,36 @@ func (p *remoteMCPProvider) CallTool(ctx context.Context, name string, args map[
 
 // CallToolWithImages 调用远程工具,图片内容以 data URL 形式单独返回,
 // 不再降级为占位文本。图片上限 4 张、总量 4MB,超出部分丢弃并在文本尾注明。
+// 传输级失败重建连接重试一次;ctx 已到期或业务错误不重试。
 func (p *remoteMCPProvider) CallToolWithImages(ctx context.Context, name string, args map[string]interface{}) (string, []string, error) {
 	if _, ok := ctx.Deadline(); !ok {
 		var cancel context.CancelFunc
 		ctx, cancel = context.WithTimeout(ctx, remoteMCPCallTimeout)
 		defer cancel()
 	}
-	p.mu.Lock()
-	c, err := p.connect(ctx)
-	p.mu.Unlock()
-	if err != nil {
-		return "", nil, err
-	}
-	result, err := c.CallTool(ctx, mcp.CallToolRequest{
-		Params: mcp.CallToolParams{Name: name, Arguments: args},
-	})
-	if err != nil {
+	for attempt := 0; ; attempt++ {
+		p.mu.Lock()
+		c, err := p.connect(ctx)
+		p.mu.Unlock()
+		if err != nil {
+			return "", nil, err
+		}
+		result, err := c.CallTool(ctx, mcp.CallToolRequest{
+			Params: mcp.CallToolParams{Name: name, Arguments: args},
+		})
+		if err == nil {
+			return renderToolResult(result)
+		}
 		p.reset()
-		return "", nil, fmt.Errorf("调用远程 MCP 工具失败(%s): %w", p.server, err)
+		if attempt >= 1 || ctx.Err() != nil {
+			return "", nil, fmt.Errorf("调用远程 MCP 工具失败(%s): %w", p.server, err)
+		}
 	}
+}
+
+// renderToolResult 把成功传输的工具结果拆成文本与图片;IsError 是工具自身的
+// 业务错误,按错误返回且不重试。
+func renderToolResult(result *mcp.CallToolResult) (string, []string, error) {
 	if result.IsError {
 		if len(result.Content) > 0 {
 			if tc, ok := result.Content[0].(mcp.TextContent); ok {
