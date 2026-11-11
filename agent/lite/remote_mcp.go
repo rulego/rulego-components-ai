@@ -24,7 +24,7 @@ import (
 // var 便于测试缩短。
 var (
 	remoteMCPListTimeout = 15 * time.Second
-	remoteMCPCallTimeout = 300 * time.Second
+	remoteMCPCallTimeout = 420 * time.Second
 )
 
 // remoteMCPProvider 一个远程 MCP server 的中立接口适配,实现

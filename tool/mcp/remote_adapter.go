@@ -19,7 +19,7 @@ import (
 )
 
 // remoteCallTimeout 单次工具调用超时;调用方自带 deadline 时不叠加。
-const remoteCallTimeout = 300 * time.Second
+const remoteCallTimeout = 420 * time.Second
 
 // remoteMCPClient 管理到远程 MCP 服务器的客户端连接。
 // 同一个 server 的多个 RemoteMCPToolAdapter 共享同一个 remoteMCPClient，
